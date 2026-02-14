@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <title>Signature Flow</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -46,7 +47,7 @@
               <div class="preview-empty-showcase">
                 <div id="previewShowcaseStage" class="preview-showcase-stage" role="img" aria-label="SVG example showcase"></div>
               </div>
-              <span class="preview-empty-text">Turn your signature into an impressive animation in seconds — start by uploading your SVG.</span>
+              <span class="preview-empty-text">Turn your signature into an impressive animation in seconds — start by uploading your SVG.<br><button type="button" id="openHowItWorks" class="preview-empty-how-it-works-inline" title="How it works">See how it works.</button></span>
             </div>
           </div>
           <div id="svgPreview" class="preview-canvas"></div>
@@ -370,7 +371,41 @@
       </div>
     </div>
 
+    <div id="howItWorksModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="howItWorksTitle">
+      <div class="modal-backdrop" data-close-modal="true"></div>
+      <div class="modal-card">
+        <div class="modal-header">
+          <div>
+            <h2 id="howItWorksTitle">How it works</h2>
+          </div>
+          <button id="closeHowItWorksModal" class="icon-button" type="button" aria-label="Close">
+            ✕
+          </button>
+        </div>
+        <div class="modal-body modal-body--prose">
+          <section class="how-it-works-section">
+            <h3 class="how-it-works-heading">Steps</h3>
+            <ol class="how-it-works-list">
+              <li>Upload an SVG of your signature, or use <strong>Trace a photo</strong> to create one from an image.</li>
+              <li>Adjust <strong>Animation</strong> (speed, easing, loop), <strong>Stroke</strong>, and <strong>Paths</strong> in the panel.</li>
+              <li>Export as <strong>Animated SVG</strong>, <strong>MP4</strong>, or <strong>GIF</strong>.</li>
+            </ol>
+          </section>
+          <section class="how-it-works-section">
+            <h3 class="how-it-works-heading">Best practices</h3>
+            <ul class="how-it-works-list">
+              <li>Use a single-path or clean multi-path SVG for the smoothest animation.</li>
+              <li>Keep stroke width consistent; use the stroke scale control to fine-tune.</li>
+              <li>For photo trace, use a high-contrast image on a plain background.</li>
+              <li>Reorder paths in the panel to change draw order if needed.</li>
+            </ul>
+          </section>
+        </div>
+      </div>
+    </div>
+
     <footer class="app-footer">
+      <a href="changelog.html" class="app-footer-link app-footer-link--changelog" target="_blank" rel="noopener">Changelog</a>
       <a href="mailto:xalion.malik@gmail.com" class="app-footer-link">Say hello!</a>
     </footer>
 

@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <title>Changelog · Signature Flow</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+      /* Override app styles: allow scroll on this page (styles.css sets html, body { overflow: hidden }) */
+      html, body {
+        overflow: auto !important;
+        height: auto !important;
+        min-height: 100%;
+      }
+      .changelog-page {
+        min-height: 100vh;
+        background: #0b0b0b;
+        color: #d4d4d8;
+        font-family: "DM Mono", ui-monospace, monospace;
+        padding: 32px 20px 48px;
+        box-sizing: border-box;
+      }
+      body.light .changelog-page {
+        background: #f1f5f9;
+        color: #0f172a;
+      }
+      .changelog-inner {
+        max-width: 640px;
+        margin: 0 auto;
+      }
+      .changelog-page a {
+        color: #999999;
+        text-decoration: none;
+        transition: color 0.15s ease;
+      }
+      body.light .changelog-page a {
+        color: #64748b;
+      }
+      .changelog-page a:hover {
+        color: #e5e7eb;
+      }
+      body.light .changelog-page a:hover {
+        color: #0f172a;
+      }
+      .changelog-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 8px;
+      }
+      .changelog-title {
+        font-size: 22px;
+        font-weight: 700;
+        margin: 0;
+        color: inherit;
+        letter-spacing: -0.02em;
+      }
+      .changelog-back {
+        font-size: 12px;
+        padding: 6px 10px;
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.06);
+        color: #a1a1aa;
+      }
+      body.light .changelog-back {
+        background: rgba(0, 0, 0, 0.06);
+        color: #475569;
+      }
+      .changelog-back:hover {
+        background: rgba(255, 255, 255, 0.1);
+        color: #e5e7eb;
+      }
+      body.light .changelog-back:hover {
+        background: rgba(0, 0, 0, 0.08);
+        color: #0f172a;
+      }
+      .changelog-intro {
+        font-size: 13px;
+        line-height: 1.6;
+        color: #71717a;
+        margin: 32px 0 32px;
+      }
+      body.light .changelog-intro {
+        color: #64748b;
+      }
+      .changelog-section {
+        margin-bottom: 28px;
+      }
+      .changelog-section-title {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #71717a;
+        margin: 0 0 16px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      }
+      body.light .changelog-section-title {
+        color: #64748b;
+        border-bottom-color: rgba(0, 0, 0, 0.08);
+      }
+      .changelog-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .changelog-item {
+        margin-bottom: 0;
+        padding: 18px 20px;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        margin-bottom: 12px;
+        transition: background 0.15s ease, border-color 0.15s ease;
+      }
+      .changelog-item:hover {
+        background: rgba(255, 255, 255, 0.05);
+        border-color: rgba(255, 255, 255, 0.08);
+      }
+      body.light .changelog-item {
+        background: #ffffff;
+        border-color: rgba(0, 0, 0, 0.06);
+      }
+      body.light .changelog-item:hover {
+        background: #f8fafc;
+        border-color: rgba(0, 0, 0, 0.08);
+      }
+      .changelog-item:last-child {
+        margin-bottom: 0;
+      }
+      .changelog-entry-title {
+        font-size: 14px;
+        font-weight: 600;
+        margin: 0 0 8px;
+        color: inherit;
+        line-height: 1.35;
+      }
+      .changelog-entry-detail {
+        font-size: 12px;
+        line-height: 1.65;
+        color: #a1a1aa;
+        margin: 0;
+      }
+      body.light .changelog-entry-detail {
+        color: #475569;
+      }
+      .changelog-entry-detail + .changelog-entry-detail {
+        margin-top: 8px;
+      }
+      .changelog-tag {
+        display: inline-block;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #71717a;
+        margin-bottom: 8px;
+      }
+      body.light .changelog-tag {
+        color: #64748b;
+      }
+      @media (max-width: 480px) {
+        .changelog-page {
+          padding: 24px 16px 40px;
+        }
+        .changelog-item {
+          padding: 14px 16px;
+        }
+        .changelog-title {
+          font-size: 20px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="changelog-page">
+      <div class="changelog-inner">
+        <header class="changelog-header">
+          <h1 class="changelog-title">Changelog</h1>
+          <a href="index.html" class="changelog-back">← Back to app</a>
+        </header>
+        <p class="changelog-intro">
+          Updates and improvements to Signature Flow. We add fixes and features regularly—check back for the latest.
+        </p>
+
+        <section class="changelog-section">
+          <h2 class="changelog-section-title">Recent updates</h2>
+          <ul class="changelog-list">
+            <li class="changelog-item">
+              <div class="changelog-tag">Release</div>
+              <div class="changelog-entry-title">Build ready version (v1.0)</div>
+              <p class="changelog-entry-detail">
+                This build is ready for production. All recent improvements, fixes, and UI updates are included. Signature Flow is ready to ship.
+              </p>
+            </li>
+            <li class="changelog-item">
+              <div class="changelog-tag">Improvement</div>
+              <div class="changelog-entry-title">Empty state and How it works</div>
+              <p class="changelog-entry-detail">
+                The empty state now shows the full intro line with <strong>See how it works.</strong> on the next line (clickable). The separate “How it works” button was removed. Clicking “See how it works” only opens the guide modal and no longer triggers the upload dialog. The How it works modal subtitle was removed, and list styling was updated: tighter line spacing with more space between list items for easier reading.
+              </p>
+            </li>
+            <li class="changelog-item">
+              <div class="changelog-tag">Update</div>
+              <div class="changelog-entry-title">Footer</div>
+              <p class="changelog-entry-detail">
+                The footer background is now transparent so it blends with the page instead of a solid bar.
+              </p>
+            </li>
+            <li class="changelog-item">
+              <div class="changelog-tag">New</div>
+              <div class="changelog-entry-title">Changelog page</div>
+              <p class="changelog-entry-detail">
+                You can now see what’s new at a glance. A <strong>Changelog</strong> link was added in the footer (bottom left of the app). This page lists past updates so you can track new features and bug fixes over time.
+              </p>
+            </li>
+            <li class="changelog-item">
+              <div class="changelog-tag">Fix</div>
+              <div class="changelog-entry-title">Mobile layout fix</div>
+              <p class="changelog-entry-detail">
+                On phones and small screens, the particle background was covering the main content. The particles layer is now behind the UI (z-index adjusted), so the header, preview area, and controls stay visible and usable instead of being hidden behind the effect.
+              </p>
+            </li>
+            <li class="changelog-item">
+              <div class="changelog-tag">Fix</div>
+              <div class="changelog-entry-title">Trace a photo on mobile</div>
+              <p class="changelog-entry-detail">
+                The <strong>“Or trace a photo (beta)”</strong> option was getting cut off on mobile. We removed the negative margin that caused clipping and added a subtle text shadow so the label stays readable on both dark and light backgrounds.
+              </p>
+            </li>
+            <li class="changelog-item">
+              <div class="changelog-tag">Fix</div>
+              <div class="changelog-entry-title">Logo click after photo upload</div>
+              <p class="changelog-entry-detail">
+                If you uploaded a photo for tracing and then clicked the logo to go back, the app didn’t fully reset—SVG upload could stay disabled. Clicking the logo now properly clears the photo-trace state so you can upload a new SVG or start over without refreshing.
+              </p>
+            </li>
+            <li class="changelog-item">
+              <div class="changelog-tag">Fix</div>
+              <div class="changelog-entry-title">Analyzing photo box removed</div>
+              <p class="changelog-entry-detail">
+                While your photo was being analyzed, a dark box appeared behind the “Analyzing photo…” message. We fixed this by not showing the preview skeleton during analysis and hiding the empty-state content during loading, so the overlay stays clean and minimal.
+              </p>
+            </li>
+            <li class="changelog-item">
+              <div class="changelog-tag">Improvement</div>
+              <div class="changelog-entry-title">Loading overlay</div>
+              <p class="changelog-entry-detail">
+                Loading states (e.g. “Analyzing photo…”) now use only text on a transparent overlay—no box, spinner, or heavy UI. This keeps the focus on your content and reduces visual noise while something is processing.
+              </p>
+            </li>
+            <li class="changelog-item">
+              <div class="changelog-tag">Feature</div>
+              <div class="changelog-entry-title">Fullscreen</div>
+              <p class="changelog-entry-detail">
+                The fullscreen button now fullscreens only the animation preview panel. The header and controls are hidden in fullscreen so you get a clean, distraction-free view of your signature animation—ideal for presentations or quick previews.
+              </p>
+            </li>
+            <li class="changelog-item">
+              <div class="changelog-tag">Polish</div>
+              <div class="changelog-entry-title">UI polish</div>
+              <p class="changelog-entry-detail">
+                Path/flow items now use a neutral grey only, with strokes removed from arrow boxes for a cleaner look. Primary grey was updated across the app for consistency. The showcase video has 12px rounded corners and a light drop shadow in light mode for better depth and alignment with the rest of the UI.
+              </p>
+            </li>
+            <li class="changelog-item">
+              <div class="changelog-tag">Update</div>
+              <div class="changelog-entry-title">Footer</div>
+              <p class="changelog-entry-detail">
+                The footer contact link was updated to <strong>“Say hello!”</strong> with a mailto link so you can reach out directly from the app. We’re happy to hear feedback and suggestions.
+              </p>
+            </li>
+          </ul>
+        </section>
+      </div>
+    </div>
+    <script>
+      (function() {
+        var stored = localStorage.getItem("svg-stroke-theme");
+        if (stored === "light") document.body.classList.add("light");
+      })();
+    </script>
+  </body>
+</html>

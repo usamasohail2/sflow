@@ -26,6 +26,9 @@ const exportButton = document.getElementById("exportButton");
 const exportModal = document.getElementById("exportModal");
 const closeExportModalButton = document.getElementById("closeExportModal");
 const exportButtonModal = document.getElementById("exportButtonModal");
+const howItWorksModal = document.getElementById("howItWorksModal");
+const openHowItWorksButton = document.getElementById("openHowItWorks");
+const closeHowItWorksModalButton = document.getElementById("closeHowItWorksModal");
 const exportFormatInput = document.getElementById("exportFormat");
 const exportStatus = document.getElementById("exportStatus");
 const exportResolutionText = document.getElementById("exportResolutionText");
@@ -3604,7 +3607,7 @@ fileInput.addEventListener("change", (event) => {
 
 previewEmpty.addEventListener("click", (e) => {
   // Don't trigger file input when interacting with empty-state controls.
-  if (e.target.closest("#toggleTheme")) {
+  if (e.target.closest("#toggleTheme") || e.target.closest("#openHowItWorks")) {
     return;
   }
   fileInput.click();
@@ -3888,6 +3891,37 @@ const openExportModal = () => {
 };
 
 exportButton.addEventListener("click", openExportModal);
+
+const openHowItWorksModal = () => {
+  if (!howItWorksModal) return;
+  howItWorksModal.classList.remove("hidden");
+  requestAnimationFrame(() => {
+    howItWorksModal.classList.add("is-open");
+  });
+};
+
+const closeHowItWorksModal = () => {
+  if (!howItWorksModal) return;
+  howItWorksModal.classList.remove("is-open");
+  setTimeout(() => {
+    howItWorksModal.classList.add("hidden");
+  }, 240);
+};
+
+if (openHowItWorksButton) {
+  openHowItWorksButton.addEventListener("click", openHowItWorksModal);
+}
+if (closeHowItWorksModalButton) {
+  closeHowItWorksModalButton.addEventListener("click", closeHowItWorksModal);
+}
+if (howItWorksModal) {
+  howItWorksModal.addEventListener("click", (event) => {
+    const target = event.target;
+    if (target && target.getAttribute("data-close-modal") === "true") {
+      closeHowItWorksModal();
+    }
+  });
+}
 
 const closeExportModal = () => {
   exportModal.classList.remove("is-open");
