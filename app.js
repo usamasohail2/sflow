@@ -1,3 +1,10 @@
+/**
+ * Signature Flow – main application script.
+ * Handles: view switching (landing vs editor), SVG/photo upload, stroke animation (CSS keyframes),
+ * export (SVG/MP4/GIF), photo trace, and UI controls. View switch: showLanding() / showEditor().
+ * SVG loaded path: file or photo trace -> handleSvgText -> buildPreview() -> showEditor().
+ * Clear path: logo click or clear -> clearPreview() -> showLanding().
+ */
 const fileInput = document.getElementById("svgFile");
 const photoInput = document.getElementById("photoFile");
 const svgFileName = document.getElementById("svgFileName");
@@ -17,7 +24,13 @@ const openTraceModalAltButton = document.getElementById("openTraceModalAlt");
 const photoTraceModal = document.getElementById("photoTraceModal");
 const closeTraceModalButton = document.getElementById("closeTraceModal");
 const removePhotoTraceButton = document.getElementById("removePhotoTrace");
-const previewEmpty = document.getElementById("previewEmpty");
+const viewLanding = document.getElementById("view-landing");
+const viewEditor = document.getElementById("view-editor");
+const uploadSvgPrimary = document.getElementById("uploadSvgPrimary");
+const editorLogoLink = document.querySelector(".editor-logo-link");
+const landingLogo = document.querySelector(".landing-logo");
+/** Landing view container; used for loading overlay and visibility. No #previewEmpty in new layout. */
+const previewEmpty = viewLanding;
 const svgPreview = document.getElementById("svgPreview");
 const previewShowcaseStage = document.getElementById("previewShowcaseStage");
 const pathsList = document.getElementById("pathsList");
@@ -30,6 +43,7 @@ const howItWorksModal = document.getElementById("howItWorksModal");
 const openHowItWorksButton = document.getElementById("openHowItWorks");
 const closeHowItWorksModalButton = document.getElementById("closeHowItWorksModal");
 const exportFormatInput = document.getElementById("exportFormat");
+const exportBackgroundInput = document.getElementById("exportBackground");
 const exportStatus = document.getElementById("exportStatus");
 const exportResolutionText = document.getElementById("exportResolutionText");
 const toggleThemeButton = document.getElementById("toggleTheme");
@@ -51,6 +65,14 @@ const fpsInput = document.getElementById("fps");
 const scaleInput = document.getElementById("scale");
 const scaleButtons = document.querySelectorAll(".scale-button");
 
+const CONFIG = {
+  defaultDuration: 3.5,
+  defaultLoopDelay: 0.8,
+  defaultEasing: "ease-in-out",
+  defaultStrokeScale: 1,
+  defaultCornerBoost: 6,
+};
+
 const state = {
   baseSvgText: "",
   metadata: [],
@@ -58,6 +80,14 @@ const state = {
   lastPhotoTraceSvg: "",
   originalColors: new Map(), // Store original fill colors by element index
 };
+
+function debounce(fn, ms) {
+  let t;
+  return function (...args) {
+    clearTimeout(t);
+    t = setTimeout(() => fn.apply(this, args), ms);
+  };
+}
 
 const previewShowcaseSources = ["example4.mp4", "example1.svg", "example3.svg", "example2.svg"];
 let previewShowcaseIndex = 0;
@@ -118,7 +148,9 @@ function ensureFfmpegScript() {
 
 function applyTheme(theme) {
   const isDark = theme === "dark";
+  document.documentElement.classList.remove("dark", "light");
   document.body.classList.remove("dark", "light");
+  document.documentElement.classList.add(isDark ? "dark" : "light");
   document.body.classList.add(isDark ? "dark" : "light");
   toggleThemeButton.setAttribute("aria-label", isDark ? "Switch to light mode" : "Switch to dark mode");
   localStorage.setItem("svg-stroke-theme", isDark ? "dark" : "light");
@@ -253,6 +285,11 @@ function readMp4Settings() {
   };
 }
 
+function readExportBackground() {
+  const v = exportBackgroundInput && exportBackgroundInput.value;
+  return v === "black" || v === "white" || v === "transparent" ? v : "white";
+}
+
 function readPhotoTraceSettings() {
   return {
     strokeWidth: Math.max(0.5, parseFloat(photoStrokeWidthInput.value) || 2),
@@ -289,7 +326,7 @@ function showLoading(element, message = "") {
   element.appendChild(overlay);
   
   // Force no box when showing "Analyzing photo.." on preview empty (inline overrides any CSS)
-  const isAnalyzingOnPreview = element.id === "previewEmpty" && (message === "Analyzing photo.." || message === "Analyzing photo...");
+  const isAnalyzingOnPreview = element.id === "view-landing" && (message === "Analyzing photo.." || message === "Analyzing photo...");
   if (isAnalyzingOnPreview) {
     overlay.style.cssText = "background: transparent !important; box-shadow: none !important; border: none !important;";
     messageEl.style.cssText = "background: none !important; box-shadow: none !important; border: none !important; padding: 0 !important; margin: 0 !important;";
@@ -456,6 +493,28 @@ function setPanelControlsDisabled(disabled) {
   console.log(`Panel controls ${disabled ? 'disabled' : 'enabled'}, found ${controls.length} controls`);
 }
 
+function showLanding() {
+  if (viewEditor) {
+    viewEditor.setAttribute("hidden", "");
+    viewEditor.setAttribute("aria-hidden", "true");
+  }
+  if (viewLanding) {
+    viewLanding.removeAttribute("hidden");
+    viewLanding.setAttribute("aria-hidden", "false");
+  }
+}
+
+function showEditor() {
+  if (viewLanding) {
+    viewLanding.setAttribute("hidden", "");
+    viewLanding.setAttribute("aria-hidden", "true");
+  }
+  if (viewEditor) {
+    viewEditor.removeAttribute("hidden");
+    viewEditor.setAttribute("aria-hidden", "false");
+  }
+}
+
 function clearPreview() {
   // Re-enable SVG file input and clear photo trace state so logo click → home allows uploading SVG again
   resetPhotoTrace();
@@ -464,18 +523,12 @@ function clearPreview() {
     photoTracePaneContent.innerHTML = "";
     photoTracePaneContent.classList.remove("is-visible");
   }
-  previewEmpty.style.display = "grid";
-  
+  showLanding();
+
   // Clear uploaded file state
   state.baseSvgText = "";
   state.metadata = [];
-  
-  // Reset header animation state
-  if (appHeader) {
-    appHeader.classList.remove("animating-in");
-    appHeader.classList.add("hidden");
-  }
-  
+
   exportButton.disabled = true;
   if (exportButtonModal) exportButtonModal.disabled = true;
   redoTraceButton.disabled = !state.lastPhotoDataUrl;
@@ -493,7 +546,7 @@ function clearPreview() {
   }
   startPreviewShowcase();
   if (fullscreenButton) fullscreenButton.classList.add("hidden");
-  
+
   // Reset controls panel animation state
   const panel = document.querySelector(".panel.controls-bar");
   if (panel) {
@@ -591,22 +644,21 @@ function runPhotoTrace(dataUrl) {
     showLoading(photoTraceSection, "Vectorizing photo...");
   }
   
-  // Show loading on preview empty if it's still visible
-  const previewEmpty = document.getElementById("previewEmpty");
-  if (previewEmpty && previewEmpty.style.display !== "none") {
-    showLoading(previewEmpty, "Analyzing photo..");
+  // Show loading on landing view if it's still visible
+  if (viewLanding && !viewLanding.hidden) {
+    showLoading(viewLanding, "Analyzing photo..");
   }
-  
+
   // Show skeleton for photo trace controls
   const photoTraceControls = document.querySelector(".photo-trace-controls");
   if (photoTraceControls) {
     showSkeleton(photoTraceControls, "default");
   }
-  
+
   // Show skeleton in paths list only – do NOT show skeleton on svgPreview when
-  // "Analyzing photo.." is on previewEmpty (it would show through as a dark box)
+  // "Analyzing photo.." is on landing (it would show through as a dark box)
   const svgPreview = document.getElementById("svgPreview");
-  if (svgPreview && (!previewEmpty || previewEmpty.style.display === "none")) {
+  if (svgPreview && (!viewLanding || viewLanding.hidden)) {
     showSkeleton(svgPreview, "preview");
   }
   if (pathsList) {
@@ -631,9 +683,8 @@ function runPhotoTrace(dataUrl) {
       if (photoTraceSection) {
         hideLoading(photoTraceSection);
       }
-      const previewEmpty = document.getElementById("previewEmpty");
-      if (previewEmpty) {
-        hideLoading(previewEmpty);
+      if (viewLanding) {
+        hideLoading(viewLanding);
       }
       if (photoTraceControls) {
         hideSkeleton(photoTraceControls);
@@ -657,9 +708,8 @@ function runPhotoTrace(dataUrl) {
       if (photoTraceSection) {
         hideLoading(photoTraceSection);
       }
-      const previewEmpty = document.getElementById("previewEmpty");
-      if (previewEmpty) {
-        hideLoading(previewEmpty);
+      if (viewLanding) {
+        hideLoading(viewLanding);
       }
       if (photoTraceControls) {
         hideSkeleton(photoTraceControls);
@@ -2368,27 +2418,8 @@ function applyAnimation() {
 function buildPreview(svgElement) {
   svgPreview.innerHTML = "";
   svgPreview.appendChild(svgElement);
-  previewEmpty.style.display = "none";
-  
-  // Animate header in
-  if (appHeader) {
-    // Remove hidden class first to make element visible
-    appHeader.classList.remove("hidden");
-    // Use double requestAnimationFrame to ensure display change is applied
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        // Force reflow to ensure styles are computed
-        void appHeader.offsetHeight;
-        // Add animation class - this triggers the animation
-        appHeader.classList.add("animating-in");
-        // Remove animation class after animation completes
-        setTimeout(() => {
-          appHeader.classList.remove("animating-in");
-        }, 500);
-      });
-    });
-  }
-  
+  showEditor();
+
   exportButton.disabled = false;
   if (exportButtonModal) exportButtonModal.disabled = false;
   uploadSvgButton.classList.remove("hidden");
@@ -3182,6 +3213,9 @@ function startPreviewShowcase() {
   if (!previewShowcaseStage || previewShowcaseActive) {
     return;
   }
+  if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    return;
+  }
   if (previewShowcaseTimer) {
     clearTimeout(previewShowcaseTimer);
     previewShowcaseTimer = null;
@@ -3331,6 +3365,7 @@ async function exportMp4() {
       exportLoadingContainer.style.display = "none";
     }
     
+    const exportBg = readExportBackground();
     setStatus(`Rendering ${totalFrames} frames...`);
     for (let frame = 0; frame < totalFrames; frame += 1) {
       const time = frame / mp4Settings.fps;
@@ -3338,7 +3373,12 @@ async function exportMp4() {
 
       const serialized = new XMLSerializer().serializeToString(svgElement);
       const image = await loadSvgImage(serialized);
-      context.clearRect(0, 0, renderWidth, renderHeight);
+      if (exportBg === "transparent") {
+        context.clearRect(0, 0, renderWidth, renderHeight);
+      } else {
+        context.fillStyle = exportBg === "black" ? "#000000" : "#ffffff";
+        context.fillRect(0, 0, renderWidth, renderHeight);
+      }
       context.drawImage(image, 0, 0, renderWidth, renderHeight);
 
       const blob = await new Promise((resolve) =>
@@ -3476,6 +3516,7 @@ async function exportGif() {
       exportLoadingContainer.style.display = "none";
     }
     
+    const exportBg = readExportBackground();
     setStatus(`Rendering ${totalFrames} frames...`);
     for (let frame = 0; frame < totalFrames; frame += 1) {
       const time = frame / mp4Settings.fps;
@@ -3483,7 +3524,12 @@ async function exportGif() {
 
       const serialized = new XMLSerializer().serializeToString(svgElement);
       const image = await loadSvgImage(serialized);
-      context.clearRect(0, 0, renderWidth, renderHeight);
+      if (exportBg === "transparent") {
+        context.clearRect(0, 0, renderWidth, renderHeight);
+      } else {
+        context.fillStyle = exportBg === "black" ? "#000000" : "#ffffff";
+        context.fillRect(0, 0, renderWidth, renderHeight);
+      }
       context.drawImage(image, 0, 0, renderWidth, renderHeight);
 
       const blob = await new Promise((resolve) =>
@@ -3549,10 +3595,9 @@ fileInput.addEventListener("change", (event) => {
   resetPhotoTrace();
   updateFileLabel(fileInput, svgFileName);
   
-  // Show loading overlay on preview pane
-  const previewPane = document.querySelector(".preview-pane--main");
-  if (previewPane) {
-    showLoading(previewPane, "Loading SVG...");
+  // Show loading overlay when on landing
+  if (viewLanding && !viewLanding.hidden) {
+    showLoading(viewLanding, "Loading SVG...");
   }
   
   // Show skeleton in preview canvas
@@ -3579,8 +3624,8 @@ fileInput.addEventListener("change", (event) => {
     handleSvgText(sanitized);
     
     // Hide loading states
-    if (previewPane) {
-      hideLoading(previewPane);
+    if (viewLanding) {
+      hideLoading(viewLanding);
     }
     if (svgPreview) {
       hideSkeleton(svgPreview);
@@ -3591,8 +3636,8 @@ fileInput.addEventListener("change", (event) => {
   };
   reader.onerror = () => {
     // Hide loading states on error
-    if (previewPane) {
-      hideLoading(previewPane);
+    if (viewLanding) {
+      hideLoading(viewLanding);
     }
     if (svgPreview) {
       hideSkeleton(svgPreview);
@@ -3605,13 +3650,11 @@ fileInput.addEventListener("change", (event) => {
   reader.readAsText(file);
 });
 
-previewEmpty.addEventListener("click", (e) => {
-  // Don't trigger file input when interacting with empty-state controls.
-  if (e.target.closest("#toggleTheme") || e.target.closest("#openHowItWorks")) {
-    return;
-  }
-  fileInput.click();
-});
+if (uploadSvgPrimary) {
+  uploadSvgPrimary.addEventListener("click", () => {
+    fileInput.click();
+  });
+}
 
 svgPreview.addEventListener("click", () => {
   if (state.baseSvgText) {
@@ -3710,7 +3753,7 @@ if (fullscreenButton) {
       });
       return;
     }
-    const pane = document.querySelector(".preview-pane.preview-pane--main");
+    const pane = document.querySelector(".editor-preview") || document.querySelector(".preview-pane.preview-pane--main");
     if (!pane) return;
     requestFullscreen(pane).then(updateFullscreenButtonState).catch((err) => {
       console.error("Enter fullscreen failed:", err);
@@ -3762,9 +3805,8 @@ photoInput.addEventListener("change", (event) => {
   }
   
   // Show loading on preview empty area
-  const previewEmpty = document.getElementById("previewEmpty");
-  if (previewEmpty && previewEmpty.style.display !== "none") {
-    showLoading(previewEmpty, "Loading photo...");
+  if (viewLanding && !viewLanding.hidden) {
+    showLoading(viewLanding, "Loading photo...");
   }
   
   const reader = new FileReader();
@@ -3778,8 +3820,8 @@ photoInput.addEventListener("change", (event) => {
     }
     
     // Hide loading on preview empty (runPhotoTrace will handle its own loading)
-    if (previewEmpty) {
-      hideLoading(previewEmpty);
+    if (viewLanding) {
+      hideLoading(viewLanding);
     }
 
     runPhotoTrace(reader.result);
@@ -3790,8 +3832,8 @@ photoInput.addEventListener("change", (event) => {
       hideButtonLoading(photoFileButton);
     }
     // Hide loading on preview empty on error
-    if (previewEmpty) {
-      hideLoading(previewEmpty);
+    if (viewLanding) {
+      hideLoading(viewLanding);
     }
     setStatus("Photo import failed: could not read file.");
   };
@@ -3887,6 +3929,7 @@ const openExportModal = () => {
   requestAnimationFrame(() => {
     exportModal.classList.add("is-open");
     updateExportResolution();
+    if (typeof updateExportBackgroundForFormat === "function") updateExportBackgroundForFormat();
   });
 };
 
@@ -3958,11 +4001,63 @@ if (exportButtonModal) {
     }
   });
 }
+
+// Wire export modal format buttons so MP4/GIF are actually selected
+const exportFormatButtons = exportModal.querySelectorAll(".export-format-button");
+exportFormatButtons.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const value = btn.dataset.value;
+    if (!value) return;
+    if (exportFormatInput) exportFormatInput.value = value;
+    exportFormatButtons.forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    if (value === "mp4" || value === "gif") {
+      updateExportResolution();
+    } else if (exportResolutionText) {
+      exportResolutionText.textContent = "N/A (Animated SVG)";
+    }
+    updateExportBackgroundForFormat();
+  });
+});
+
+// Wire export modal background buttons; disable Transparent when MP4 is selected
+const exportBackgroundButtons = exportModal.querySelectorAll(".export-background-button");
+const exportTransparentBtn = Array.from(exportBackgroundButtons).find((b) => b.dataset.value === "transparent");
+
+function updateExportBackgroundForFormat() {
+  const format = exportFormatInput && exportFormatInput.value;
+  const isMp4 = format === "mp4";
+  if (exportTransparentBtn) {
+    exportTransparentBtn.disabled = isMp4;
+    exportTransparentBtn.setAttribute("aria-disabled", isMp4 ? "true" : "false");
+    if (isMp4 && exportBackgroundInput && exportBackgroundInput.value === "transparent") {
+      exportBackgroundInput.value = "white";
+      exportBackgroundButtons.forEach((b) => {
+        b.classList.toggle("active", b.dataset.value === "white");
+      });
+    }
+  }
+}
+
+if (exportBackgroundInput) {
+  exportBackgroundButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const value = btn.dataset.value;
+      if (value !== "black" && value !== "white" && value !== "transparent") return;
+      exportBackgroundInput.value = value;
+      exportBackgroundButtons.forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+    });
+  });
+}
+
 toggleThemeButton.addEventListener("click", () => {
   const isDark = document.body.classList.contains("dark");
   applyTheme(isDark ? "light" : "dark");
 });
 
+const applyAnimationDebounced = debounce(applyAnimation, 80);
 [
   durationInput,
   sequentialLoopInput,
@@ -3971,7 +4066,7 @@ toggleThemeButton.addEventListener("click", () => {
   cornerBoostInput,
 ].forEach((input) => {
   if (input) {
-    input.addEventListener("input", applyAnimation);
+    input.addEventListener("input", applyAnimationDebounced);
   }
 });
 
@@ -4321,8 +4416,6 @@ applyTheme(savedTheme ? savedTheme : systemPrefersDark ? "dark" : "light");
 // Logo click handler - return to home screen
 const appLogo = document.querySelector(".app-logo");
 const logoSection = document.querySelector(".header-logo-section");
-const previewEmptyLogo = document.querySelector(".preview-empty-logo");
-
 if (appLogo || logoSection) {
   const clickableElement = logoSection || appLogo;
   clickableElement.style.cursor = "pointer";
@@ -4331,14 +4424,14 @@ if (appLogo || logoSection) {
     clearPreview();
   });
 }
-
-// Home screen logo click handler
-if (previewEmptyLogo) {
-  previewEmptyLogo.style.cursor = "pointer";
-  previewEmptyLogo.addEventListener("click", (e) => {
+if (editorLogoLink) {
+  editorLogoLink.addEventListener("click", (e) => {
     e.preventDefault();
     clearPreview();
   });
+}
+if (landingLogo) {
+  landingLogo.addEventListener("click", (e) => e.preventDefault());
 }
 
 // Enable video playback after user interaction
@@ -4437,9 +4530,9 @@ if (sequentialLoopButton && sequentialLoopInput) {
 if (exportButtonModal) exportButtonModal.disabled = true;
 
 // Hide header initially when no SVG is uploaded
-if (appHeader && previewEmpty && previewEmpty.style.display !== "none") {
-  appHeader.classList.add("hidden");
-}
+// Landing is visible by default (view-editor has [hidden] in HTML)
+if (viewLanding) viewLanding.removeAttribute("hidden");
+if (viewEditor) viewEditor.setAttribute("hidden", "");
 
 // Create space particles with zoom effect
 if (particlesBg) {

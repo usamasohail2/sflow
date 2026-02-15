@@ -16,8 +16,8 @@ html {
   background: #0b0b0b;
 }
 
-body.light html {
-  background: #f8fafc;
+html.light {
+  background: #ffffff;
 }
 
 body {
@@ -39,6 +39,9 @@ body.dark {
 
 body.light {
   color: #111827;
+  background-color: #ffffff;
+  justify-content: flex-end;
+  align-items: center;
 }
 
 .particles-background {
@@ -190,6 +193,441 @@ body.light .app-header {
   overflow: hidden;
   height: 100vh;
   max-height: 100vh;
+}
+
+/* View containers: only one visible at a time */
+.view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  width: 100%;
+}
+
+.view[hidden] {
+  display: none !important;
+}
+
+/* ========== Landing view (mobile-first) ========== */
+.view--landing {
+  padding: 0;
+}
+
+.landing-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 10px 12px 32px;
+  flex-shrink: 0;
+  min-height: 44px;
+  border-bottom: 1px solid #2a2a2a;
+  background: #0b0b0b;
+}
+
+body.light .landing-header {
+  border-bottom-color: #e5e7eb;
+  background: #ffffff;
+}
+
+.landing-logo {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 4px 0;
+}
+
+.landing-logo img {
+  height: 22px;
+  width: auto;
+  filter: brightness(0) saturate(100%) invert(100%);
+}
+
+body.light .landing-logo img {
+  filter: brightness(0) saturate(100%);
+}
+
+.theme-toggle {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 10px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.landing-hero {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 0 0;
+  gap: 20px;
+  min-height: 0;
+}
+
+.landing-showcase {
+  width: 100%;
+  max-width: 320px;
+  min-height: 200px;
+  height: 200px;
+  flex-shrink: 0;
+  overflow: hidden;
+  position: relative;
+  z-index: 0;
+  isolation: isolate;
+}
+
+/* When showing SVG, allow full animation to be visible (no clipping) */
+.landing-showcase:has(.preview-showcase-stage svg) {
+  overflow: visible;
+  padding-bottom: 24px;
+}
+
+/* When showing video, allow overflow so drop shadow isn't clipped */
+.landing-showcase:has(.preview-showcase-stage video) {
+  overflow: visible;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: 12px;
+  padding-right: 12px;
+  box-sizing: border-box;
+}
+
+/* When showing SVG, stage stays contained so layout (button position) stays fixed */
+
+/* Strictly contain stage and its content; allow overflow when video (shadow) or SVG so nothing is clipped */
+.landing-showcase .preview-showcase-stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+}
+
+.landing-showcase:has(.preview-showcase-stage svg) .preview-showcase-stage,
+.landing-showcase:has(.preview-showcase-stage video) .preview-showcase-stage {
+  overflow: visible;
+}
+
+/* Center the SVG animation in the landing showcase; video keeps flex-end to reduce gap below */
+.landing-showcase:has(.preview-showcase-stage svg) .preview-showcase-stage {
+  justify-content: center;
+  align-items: center;
+}
+
+.landing-showcase .preview-showcase-stage svg,
+.landing-showcase .preview-showcase-stage video {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  overflow: visible;
+}
+
+/* Bigger signature: scale up from center; overflow visible so animation isn't clipped */
+.landing-showcase .preview-showcase-stage svg {
+  transform: scale(1.85);
+  transform-origin: center center;
+}
+
+.landing-showcase .preview-showcase-stage video {
+  transform: none !important;
+  margin-bottom: 0;
+}
+
+/* Mobile: bigger showcase; SVG can overflow to avoid clipping */
+@media (max-width: 767px) {
+  .landing-showcase {
+    max-width: min(100%, 360px);
+    min-height: 275px;
+    height: 275px;
+  }
+  .landing-showcase:has(.preview-showcase-stage svg) {
+    padding-bottom: 24px;
+  }
+  .landing-showcase .preview-showcase-stage svg {
+    transform: scale(1);
+    transform-origin: center center;
+  }
+  .landing-showcase .preview-showcase-stage video {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: contain !important;
+  }
+}
+
+/* Keep theme toggle in header, not centered on page */
+.landing-header #toggleTheme {
+  position: static;
+  left: auto;
+  top: auto;
+  transform: none;
+}
+
+.landing-cta-row,
+.landing-copy {
+  position: relative;
+  z-index: 1;
+}
+
+/* Trace button in landing CTA row must stay in flow (no absolute positioning) */
+.landing-cta-row #photoTraceBottomButton {
+  position: static !important;
+  left: auto;
+  transform: none;
+  margin-top: 0;
+  margin-bottom: 0 !important;
+  order: unset;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-showcase .preview-showcase-stage,
+  .landing-showcase video {
+    animation: none;
+  }
+  .view--landing .landing-showcase video {
+    transform: none !important;
+  }
+}
+
+.landing-showcase .preview-showcase-stage {
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  max-height: 100%;
+}
+
+.landing-cta-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.landing-cta-row .landing-cta-primary,
+.landing-cta-row .landing-cta-secondary {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.landing-cta-primary {
+  min-height: 44px;
+  min-width: 180px;
+  padding: 12px 32px;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: inherit;
+  color: #0b0b0b;
+  background: #ffffff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: opacity 0.2s ease, transform 0.1s ease;
+}
+
+.landing-cta-primary:hover {
+  opacity: 0.9;
+}
+
+.landing-cta-primary:active {
+  transform: scale(0.98);
+}
+
+body.light .landing-cta-primary {
+  color: #ffffff;
+  background: #000000;
+}
+
+.landing-copy {
+  margin: 0;
+  margin-top: 20px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #999999;
+  text-align: center;
+  max-width: 320px;
+}
+
+body.light .landing-copy {
+  color: #6b7280;
+}
+
+.landing-link-inline {
+  display: inline;
+  margin: 0;
+  margin-top: 30px;
+  padding: 0;
+  font: inherit;
+  font-size: inherit;
+  color: rgba(107, 107, 107, 1);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.landing-link-inline:hover {
+  opacity: 0.8;
+}
+
+.landing-cta-secondary {
+  min-height: 44px;
+  padding: 10px 20px;
+  font-size: 12px;
+  font-family: inherit;
+  color: #999999;
+  background: transparent;
+  border: 1px solid #3a3a3a;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
+}
+
+.landing-cta-secondary:hover {
+  color: #e5e7eb;
+  border-color: #555555;
+}
+
+body.light .landing-cta-secondary {
+  color: #000000;
+  border-color: #000000;
+}
+
+body.light .landing-cta-secondary:hover {
+  color: #333333;
+  border-color: #333333;
+}
+
+.landing-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 16px 20px;
+  flex-shrink: 0;
+  min-height: 44px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+body.light .landing-footer {
+  border-top-color: rgba(0, 0, 0, 0.08);
+}
+
+.landing-footer-link {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #999999;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.landing-footer-link:hover {
+  color: #e5e7eb;
+}
+
+body.light .landing-footer-link {
+  color: #64748b;
+}
+
+body.light .landing-footer-link:hover {
+  color: #0f172a;
+}
+
+@media (min-width: 768px) {
+  .landing-header {
+    padding: 12px 24px 12px 32px;
+  }
+  .landing-hero {
+    padding: 32px 24px 48px;
+    gap: 28px;
+  }
+  .landing-showcase {
+    max-width: 400px;
+    min-height: 400px;
+    height: 400px;
+    overflow: hidden;
+    margin-bottom: 0;
+  }
+  .landing-showcase:has(.preview-showcase-stage svg) {
+    overflow: visible;
+    padding-bottom: 32px;
+  }
+  .landing-showcase:has(.preview-showcase-stage video) {
+    padding-top: 0;
+    padding-bottom: 0;
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .landing-copy {
+    font-size: 13px;
+    max-width: 420px;
+  }
+  .landing-footer {
+    justify-content: space-between;
+    padding: 16px 32px;
+  }
+}
+
+/* ========== Editor view ========== */
+.view--editor {
+  display: flex;
+  flex-direction: column;
+}
+
+.view--editor .app-header {
+  flex-shrink: 0;
+}
+
+.editor-logo-link {
+  display: flex;
+  align-items: center;
+}
+
+.editor-preview {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  padding-bottom: 220px;
+}
+
+.view--editor .preview-canvas {
+  flex: 1;
+  min-height: 0;
+}
+
+.view--editor .preview-controls {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  right: 16px;
+  z-index: 10;
+}
+
+.editor-controls {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  max-height: 50vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: none;
+}
+
+.editor-controls.panel.controls-bar {
+  flex: none;
 }
 
 .panel {
@@ -746,13 +1184,15 @@ body.light .easing-curve-close {
   bottom: calc(100% + 4px);
 }
 
-.export-format-buttons {
+.export-format-buttons,
+.export-background-buttons {
   display: flex;
   gap: 8px;
   width: 100%;
 }
 
-.export-format-button {
+.export-format-button,
+.export-background-button {
   flex: 1;
   min-width: 0;
 }
@@ -1226,6 +1666,12 @@ body.light .primary-button:disabled {
 
 body.light .export-status {
   color: #808080;
+}
+
+.export-background-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 .export-resolution-display {
@@ -2701,7 +3147,7 @@ body.light .preview-empty-logo {
   transition: opacity 0.95s cubic-bezier(0.22, 1, 0.36, 1);
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
   flex-shrink: 0;
 }
 
@@ -2736,6 +3182,7 @@ body.light .preview-empty-logo {
   transform: scale(2.8);
   transform-origin: center center;
   border-radius: 6px;
+  margin-bottom: 48px;
 }
 
 .preview-empty-showcase {
@@ -2850,7 +3297,11 @@ body.light #photoTraceBottomButton span:hover {
 .preview-pane:fullscreen .preview-controls,
 .preview-pane--main:-webkit-full-screen .preview-controls,
 .preview-pane--main:-moz-full-screen .preview-controls,
-.preview-pane--main:-ms-fullscreen .preview-controls {
+.preview-pane--main:-ms-fullscreen .preview-controls,
+.editor-preview:fullscreen .preview-controls,
+.editor-preview:-webkit-full-screen .preview-controls,
+.editor-preview:-moz-full-screen .preview-controls,
+.editor-preview:-ms-fullscreen .preview-controls {
   opacity: 0;
   visibility: hidden;
 }
@@ -2859,7 +3310,11 @@ body.light #photoTraceBottomButton span:hover {
 .preview-pane:fullscreen:hover .preview-controls,
 .preview-pane--main:-webkit-full-screen:hover .preview-controls,
 .preview-pane--main:-moz-full-screen:hover .preview-controls,
-.preview-pane--main:-ms-fullscreen:hover .preview-controls {
+.preview-pane--main:-ms-fullscreen:hover .preview-controls,
+.editor-preview:fullscreen:hover .preview-controls,
+.editor-preview:-webkit-full-screen:hover .preview-controls,
+.editor-preview:-moz-full-screen:hover .preview-controls,
+.editor-preview:-ms-fullscreen:hover .preview-controls {
   opacity: 1;
   visibility: visible;
 }
@@ -3174,6 +3629,11 @@ body.light .app-footer-link:hover {
   /* Preview section fixes */
   .preview-canvas {
     padding: 20px 20px 80px 20px;
+  }
+
+  #uploadSvgButton,
+  #fullscreenButton {
+    display: none !important;
   }
 
   .preview-controls {
@@ -3613,23 +4073,23 @@ body.light .app-footer-link:hover {
     min-height: 44px;
   }
 
-  /* Collapsible sections */
-  .collapsible-content {
-    max-height: none !important;
-    overflow-y: auto;
-    overflow-x: hidden;
-    flex: 1;
-    min-height: 0;
+  /* Collapsible sections: keep collapse/expand working on mobile */
+  .collapsible-section:not(.expanded) .collapsible-content {
+    max-height: 0 !important;
+    overflow: hidden !important;
   }
 
   .collapsible-section.expanded .collapsible-content {
     max-height: none !important;
     min-height: 0 !important;
+    overflow-y: auto;
+    overflow-x: hidden;
+    flex: 1;
   }
 
   .collapsible-header {
     min-height: 44px;
-    padding: 12px 16px;
+    padding: 12px 0;
     touch-action: manipulation;
     flex-shrink: 0;
   }
@@ -3946,8 +4406,13 @@ body.light .app-footer-link:hover {
     padding: 8px;
   }
 
-  /* Collapsible sections */
-  .collapsible-content {
+  /* Collapsible sections: keep collapse/expand working on very small screens */
+  .collapsible-section:not(.expanded) .collapsible-content {
+    max-height: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .collapsible-section.expanded .collapsible-content {
     max-height: none !important;
     overflow-y: auto;
     overflow-x: hidden;

@@ -3,6 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-T0H8M4LZ31"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-T0H8M4LZ31');
+    </script>
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <title>Signature Flow</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -15,47 +23,63 @@
   </head>
   <body>
     <div id="particles-bg" class="particles-background"></div>
-    <header class="app-header">
-      <div class="header-logo-section">
-        <img src="logo.svg" alt="Signature Flow" class="app-logo" />
-      </div>
-      <div class="header-actions">
-        <button id="exportButton" class="easing-button" disabled>
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="7 10 12 15 17 10"></polyline>
-            <line x1="12" y1="15" x2="12" y2="3"></line>
-          </svg>
-          <span>Export</span>
-        </button>
-      </div>
-    </header>
 
-    <main class="app">
-      <input id="svgFile" type="file" accept=".svg" style="display: none;" />
-      <span id="svgFileName" style="display: none;">No file chosen</span>
-      <section class="preview">
-        <div class="preview-pane preview-pane--main">
-          <div id="previewEmpty" class="preview-empty">
-            <div class="preview-empty-header">
-              <img src="logo.svg" alt="Signature Flow" class="preview-empty-logo" />
-              <button id="toggleTheme" class="icon-button" type="button" aria-label="Toggle theme">
-                <span class="theme-icon" aria-hidden="true"></span>
-              </button>
-            </div>
-            <div class="preview-empty-content">
-              <div class="preview-empty-showcase">
-                <div id="previewShowcaseStage" class="preview-showcase-stage" role="img" aria-label="SVG example showcase"></div>
-              </div>
-              <span class="preview-empty-text">Turn your signature into an impressive animation in seconds — start by uploading your SVG.<br><button type="button" id="openHowItWorks" class="preview-empty-how-it-works-inline" title="How it works">See how it works.</button></span>
-            </div>
+    <div class="app">
+      <!-- Landing view (visible by default) -->
+      <main id="view-landing" class="view view--landing" role="main">
+        <header class="landing-header">
+          <a href="#" class="landing-logo" aria-label="Signature Flow home">
+            <img src="logo.svg" alt="Signature Flow" />
+          </a>
+          <button type="button" id="toggleTheme" class="theme-toggle icon-button" aria-label="Toggle dark or light theme">
+            <span class="theme-icon" aria-hidden="true"></span>
+          </button>
+        </header>
+
+        <section class="landing-hero" aria-label="Get started">
+          <div class="landing-showcase">
+            <div id="previewShowcaseStage" class="preview-showcase-stage" role="img" aria-label="SVG example showcase"></div>
           </div>
+          <div class="landing-cta-row">
+            <button type="button" id="photoTraceBottomButton" class="landing-cta-secondary" title="Beta">Trace a photo</button>
+            <button type="button" id="uploadSvgPrimary" class="landing-cta-primary">Upload SVG</button>
+          </div>
+          <p class="landing-copy">
+            Turn your signature into an impressive animation in seconds — start by uploading your SVG.<br>
+            <button type="button" id="openHowItWorks" class="landing-link-inline" title="Learn how it works">Learn how it works</button>
+          </p>
+        </section>
+
+        <footer class="landing-footer">
+          <a href="changelog.html" class="landing-footer-link" target="_blank" rel="noopener">Changelog</a>
+          <a href="mailto:hey@usama.fun" class="landing-footer-link">📧 Reach out</a>
+        </footer>
+      </main>
+
+      <!-- Editor view (hidden until SVG loaded) -->
+      <main id="view-editor" class="view view--editor" role="main" aria-hidden="true" hidden>
+        <header class="app-header">
+          <div class="header-logo-section">
+            <a href="#" class="editor-logo-link" aria-label="Back to start">
+              <img src="logo.svg" alt="Signature Flow" class="app-logo" />
+            </a>
+          </div>
+          <div class="header-actions">
+            <button id="exportButton" class="easing-button" disabled>
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              <span>Export</span>
+            </button>
+          </div>
+        </header>
+
+        <section class="editor-preview" aria-label="Signature preview">
           <div id="svgPreview" class="preview-canvas"></div>
           <div id="previewLoadingContainer" style="display: none;"></div>
           <div class="preview-controls">
-            <button id="photoTraceBottomButton" class="preview-control-button" type="button" title="Trace a photo (beta)">
-              <span>or trace a photo (beta)</span>
-            </button>
             <button id="uploadSvgButton" class="preview-control-button" type="button" title="Upload another SVG">
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -69,217 +93,196 @@
               <span>Fullscreen</span>
             </button>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section class="panel controls-bar is-disabled">
-        <div class="panel-content panel-content--horizontal">
-          <div class="panel-section panel-section--merged">
-            <h2>
-              <span class="section-title">Animation</span>
-            </h2>
-            <div class="panel-section-content">
-              <div class="animation-sliders">
-                <div class="control-group">
-                  <label class="control-label" for="duration">Speed<span class="range-value" data-value-for="duration" aria-hidden="true"></span></label>
-                  <input id="duration" type="range" min="0" max="5" step="0.1" value="3.5" />
+        <aside class="editor-controls panel controls-bar is-disabled" role="region" aria-label="Animation and stroke controls">
+          <div class="panel-content panel-content--horizontal">
+            <div class="panel-section panel-section--merged">
+              <h2>
+                <span class="section-title">Animation</span>
+              </h2>
+              <div class="panel-section-content">
+                <div class="animation-sliders">
+                  <div class="control-group">
+                    <label class="control-label" for="duration">Speed<span class="range-value" data-value-for="duration" aria-hidden="true"></span></label>
+                    <input id="duration" type="range" min="0" max="5" step="0.1" value="3.5" aria-valuemin="0" aria-valuemax="5" />
+                  </div>
+                  <div class="control-group">
+                    <label class="control-label" for="loopDelay">Delay before loop<span class="range-value" data-value-for="loopDelay" aria-hidden="true"></span></label>
+                    <input id="loopDelay" type="range" min="0" max="5" step="0.1" value="0.8" aria-valuemin="0" aria-valuemax="5" />
+                  </div>
                 </div>
-                <div class="control-group">
-                  <label class="control-label" for="loopDelay">Delay before loop<span class="range-value" data-value-for="loopDelay" aria-hidden="true"></span></label>
-                  <input id="loopDelay" type="range" min="0" max="5" step="0.1" value="0.8" />
-                </div>
-              </div>
-              <div class="animation-options">
-                <div class="control-group">
-                  <label class="control-label">Loop</label>
-                  <button type="button" id="sequentialLoopButton" class="sequential-loop-toggle easing-button" aria-label="Toggle loop">
-                    <span class="toggle-label">Enabled</span>
-                  </button>
-                  <input type="hidden" id="sequentialLoop" value="true" />
-                </div>
-                <div class="control-group">
-                  <label class="control-label">Easing</label>
-                  <div class="easing-dropdown">
-                    <button type="button" class="easing-dropdown-toggle easing-button" id="easingToggle" aria-haspopup="true" aria-expanded="false">
-                      <span id="easingDisplay">Ease-in-out</span>
-                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="dropdown-arrow">
-                        <polyline points="6 9 12 15 18 9"></polyline>
+                <div class="animation-options">
+                  <div class="control-group">
+                    <label class="control-label">Loop</label>
+                    <button type="button" id="sequentialLoopButton" class="sequential-loop-toggle easing-button" aria-label="Toggle loop">
+                      <span class="toggle-label">Enabled</span>
+                    </button>
+                    <input type="hidden" id="sequentialLoop" value="true" />
+                  </div>
+                  <div class="control-group">
+                    <label class="control-label">Easing</label>
+                    <div class="easing-dropdown">
+                      <button type="button" class="easing-dropdown-toggle easing-button" id="easingToggle" aria-haspopup="true" aria-expanded="false">
+                        <span id="easingDisplay">Ease-in-out</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="dropdown-arrow">
+                          <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                      </button>
+                      <div class="easing-dropdown-menu" id="easingDropdownMenu" role="menu">
+                        <button type="button" class="easing-dropdown-item easing-button active" data-value="ease-in-out" role="menuitem">Ease-in-out</button>
+                        <button type="button" class="easing-dropdown-item easing-button" data-value="ease" role="menuitem">Ease</button>
+                        <button type="button" class="easing-dropdown-item easing-button" data-value="linear" role="menuitem">Linear</button>
+                        <button type="button" class="easing-dropdown-item easing-button" data-value="ease-in" role="menuitem">Ease-in</button>
+                        <button type="button" class="easing-dropdown-item easing-button" data-value="ease-out" role="menuitem">Ease-out</button>
+                        <button type="button" class="easing-dropdown-item easing-button" data-value="cubic-bezier(0.86, 0, 0.07, 1)" role="menuitem">Ease-in-out (strong)</button>
+                        <button type="button" class="easing-dropdown-item easing-button" data-value="cubic-bezier(0.68, -0.55, 0.265, 1.55)" role="menuitem">Bounce</button>
+                        <button type="button" class="easing-dropdown-item easing-button" data-value="cubic-bezier(0.25, 0.46, 0.45, 0.94)" role="menuitem">Smooth</button>
+                        <button type="button" class="easing-dropdown-item easing-button" data-value="cubic-bezier(0.34, 1.56, 0.64, 1)" role="menuitem">Elastic</button>
+                      </div>
+                    </div>
+                    <button type="button" id="openEasingCurveEditor" class="easing-curve-trigger easing-button" aria-label="Open easing curve editor" title="Edit easing curve">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 18C8 18 8 6 13 6s5 12 8 12"></path>
                       </svg>
                     </button>
-                    <div class="easing-dropdown-menu" id="easingDropdownMenu" role="menu">
-                      <button type="button" class="easing-dropdown-item easing-button active" data-value="ease-in-out" role="menuitem">Ease-in-out</button>
-                      <button type="button" class="easing-dropdown-item easing-button" data-value="ease" role="menuitem">Ease</button>
-                      <button type="button" class="easing-dropdown-item easing-button" data-value="linear" role="menuitem">Linear</button>
-                      <button type="button" class="easing-dropdown-item easing-button" data-value="ease-in" role="menuitem">Ease-in</button>
-                      <button type="button" class="easing-dropdown-item easing-button" data-value="ease-out" role="menuitem">Ease-out</button>
-                      <button type="button" class="easing-dropdown-item easing-button" data-value="cubic-bezier(0.86, 0, 0.07, 1)" role="menuitem">Ease-in-out (strong)</button>
-                      <button type="button" class="easing-dropdown-item easing-button" data-value="cubic-bezier(0.68, -0.55, 0.265, 1.55)" role="menuitem">Bounce</button>
-                      <button type="button" class="easing-dropdown-item easing-button" data-value="cubic-bezier(0.25, 0.46, 0.45, 0.94)" role="menuitem">Smooth</button>
-                      <button type="button" class="easing-dropdown-item easing-button" data-value="cubic-bezier(0.34, 1.56, 0.64, 1)" role="menuitem">Elastic</button>
+                    <input type="hidden" id="easing" value="ease-in-out" />
+                    <div id="easingCurveEditor" class="easing-curve-editor hidden">
+                      <button type="button" id="closeEasingCurveEditor" class="easing-curve-close" aria-label="Close easing editor">x</button>
+                      <div class="easing-curve-graph-wrap">
+                        <svg id="easingCurveGraph" viewBox="0 0 120 120" aria-label="Easing curve preview">
+                          <path id="easingCurveGuide" d="M10 110 L110 10"></path>
+                          <path id="easingCurvePath" d="M10 110 C 30 110, 90 10, 110 10"></path>
+                        </svg>
+                      </div>
+                      <div class="easing-curve-controls">
+                        <label>x1 <input id="curveX1" type="range" min="0" max="1" step="0.01" value="0.42" /></label>
+                        <label>y1 <input id="curveY1" type="range" min="-2" max="2" step="0.01" value="0" /></label>
+                        <label>x2 <input id="curveX2" type="range" min="0" max="1" step="0.01" value="0.58" /></label>
+                        <label>y2 <input id="curveY2" type="range" min="-2" max="2" step="0.01" value="1" /></label>
+                      </div>
                     </div>
                   </div>
-                  <button type="button" id="openEasingCurveEditor" class="easing-curve-trigger easing-button" aria-label="Open easing curve editor" title="Edit easing curve">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M3 18C8 18 8 6 13 6s5 12 8 12"></path>
-                    </svg>
-                  </button>
-                  <input type="hidden" id="easing" value="ease-in-out" />
-                  <div id="easingCurveEditor" class="easing-curve-editor hidden">
-                    <button type="button" id="closeEasingCurveEditor" class="easing-curve-close" aria-label="Close easing editor">x</button>
-                    <div class="easing-curve-graph-wrap">
-                      <svg id="easingCurveGraph" viewBox="0 0 120 120" aria-label="Easing curve preview">
-                        <path id="easingCurveGuide" d="M10 110 L110 10"></path>
-                        <path id="easingCurvePath" d="M10 110 C 30 110, 90 10, 110 10"></path>
+                  <div class="control-group">
+                    <label class="control-label">Direction</label>
+                    <div class="direction-buttons" role="group" aria-label="Direction">
+                      <button type="button" class="direction-button easing-button active" data-value="normal">Draw</button>
+                      <button type="button" class="direction-button easing-button" data-value="reverse">Erase</button>
+                    </div>
+                    <input type="hidden" id="direction" value="normal" />
+                  </div>
+                  <div class="control-group">
+                    <label class="control-label">Fill Shape</label>
+                    <button type="button" id="fillRevealToggle" class="fill-reveal-toggle easing-button" aria-label="Toggle fill shape">
+                      <span class="toggle-label">Disabled</span>
+                    </button>
+                    <input type="hidden" id="fillReveal" value="false" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel-section">
+              <h2>
+                <span class="section-title">Stroke Style</span>
+              </h2>
+              <div class="control-group">
+                <label class="control-label" for="strokeScale">Thickness<span class="range-value" data-value-for="strokeScale" aria-hidden="true"></span></label>
+                <input id="strokeScale" type="range" min="0.1" max="3" step="0.1" value="1" aria-valuemin="0.1" aria-valuemax="3" />
+              </div>
+              <div class="control-group">
+                <label class="control-label" for="cornerBoost">Dynamic Thickness<span class="range-value" data-value-for="cornerBoost" aria-hidden="true"></span></label>
+                <input id="cornerBoost" type="range" min="0" max="20" step="0.1" value="6" aria-valuemin="0" aria-valuemax="20" />
+              </div>
+            </div>
+
+            <div class="panel-section panel-section--full collapsible-section">
+              <h2 class="collapsible-header">
+                <span class="section-title">Rearrange paths</span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="chevron-icon">
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+              </h2>
+              <div class="collapsible-content">
+                <div id="pathsList" class="paths-list empty"></div>
+              </div>
+
+              <div class="photo-trace-section">
+                <div id="photoTraceSvgContent" class="photo-trace-svg-content" aria-hidden="true"></div>
+                <h3 class="section-title">Trace Photo</h3>
+                <div class="trace-cta__text">
+                  Don't have an SVG of your signature? Try tracing it here. This is still an experimental feature.
+                </div>
+                <div class="file-input">
+                  <input id="photoFile" type="file" accept="image/*" style="display: none;" />
+                  <div class="photo-file-actions">
+                    <button type="button" class="file-button" id="photoFileButton">Choose Photo</button>
+                    <button id="removePhotoTrace" class="file-button photo-trace-remove-button hidden" type="button" title="Remove photo trace" aria-label="Remove photo trace">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="3 6 5 6 21 6"></polyline>
+                        <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"></path>
+                        <path d="M19 6l-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6"></path>
+                        <line x1="10" y1="11" x2="10" y2="17"></line>
+                        <line x1="14" y1="11" x2="14" y2="17"></line>
                       </svg>
-                    </div>
-                    <div class="easing-curve-controls">
-                      <label>x1 <input id="curveX1" type="range" min="0" max="1" step="0.01" value="0.42" /></label>
-                      <label>y1 <input id="curveY1" type="range" min="-2" max="2" step="0.01" value="0" /></label>
-                      <label>x2 <input id="curveX2" type="range" min="0" max="1" step="0.01" value="0.58" /></label>
-                      <label>y2 <input id="curveY2" type="range" min="-2" max="2" step="0.01" value="1" /></label>
-                    </div>
+                    </button>
+                  </div>
+                  <span id="photoFileName" class="file-name">No file chosen</span>
+                </div>
+                <div class="photo-trace-controls hidden">
+                  <button id="redoTrace" class="easing-button" type="button" disabled>Retrace Photo</button>
+                  <div class="control-group">
+                    <label class="control-label" for="photoStrokeWidth">Photo Stroke Width<span class="range-value" data-value-for="photoStrokeWidth" aria-hidden="true"></span></label>
+                    <input id="photoStrokeWidth" type="range" min="0.5" max="8" step="0.5" value="2" />
+                  </div>
+                  <div class="control-group">
+                    <label class="control-label" for="photoThreshold">Photo Threshold<span class="range-value" data-value-for="photoThreshold" aria-hidden="true"></span></label>
+                    <input id="photoThreshold" type="range" min="0" max="255" step="1" value="160" />
+                  </div>
+                  <label class="control-checkbox">
+                    <input id="photoInvert" type="checkbox" />
+                    Invert photo colors
+                  </label>
+                  <div class="control-group">
+                    <label class="control-label" for="photoPathOmit">Photo Path Omit (px)<span class="range-value" data-value-for="photoPathOmit" aria-hidden="true"></span></label>
+                    <input id="photoPathOmit" type="range" min="0" max="30" step="1" value="6" />
+                  </div>
+                  <div class="control-group">
+                    <label class="control-label" for="photoSimplify">Centerline Simplify (px)<span class="range-value" data-value-for="photoSimplify" aria-hidden="true"></span></label>
+                    <input id="photoSimplify" type="range" min="0" max="5" step="0.1" value="1.2" />
+                  </div>
+                  <div class="control-group">
+                    <label class="control-label" for="photoDilation">Dilation (px)<span class="range-value" data-value-for="photoDilation" aria-hidden="true"></span></label>
+                    <input id="photoDilation" type="range" min="0" max="4" step="1" value="1" />
+                  </div>
+                  <div class="control-group">
+                    <label class="control-label" for="photoGapBridge">Gap Bridge (px)<span class="range-value" data-value-for="photoGapBridge" aria-hidden="true"></span></label>
+                    <input id="photoGapBridge" type="range" min="0" max="20" step="1" value="6" />
                   </div>
                 </div>
-                <div class="control-group">
-                  <label class="control-label">Direction</label>
-                  <div class="direction-buttons" role="group" aria-label="Direction">
-                    <button type="button" class="direction-button easing-button active" data-value="normal">Draw</button>
-                    <button type="button" class="direction-button easing-button" data-value="reverse">Erase</button>
-                  </div>
-                  <input type="hidden" id="direction" value="normal" />
-                </div>
-                <div class="control-group">
-                  <label class="control-label">Fill Shape</label>
-                  <button type="button" id="fillRevealToggle" class="fill-reveal-toggle easing-button" aria-label="Toggle fill shape">
-                    <span class="toggle-label">Disabled</span>
-                  </button>
-                  <input type="hidden" id="fillReveal" value="false" />
-                </div>
+              </div>
+              <div class="assistance-link">
+                <a href="mailto:xalion.malik@gmail.com?subject=signature flow - help needed" class="assistance-link-text">Need assistance?</a>
               </div>
             </div>
           </div>
+        </aside>
+      </main>
+    </div>
 
-          <div class="panel-section">
-            <h2>
-              <span class="section-title">Stroke Style</span>
-            </h2>
-            <div class="control-group">
-              <label class="control-label" for="strokeScale">Thickness<span class="range-value" data-value-for="strokeScale" aria-hidden="true"></span></label>
-              <input id="strokeScale" type="range" min="0.1" max="3" step="0.1" value="1" />
-            </div>
-
-            <div class="control-group">
-              <label class="control-label" for="cornerBoost">Dynamic Thickness<span class="range-value" data-value-for="cornerBoost" aria-hidden="true"></span></label>
-                  <input id="cornerBoost" type="range" min="0" max="20" step="0.1" value="6" />
-            </div>
-          </div>
-
-          <div class="panel-section panel-section--full collapsible-section">
-            <h2 class="collapsible-header">
-              <span class="section-title">Rearrange paths</span>
-              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="chevron-icon">
-                <polyline points="6 9 12 15 18 9"></polyline>
-              </svg>
-            </h2>
-            <div class="collapsible-content">
-              <div id="pathsList" class="paths-list empty">
-              </div>
-            </div>
-            
-            <div class="photo-trace-section">
-              <h3 class="section-title">Trace Photo</h3>
-              <div class="trace-cta__text">
-                Don't have an SVG of your signature? Try tracing it here. This is still an experimental feature.
-              </div>
-              
-              <div class="file-input">
-                <input id="photoFile" type="file" accept="image/*" style="display: none;" />
-                <div class="photo-file-actions">
-                  <button type="button" class="file-button" id="photoFileButton">Choose Photo</button>
-                  <button
-                    id="removePhotoTrace"
-                    class="file-button photo-trace-remove-button hidden"
-                    type="button"
-                    title="Remove photo trace"
-                    aria-label="Remove photo trace"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                      <polyline points="3 6 5 6 21 6"></polyline>
-                      <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"></path>
-                      <path d="M19 6l-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6"></path>
-                      <line x1="10" y1="11" x2="10" y2="17"></line>
-                      <line x1="14" y1="11" x2="14" y2="17"></line>
-                    </svg>
-                  </button>
-                </div>
-                <span id="photoFileName" class="file-name">No file chosen</span>
-              </div>
-
-              <div class="photo-trace-controls hidden">
-                <button id="redoTrace" class="easing-button" type="button" disabled>
-                  Retrace Photo
-                </button>
-
-                <div class="control-group">
-                  <label class="control-label" for="photoStrokeWidth">Photo Stroke Width<span class="range-value" data-value-for="photoStrokeWidth" aria-hidden="true"></span></label>
-                  <input id="photoStrokeWidth" type="range" min="0.5" max="8" step="0.5" value="2" />
-                </div>
-
-                <div class="control-group">
-                  <label class="control-label" for="photoThreshold">Photo Threshold<span class="range-value" data-value-for="photoThreshold" aria-hidden="true"></span></label>
-                  <input id="photoThreshold" type="range" min="0" max="255" step="1" value="160" />
-                </div>
-
-                <label class="control-checkbox">
-                  <input id="photoInvert" type="checkbox" />
-                  Invert photo colors
-                </label>
-
-                <div class="control-group">
-                  <label class="control-label" for="photoPathOmit">Photo Path Omit (px)<span class="range-value" data-value-for="photoPathOmit" aria-hidden="true"></span></label>
-                  <input id="photoPathOmit" type="range" min="0" max="30" step="1" value="6" />
-                </div>
-
-                <div class="control-group">
-                  <label class="control-label" for="photoSimplify">Centerline Simplify (px)<span class="range-value" data-value-for="photoSimplify" aria-hidden="true"></span></label>
-                  <input id="photoSimplify" type="range" min="0" max="5" step="0.1" value="1.2" />
-                </div>
-
-                <div class="control-group">
-                  <label class="control-label" for="photoDilation">Dilation (px)<span class="range-value" data-value-for="photoDilation" aria-hidden="true"></span></label>
-                  <input id="photoDilation" type="range" min="0" max="4" step="1" value="1" />
-                </div>
-
-                <div class="control-group">
-                  <label class="control-label" for="photoGapBridge">Gap Bridge (px)<span class="range-value" data-value-for="photoGapBridge" aria-hidden="true"></span></label>
-                  <input id="photoGapBridge" type="range" min="0" max="20" step="1" value="6" />
-                </div>
-              </div>
-            </div>
-            
-            <div class="assistance-link">
-              <a href="mailto:xalion.malik@gmail.com?subject=signature flow - help needed" class="assistance-link-text">Need assistance?</a>
-            </div>
-          </div>
-        </div>
-      </section>
-    </main>
+    <input id="svgFile" type="file" accept=".svg" style="display: none;" aria-hidden="true" />
+    <span id="svgFileName" style="display: none;" aria-hidden="true">No file chosen</span>
 
     <div id="photoTraceModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="photoTraceTitle">
       <div class="modal-backdrop" data-close-modal="true"></div>
       <div class="modal-card">
         <div class="modal-header">
           <div>
-            <h2 id="photoTraceTitle">
-              Photo Trace <span class="tag">Beta</span>
-            </h2>
-            <p class="modal-subtitle">Upload a photo of your signature and we’ll trace it.</p>
+            <h2 id="photoTraceTitle">Photo Trace <span class="tag">Beta</span></h2>
+            <p class="modal-subtitle">Upload a photo of your signature and we'll trace it.</p>
           </div>
-          <button id="closeTraceModal" class="icon-button" type="button" aria-label="Close photo trace">
-            ✕
-          </button>
+          <button id="closeTraceModal" class="icon-button" type="button" aria-label="Close photo trace">✕</button>
         </div>
-
         <div class="modal-body">
           <p>Photo trace controls have been moved to the Photo Trace section in the controls panel.</p>
         </div>
@@ -294,11 +297,8 @@
             <h2 id="exportTitle">Export Animation</h2>
             <p class="modal-subtitle">Choose export format and adjust settings</p>
           </div>
-          <button id="closeExportModal" class="icon-button" type="button" aria-label="Close export">
-            ✕
-          </button>
+          <button id="closeExportModal" class="icon-button" type="button" aria-label="Close export">✕</button>
         </div>
-
         <div class="modal-body">
           <div class="control-group">
             <label class="control-label" for="fps">MP4 FPS</label>
@@ -317,7 +317,6 @@
             </div>
             <input type="hidden" id="fps" value="30" />
           </div>
-
           <div class="control-group">
             <label class="control-label">MP4 Scale</label>
             <div class="scale-buttons" role="group" aria-label="Scale options">
@@ -329,16 +328,13 @@
             </div>
             <input type="hidden" id="scale" value="1" />
           </div>
-
           <div class="control-group">
             <label class="control-label">Export Resolution</label>
             <div id="exportResolution" class="export-resolution-display">
               <span id="exportResolutionText">Calculating...</span>
             </div>
           </div>
-
           <div id="exportStatus" class="export-status" aria-live="polite"></div>
-          
           <div id="exportLoadingContainer" class="export-loading-container" style="display: none;"></div>
           <div id="exportProgressContainer" style="display: none;">
             <div class="progress-bar">
@@ -346,7 +342,6 @@
             </div>
             <div class="progress-text">0 / 0</div>
           </div>
-
           <div class="control-group">
             <label class="control-label">Format</label>
             <div class="export-format-buttons" role="group" aria-label="Export format">
@@ -356,7 +351,15 @@
             </div>
             <input type="hidden" id="exportFormat" value="svg" />
           </div>
-
+          <div class="control-group">
+            <label class="control-label">Background</label>
+            <div class="export-background-buttons" role="group" aria-label="Export background">
+              <button type="button" class="export-background-button easing-button" data-value="black">Black</button>
+              <button type="button" class="export-background-button easing-button active" data-value="white">White</button>
+              <button type="button" class="export-background-button easing-button" data-value="transparent">Transparent</button>
+            </div>
+            <input type="hidden" id="exportBackground" value="white" />
+          </div>
           <div style="display: flex; gap: 8px; margin-top: 12px;">
             <button id="exportButtonModal" class="easing-button" type="button">
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -378,9 +381,7 @@
           <div>
             <h2 id="howItWorksTitle">How it works</h2>
           </div>
-          <button id="closeHowItWorksModal" class="icon-button" type="button" aria-label="Close">
-            ✕
-          </button>
+          <button id="closeHowItWorksModal" class="icon-button" type="button" aria-label="Close">✕</button>
         </div>
         <div class="modal-body modal-body--prose">
           <section class="how-it-works-section">
@@ -404,13 +405,7 @@
       </div>
     </div>
 
-    <footer class="app-footer">
-      <a href="changelog.html" class="app-footer-link app-footer-link--changelog" target="_blank" rel="noopener">Changelog</a>
-      <a href="mailto:xalion.malik@gmail.com" class="app-footer-link">Say hello!</a>
-    </footer>
-
     <script src="vendor/ffmpeg.js"></script>
     <script src="app.js"></script>
   </body>
 </html>
-
