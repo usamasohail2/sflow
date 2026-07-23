@@ -1,35 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
+import { EXPLORER_PALETTES } from "@/hooks/useLivePresence";
 
-const HEARTBEAT_MS = 15_000;
-const STORAGE_KEY = "isb-map-visitor-id";
 const MAX_VISIBLE = 7;
-
-const PALETTES = [
-  { shirt: "#0051FF", skin: "#f0c4a0", hair: "#2a2118" },
-  { shirt: "#D94A00", skin: "#e8b890", hair: "#4a3428" },
-  { shirt: "#0d9488", skin: "#f5d0b0", hair: "#1c1c1c" },
-  { shirt: "#7c3aed", skin: "#d4a574", hair: "#3b2a1a" },
-  { shirt: "#db2777", skin: "#f2c9a0", hair: "#5c4033" },
-  { shirt: "#2563eb", skin: "#c68642", hair: "#111111" },
-  { shirt: "#ea580c", skin: "#f1c27d", hair: "#6b4423" },
-] as const;
-
-function getVisitorId(): string {
-  try {
-    const existing = localStorage.getItem(STORAGE_KEY);
-    if (existing) return existing;
-    const id =
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID().replace(/-/g, "")
-        : `v_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
-    localStorage.setItem(STORAGE_KEY, id);
-    return id;
-  } catch {
-    return `v_${Math.random().toString(36).slice(2)}`;
-  }
-}
 
 function HumanSprite({
   shirt,
@@ -67,47 +41,19 @@ function HumanSprite({
 
 interface ViewerTickerProps {
   className?: string;
+  viewers?: number | null;
+  explorerCount?: number;
+  showExplorers?: boolean;
+  onToggleExplorers?: (show: boolean) => void;
 }
 
-export function ViewerTicker({ className = "" }: ViewerTickerProps) {
-  const [viewers, setViewers] = useState<number | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    const visitorId = getVisitorId();
-
-    const beat = async () => {
-      try {
-        const res = await fetch("/api/presence", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ visitorId }),
-          keepalive: true,
-        });
-        if (!res.ok) return;
-        const data = (await res.json()) as { viewers?: number };
-        if (!cancelled && typeof data.viewers === "number") {
-          setViewers(Math.max(1, data.viewers));
-        }
-      } catch {
-        // ignore transient network errors
-      }
-    };
-
-    void beat();
-    const id = window.setInterval(beat, HEARTBEAT_MS);
-    const onVisible = () => {
-      if (document.visibilityState === "visible") void beat();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, []);
-
+export function ViewerTicker({
+  className = "",
+  viewers = null,
+  explorerCount = 0,
+  showExplorers = true,
+  onToggleExplorers,
+}: ViewerTickerProps) {
   const count = viewers ?? 1;
   const visible = Math.min(count, MAX_VISIBLE);
   const overflow = Math.max(0, count - MAX_VISIBLE);
@@ -116,7 +62,7 @@ export function ViewerTicker({ className = "" }: ViewerTickerProps) {
     () =>
       Array.from({ length: visible }, (_, i) => ({
         id: i,
-        ...PALETTES[i % PALETTES.length],
+        ...EXPLORER_PALETTES[i % EXPLORER_PALETTES.length],
       })),
     [visible]
   );
@@ -130,7 +76,7 @@ export function ViewerTicker({ className = "" }: ViewerTickerProps) {
 
   return (
     <div
-      className={`viewer-crowd pointer-events-none flex items-end gap-1.5 rounded-full border border-line bg-surface px-2 py-1 shadow-sm dark:bg-surface-raised ${className}`}
+      className={`viewer-crowd pointer-events-auto flex items-end gap-1.5 rounded-full border border-line bg-surface px-2 py-1 shadow-sm dark:bg-surface-raised ${className}`}
       aria-live="polite"
       aria-label={label}
       title={label}
@@ -139,7 +85,7 @@ export function ViewerTicker({ className = "" }: ViewerTickerProps) {
         {people.map((person, index) => (
           <span
             key={person.id}
-            className="viewer-person absolute bottom-0 scale-[0.72] origin-bottom-left sm:scale-90"
+            className="viewer-person absolute bottom-0 origin-bottom-left scale-[0.72] sm:scale-90"
             style={{
               left: `${index * 8}px`,
               zIndex: index + 1,
@@ -168,10 +114,32 @@ export function ViewerTicker({ className = "" }: ViewerTickerProps) {
 
       <p className="mb-0.5 whitespace-nowrap text-[10px] font-semibold text-ink sm:text-[11px]">
         <span className="tabular-nums text-[var(--blue)]">{count}</span>{" "}
-        <span className="text-ink-muted">
-          {count === 1 ? "viewing" : "viewing"}
-        </span>
+        <span className="text-ink-muted">viewing</span>
       </p>
+
+      {onToggleExplorers && (
+        <button
+          type="button"
+          onClick={() => onToggleExplorers(!showExplorers)}
+          aria-pressed={showExplorers}
+          title={
+            showExplorers
+              ? "Hide other explorers on the map"
+              : "Show other explorers on the map"
+          }
+          className={`mb-0.5 rounded-full border px-1.5 py-0.5 text-[9px] font-bold transition ${
+            showExplorers
+              ? "border-[var(--blue)] bg-[color-mix(in_srgb,var(--blue)_14%,transparent)] text-[var(--blue)]"
+              : "border-line bg-wash text-ink-muted"
+          }`}
+        >
+          {showExplorers
+            ? explorerCount > 0
+              ? `Live · ${explorerCount}`
+              : "Live"
+            : "Live off"}
+        </button>
+      )}
     </div>
   );
 }

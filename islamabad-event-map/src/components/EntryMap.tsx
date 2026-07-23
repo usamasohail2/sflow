@@ -52,8 +52,10 @@ import {
 import { FloatingSprites, KohCompanion } from "@/components/KohMascot";
 import { MapPopupCard } from "@/components/MapPopupCard";
 import { ViewerTicker } from "@/components/ViewerTicker";
+import { LiveExplorerMarkers } from "@/components/LiveExplorerMarkers";
 import { useTheme } from "@/components/ThemeProvider";
 import { CategoryIcon, categoryColor } from "@/components/CategoryIcon";
+import { useLivePresence } from "@/hooks/useLivePresence";
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "";
 
@@ -638,6 +640,12 @@ export function EntryMap({
     lng: number;
   } | null>(null);
   const [mapReady, setMapReady] = useState(false);
+  const {
+    viewers,
+    explorers: liveExplorers,
+    showExplorers,
+    setShowExplorers,
+  } = useLivePresence(mapRef, mapReady);
   const [visiblePinCount, setVisiblePinCount] = useState(0);
   const [enteringPinIds, setEnteringPinIds] = useState<Set<string>>(
     () => new Set()
@@ -1520,6 +1528,10 @@ export function EntryMap({
         >
           <AttributionControl compact position="bottom-right" />
 
+          {showExplorers && !pinMode && (
+            <LiveExplorerMarkers explorers={liveExplorers} />
+          )}
+
           {mappableEntries
             .slice(0, pinMode ? mappableEntries.length : visiblePinCount)
             .map((entry) => {
@@ -1728,7 +1740,13 @@ export function EntryMap({
         )}
 
         {!pinMode && (
-          <ViewerTicker className="absolute left-2 top-[calc(0.5rem+2.25rem+0.5rem)] z-20 sm:left-3" />
+          <ViewerTicker
+            className="absolute left-2 top-[calc(0.5rem+2.25rem+0.5rem)] z-20 sm:left-3"
+            viewers={viewers}
+            explorerCount={liveExplorers.length}
+            showExplorers={showExplorers}
+            onToggleExplorers={setShowExplorers}
+          />
         )}
 
         {pinMode && (

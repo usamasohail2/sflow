@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  getPresenceCount,
   hasSharedPresenceStore,
+  listPresence,
   touchPresence,
 } from "@/lib/presence";
 
@@ -17,9 +17,10 @@ function isValidVisitorId(value: unknown): value is string {
 }
 
 export async function GET() {
-  const viewers = await getPresenceCount();
+  const explorers = await listPresence();
   return NextResponse.json({
-    viewers,
+    viewers: explorers.length,
+    explorers,
     shared: hasSharedPresenceStore(),
   });
 }
@@ -31,9 +32,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid visitorId" }, { status: 400 });
     }
 
-    const viewers = await touchPresence(body.visitorId);
+    const explorers = await touchPresence({
+      visitorId: body.visitorId,
+      name: typeof body.name === "string" ? body.name : undefined,
+      lat: typeof body.lat === "number" ? body.lat : undefined,
+      lng: typeof body.lng === "number" ? body.lng : undefined,
+      color: typeof body.color === "number" ? body.color : undefined,
+    });
+
     return NextResponse.json({
-      viewers,
+      viewers: explorers.length,
+      explorers,
       shared: hasSharedPresenceStore(),
     });
   } catch (error) {
