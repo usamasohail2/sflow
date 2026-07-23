@@ -2,7 +2,6 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import type { CityId } from "@/lib/constants";
-import { CITY_CONFIG } from "@/lib/constants";
 
 export type GeocodedPlace = {
   id: string;
