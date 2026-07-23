@@ -1,20 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Marker, useMap } from "react-map-gl/mapbox";
-import type { MapRef } from "react-map-gl/mapbox";
+import { Marker } from "react-map-gl/mapbox";
 import {
   EXPLORER_PALETTES,
   type LiveExplorer,
 } from "@/hooks/useLivePresence";
 import type { FloatingBubble } from "@/hooks/usePublicChat";
-import { altitudeMarkerOffset } from "@/lib/mapAltitude";
 
 /** Smoothing time constant — lower = snappier, higher = silkier */
 const SMOOTH_MS = 160;
 /** Jump instantly if the gap is huge (teleport / first spawn) */
 const SNAP_DEG = 0.08;
-const SNAP_ALT_M = 400;
 
 function HumanSprite({
   shirt,
@@ -68,10 +65,8 @@ interface SmoothExplorer {
   color: number;
   lat: number;
   lng: number;
-  alt: number;
   targetLat: number;
   targetLng: number;
-  targetAlt: number;
 }
 
 function useSmoothedExplorers(explorers: LiveExplorer[]): SmoothExplorer[] {
@@ -86,7 +81,6 @@ function useSmoothedExplorers(explorers: LiveExplorer[]): SmoothExplorer[] {
     for (const explorer of explorers) {
       if (explorer.lat == null || explorer.lng == null) continue;
       liveIds.add(explorer.id);
-      const alt = explorer.alt ?? 0;
       const prev = next.get(explorer.id);
       if (!prev) {
         next.set(explorer.id, {
@@ -95,24 +89,19 @@ function useSmoothedExplorers(explorers: LiveExplorer[]): SmoothExplorer[] {
           color: explorer.color,
           lat: explorer.lat,
           lng: explorer.lng,
-          alt,
           targetLat: explorer.lat,
           targetLng: explorer.lng,
-          targetAlt: alt,
         });
       } else {
         prev.name = explorer.name;
         prev.color = explorer.color;
         prev.targetLat = explorer.lat;
         prev.targetLng = explorer.lng;
-        prev.targetAlt = alt;
         const dLat = Math.abs(prev.lat - explorer.lat);
         const dLng = Math.abs(prev.lng - explorer.lng);
-        const dAlt = Math.abs(prev.alt - alt);
-        if (dLat > SNAP_DEG || dLng > SNAP_DEG || dAlt > SNAP_ALT_M) {
+        if (dLat > SNAP_DEG || dLng > SNAP_DEG) {
           prev.lat = explorer.lat;
           prev.lng = explorer.lng;
-          prev.alt = alt;
         }
       }
     }
@@ -138,27 +127,16 @@ function useSmoothedExplorers(explorers: LiveExplorer[]): SmoothExplorer[] {
       stateRef.current.forEach((e) => {
         const dLat = e.targetLat - e.lat;
         const dLng = e.targetLng - e.lng;
-        const dAlt = e.targetAlt - e.alt;
-        if (
-          Math.abs(dLat) < 1e-7 &&
-          Math.abs(dLng) < 1e-7 &&
-          Math.abs(dAlt) < 0.05
-        ) {
-          if (
-            e.lat !== e.targetLat ||
-            e.lng !== e.targetLng ||
-            e.alt !== e.targetAlt
-          ) {
+        if (Math.abs(dLat) < 1e-7 && Math.abs(dLng) < 1e-7) {
+          if (e.lat !== e.targetLat || e.lng !== e.targetLng) {
             e.lat = e.targetLat;
             e.lng = e.targetLng;
-            e.alt = e.targetAlt;
             moved = true;
           }
           return;
         }
         e.lat += dLat * alpha;
         e.lng += dLng * alpha;
-        e.alt += dAlt * alpha;
         moved = true;
       });
 
@@ -175,42 +153,6 @@ function useSmoothedExplorers(explorers: LiveExplorer[]): SmoothExplorer[] {
   return smooth;
 }
 
-function useAltitudeOffsets(
-  explorers: SmoothExplorer[]
-): Map<string, [number, number]> {
-  const mapRef = useMap();
-  const [offsets, setOffsets] = useState<Map<string, [number, number]>>(
-    () => new Map()
-  );
-
-  useEffect(() => {
-    const mapbox = mapRef.current as MapRef | undefined;
-    const map = mapbox?.getMap?.();
-    if (!map) return;
-
-    let raf = 0;
-    const update = () => {
-      window.cancelAnimationFrame(raf);
-      raf = window.requestAnimationFrame(() => {
-        const next = new Map<string, [number, number]>();
-        for (const e of explorers) {
-          next.set(e.id, altitudeMarkerOffset(map, e.lng, e.lat, e.alt));
-        }
-        setOffsets(next);
-      });
-    };
-
-    update();
-    map.on("render", update);
-    return () => {
-      window.cancelAnimationFrame(raf);
-      map.off("render", update);
-    };
-  }, [explorers, mapRef]);
-
-  return offsets;
-}
-
 export function LiveExplorerMarkers({
   explorers,
   floating = [],
@@ -220,10 +162,9 @@ export function LiveExplorerMarkers({
   explorers: LiveExplorer[];
   floating?: FloatingBubble[];
   selfId?: string;
-  selfPosition?: { lat: number; lng: number; alt?: number } | null;
+  selfPosition?: { lat: number; lng: number } | null;
 }) {
   const smoothExplorers = useSmoothedExplorers(explorers);
-  const altitudeOffsets = useAltitudeOffsets(smoothExplorers);
   const floatingByVisitor = new Map(
     floating.map((b) => [b.visitorId, b] as const)
   );
@@ -242,14 +183,12 @@ export function LiveExplorerMarkers({
         const palette =
           EXPLORER_PALETTES[explorer.color % EXPLORER_PALETTES.length]!;
         const bubble = floatingByVisitor.get(explorer.id);
-        const offset = altitudeOffsets.get(explorer.id) ?? [0, 0];
         return (
           <Marker
             key={explorer.id}
             latitude={explorer.lat}
             longitude={explorer.lng}
             anchor="bottom"
-            offset={offset}
             style={{ zIndex: bubble ? 35 : 25 }}
           >
             <div className="pointer-events-none flex -translate-y-0.5 flex-col items-center">
@@ -263,17 +202,6 @@ export function LiveExplorerMarkers({
                 hair={palette.hair}
                 className="drop-shadow-sm"
               />
-              {/* Soft shadow on the ground (offset cancels marker AGL lift) */}
-              {explorer.alt > 5 && (
-                <span
-                  aria-hidden
-                  className="pointer-events-none absolute left-1/2 top-full mt-0.5 h-1.5 w-4 -translate-x-1/2 rounded-full bg-black/25 blur-[1px]"
-                  style={{
-                    transform: `translate(-50%, ${-offset[1]}px) scale(${Math.min(1.4, 0.55 + explorer.alt / 1200)})`,
-                    opacity: Math.min(0.4, 0.1 + explorer.alt / 2500),
-                  }}
-                />
-              )}
             </div>
           </Marker>
         );
@@ -288,69 +216,20 @@ export function LiveExplorerMarkers({
           bubble.visitorId === selfId && selfPosition
             ? selfPosition.lng
             : bubble.lng;
-        const alt =
-          bubble.visitorId === selfId && selfPosition
-            ? selfPosition.alt ?? bubble.alt ?? 0
-            : bubble.alt ?? 0;
         return (
-          <OrphanAltitudeBubble
+          <Marker
             key={`bubble-${bubble.messageId}`}
             latitude={lat}
             longitude={lng}
-            altitude={alt}
-            text={bubble.text}
-          />
+            anchor="bottom"
+            style={{ zIndex: 36 }}
+          >
+            <div className="pointer-events-none flex -translate-y-1 flex-col items-center">
+              <SpeechBubble text={bubble.text} />
+            </div>
+          </Marker>
         );
       })}
     </>
-  );
-}
-
-function OrphanAltitudeBubble({
-  latitude,
-  longitude,
-  altitude,
-  text,
-}: {
-  latitude: number;
-  longitude: number;
-  altitude: number;
-  text: string;
-}) {
-  const mapRef = useMap();
-  const [offset, setOffset] = useState<[number, number]>([0, 0]);
-
-  useEffect(() => {
-    const mapbox = mapRef.current as MapRef | undefined;
-    const map = mapbox?.getMap?.();
-    if (!map) return;
-
-    let raf = 0;
-    const update = () => {
-      window.cancelAnimationFrame(raf);
-      raf = window.requestAnimationFrame(() => {
-        setOffset(altitudeMarkerOffset(map, longitude, latitude, altitude));
-      });
-    };
-    update();
-    map.on("render", update);
-    return () => {
-      window.cancelAnimationFrame(raf);
-      map.off("render", update);
-    };
-  }, [altitude, latitude, longitude, mapRef]);
-
-  return (
-    <Marker
-      latitude={latitude}
-      longitude={longitude}
-      anchor="bottom"
-      offset={offset}
-      style={{ zIndex: 36 }}
-    >
-      <div className="pointer-events-none flex -translate-y-1 flex-col items-center">
-        <SpeechBubble text={text} />
-      </div>
-    </Marker>
   );
 }

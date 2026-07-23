@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MapRef } from "react-map-gl/mapbox";
-import { readHeightAboveGround } from "@/lib/mapAltitude";
 
 export interface ChatMessage {
   id: string;
@@ -12,8 +11,6 @@ export interface ChatMessage {
   color: number;
   lat?: number;
   lng?: number;
-  /** Meters above local ground / terrain */
-  alt?: number;
   createdAt: number;
 }
 
@@ -23,7 +20,6 @@ export interface FloatingBubble {
   text: string;
   lat: number;
   lng: number;
-  alt?: number;
   expiresAt: number;
 }
 
@@ -32,7 +28,7 @@ const BUBBLE_MS = 10_000;
 
 function readEyePosition(
   mapRef: React.RefObject<MapRef | null>
-): { lat: number; lng: number; alt?: number } | null {
+): { lat: number; lng: number } | null {
   const map = mapRef.current;
   if (!map) return null;
   const center = map.getCenter();
@@ -49,10 +45,10 @@ function readEyePosition(
     // keep center
   }
   const mix = 0.35;
-  const lat = center.lat * (1 - mix) + eyeLat * mix;
-  const lng = center.lng * (1 - mix) + eyeLng * mix;
-  const alt = readHeightAboveGround(map.getMap(), lng, lat);
-  return { lat, lng, alt };
+  return {
+    lat: center.lat * (1 - mix) + eyeLat * mix,
+    lng: center.lng * (1 - mix) + eyeLng * mix,
+  };
 }
 
 export function usePublicChat({
@@ -114,7 +110,6 @@ export function usePublicChat({
             text: msg.text,
             lat: msg.lat!,
             lng: msg.lng!,
-            alt: typeof msg.alt === "number" ? msg.alt : undefined,
             expiresAt: now + BUBBLE_MS,
           },
         ];
@@ -187,7 +182,6 @@ export function usePublicChat({
             text: trimmed,
             lat: pos?.lat,
             lng: pos?.lng,
-            alt: pos?.alt,
           }),
           signal: controller.signal,
         });
