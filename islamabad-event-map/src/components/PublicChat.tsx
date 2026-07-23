@@ -102,7 +102,7 @@ export function PublicChat({
 
   return (
     <div
-      className={`pointer-events-auto flex flex-col overflow-hidden rounded-2xl border border-line bg-surface/95 shadow-[0_10px_30px_rgba(0,0,0,0.16)] backdrop-blur-md dark:bg-surface-raised/95 ${
+      className={`pointer-events-auto flex flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-sm ${
         isMobile ? "w-full" : "w-[min(100%,18.5rem)]"
       } ${className}`}
     >
