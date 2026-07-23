@@ -10,7 +10,7 @@ import {
 import type { Entry, EntryStatus } from "@/lib/types";
 
 type StatusFilter = "all" | EntryStatus;
-type ManageTab = "entries" | "users";
+type ManageTab = "entries" | "users" | "analytics";
 
 type UserProfile = {
   id: string;
@@ -20,6 +20,21 @@ type UserProfile = {
   provider: string;
   createdAt: number;
   lastSeen: number;
+};
+
+type VisitorStats = {
+  allTime: number;
+  thisMonth: number;
+  last30Days: number;
+  today: number;
+  recent: Array<{
+    visitorId: string;
+    name: string;
+    firstSeen: number;
+    lastSeen: number;
+    visitCount: number;
+  }>;
+  byMonth: Array<{ month: string; count: number }>;
 };
 
 const jsonHeaders: HeadersInit = {
@@ -50,6 +65,9 @@ export default function ManagePage() {
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [profilesLoading, setProfilesLoading] = useState(false);
   const [profilesError, setProfilesError] = useState<string | null>(null);
+  const [stats, setStats] = useState<VisitorStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [statsError, setStatsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("pending");
@@ -113,6 +131,33 @@ export default function ManagePage() {
   useEffect(() => {
     if (tab === "users") void loadProfiles();
   }, [tab, loadProfiles]);
+
+  const loadStats = useCallback(async () => {
+    setStatsLoading(true);
+    setStatsError(null);
+    try {
+      const res = await fetch("/api/admin/analytics");
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Could not load analytics");
+      }
+      setStats(data.stats ?? null);
+      if (typeof data.error === "string" && data.error) {
+        setStatsError(data.error);
+      }
+    } catch (err) {
+      setStats(null);
+      setStatsError(
+        err instanceof Error ? err.message : "Could not load analytics"
+      );
+    } finally {
+      setStatsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tab === "analytics") void loadStats();
+  }, [tab, loadStats]);
 
   const submitterCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -195,12 +240,20 @@ export default function ManagePage() {
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
           <div>
             <h1 className="text-base font-semibold sm:text-lg">
-              {tab === "users" ? "Signed-in users" : "Manage entries"}
+              {tab === "users"
+                ? "Signed-in users"
+                : tab === "analytics"
+                  ? "Usage analytics"
+                  : "Manage entries"}
             </h1>
             <p className="text-xs text-ink-muted">
               {tab === "users"
                 ? `${profiles.length} Google account${profiles.length === 1 ? "" : "s"}`
-                : `${counts.pending} pending · ${counts.approved} approved · ${counts.rejected} rejected`}
+                : tab === "analytics"
+                  ? stats
+                    ? `${stats.allTime} unique explorers all-time`
+                    : "First visits from the map"
+                  : `${counts.pending} pending · ${counts.approved} approved · ${counts.rejected} rejected`}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -227,11 +280,28 @@ export default function ManagePage() {
               >
                 Users
               </button>
+              <button
+                type="button"
+                onClick={() => setTab("analytics")}
+                className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                  tab === "analytics"
+                    ? "bg-surface text-ink shadow-sm"
+                    : "text-ink-muted hover:text-ink"
+                }`}
+              >
+                Analytics
+              </button>
             </div>
             <button
               type="button"
               onClick={() =>
-                void (tab === "users" ? loadProfiles() : load())
+                void (
+                  tab === "users"
+                    ? loadProfiles()
+                    : tab === "analytics"
+                      ? loadStats()
+                      : load()
+                )
               }
               className="rounded-full border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted hover:text-ink"
             >
@@ -242,7 +312,115 @@ export default function ManagePage() {
       </header>
 
       <div className="mx-auto max-w-5xl px-4 py-4">
-        {tab === "users" ? (
+        {tab === "analytics" ? (
+          <section className="space-y-4">
+            {statsError && (
+              <div className="rounded-xl border border-danger/30 bg-danger-soft px-3 py-2 text-xs text-danger">
+                {statsError}
+                <span className="mt-1 block text-ink-muted">
+                  If the table is missing, run{" "}
+                  <code className="text-ink">supabase/visitors.sql</code> in
+                  the Supabase SQL Editor, then refresh.
+                </span>
+              </div>
+            )}
+            {statsLoading ? (
+              <p className="text-sm text-ink-muted">Loading analytics…</p>
+            ) : stats ? (
+              <>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {[
+                    { label: "All time", value: stats.allTime },
+                    { label: "This month", value: stats.thisMonth },
+                    { label: "Last 30 days", value: stats.last30Days },
+                    { label: "Today", value: stats.today },
+                  ].map((card) => (
+                    <div
+                      key={card.label}
+                      className="rounded-xl border border-line bg-surface px-3 py-3"
+                    >
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
+                        {card.label}
+                      </p>
+                      <p className="mt-1 text-2xl font-semibold tabular-nums text-ink">
+                        {card.value}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+
+                {stats.byMonth.length > 0 && (
+                  <div className="rounded-xl border border-line bg-surface px-3 py-3">
+                    <p className="text-xs font-semibold text-ink">
+                      New explorers by month
+                    </p>
+                    <ul className="mt-2 divide-y divide-line">
+                      {stats.byMonth.slice(0, 12).map((row) => (
+                        <li
+                          key={row.month}
+                          className="flex items-center justify-between py-1.5 text-sm"
+                        >
+                          <span className="text-ink-muted">{row.month}</span>
+                          <span className="font-semibold tabular-nums text-ink">
+                            {row.count}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <div className="rounded-xl border border-line bg-surface">
+                  <div className="border-b border-line px-3 py-2">
+                    <p className="text-xs font-semibold text-ink">
+                      Recent first visits
+                    </p>
+                  </div>
+                  {stats.recent.length === 0 ? (
+                    <p className="px-4 py-6 text-center text-sm text-ink-muted">
+                      No explorers logged yet. Open the map once to seed the
+                      first visit.
+                    </p>
+                  ) : (
+                    <ul className="divide-y divide-line">
+                      {stats.recent.map((v) => (
+                        <li
+                          key={v.visitorId}
+                          className="flex items-center justify-between gap-3 px-3 py-2.5"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-ink">
+                              {v.name}
+                            </p>
+                            <p className="truncate font-mono text-[10px] text-ink-faint">
+                              {v.visitorId}
+                            </p>
+                          </div>
+                          <div className="shrink-0 text-right text-[10px] text-ink-faint">
+                            <p>
+                              First{" "}
+                              {formatAddedAt(
+                                new Date(v.firstSeen).toISOString()
+                              )}
+                            </p>
+                            <p className="mt-0.5">
+                              {v.visitCount} day
+                              {v.visitCount === 1 ? "" : "s"} active
+                            </p>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </>
+            ) : (
+              <p className="rounded-xl border border-line bg-surface px-4 py-6 text-center text-sm text-ink-muted">
+                No analytics yet.
+              </p>
+            )}
+          </section>
+        ) : tab === "users" ? (
           <section className="space-y-3">
             {profilesError && (
               <div className="rounded-xl border border-danger/30 bg-danger-soft px-3 py-2 text-xs text-danger">

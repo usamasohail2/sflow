@@ -6,6 +6,7 @@ import {
   hasSupabase,
   type PresenceRow,
 } from "@/lib/supabase";
+import { recordVisitorVisit } from "@/lib/visitors";
 
 const STALE_MS = 90_000;
 const REDIS_ZKEY = "isb:presence:z";
@@ -461,6 +462,16 @@ export async function touchPresence(
 ): Promise<ExplorerPresence[]> {
   // Always update process memory first — fast local cache / fallback
   const live = touchMemory(input);
+
+  // Durable first-visit / last-seen analytics (non-blocking)
+  if (hasSupabase()) {
+    void recordVisitorVisit({
+      visitorId: input.visitorId,
+      name: input.name,
+    }).catch((error) => {
+      console.error("Visitor analytics failed:", error);
+    });
+  }
 
   if (hasSupabase()) {
     try {
