@@ -334,6 +334,16 @@ export function HomePage() {
               </div>
 
               <div className="pointer-events-auto relative z-10 flex shrink-0 items-center gap-1.5">
+                <SpotSearch
+                  value={searchQuery}
+                  onChange={setSearchQuery}
+                  resultCount={
+                    searchQuery.trim()
+                      ? filteredEntries.filter((e) => e.status !== "pending")
+                          .length
+                      : undefined
+                  }
+                />
                 <AuthButton />
                 <DarkModeToggle />
               </div>
@@ -428,18 +438,6 @@ export function HomePage() {
                 mobileChatOpen ? "hidden sm:block" : ""
               }`}
             >
-              <div className="mb-1.5 px-3 sm:max-w-xs">
-                <SpotSearch
-                  value={searchQuery}
-                  onChange={setSearchQuery}
-                  resultCount={
-                    searchQuery.trim()
-                      ? filteredEntries.filter((e) => e.status !== "pending")
-                          .length
-                      : undefined
-                  }
-                />
-              </div>
               {error ? (
                 <div className="mx-3 rounded-xl bg-danger-soft px-3 py-3 text-center">
                   <p className="text-sm text-danger">{error}</p>
