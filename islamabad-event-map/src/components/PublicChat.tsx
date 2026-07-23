@@ -126,7 +126,7 @@ export function PublicChat({
           >
             {messages.length === 0 ? (
               <p className="px-1 py-3 text-center text-[11px] text-ink-faint">
-                Say hi — messages float above explorers for 5s.
+                Say hi — messages float above explorers for 10s.
               </p>
             ) : (
               messages.map((msg) => {
