@@ -1,5 +1,10 @@
 import Airtable from "airtable";
 import { Redis } from "@upstash/redis";
+import {
+  getSupabaseAdmin,
+  hasSupabase,
+  type PresenceRow,
+} from "@/lib/supabase";
 
 const STALE_MS = 90_000;
 const REDIS_ZKEY = "isb:presence:z";
@@ -108,6 +113,81 @@ function hasRedis(): boolean {
 
 function hasAirtable(): boolean {
   return Boolean(process.env.AIRTABLE_TOKEN && process.env.AIRTABLE_BASE_ID);
+}
+
+function rowToExplorer(row: PresenceRow): ExplorerPresence {
+  return {
+    id: row.visitor_id,
+    name: clampName(row.name),
+    lat: clampCoord(row.lat),
+    lng: clampCoord(row.lng),
+    alt: clampAltitude(row.alt),
+    color: clampColor(row.color),
+    lastSeen: new Date(row.last_seen).getTime() || Date.now(),
+  };
+}
+
+async function touchSupabase(
+  input: TouchPresenceInput
+): Promise<ExplorerPresence[]> {
+  const supabase = getSupabaseAdmin()!;
+  const nowIso = new Date().toISOString();
+  const cutoffIso = new Date(Date.now() - STALE_MS).toISOString();
+  const name = clampName(input.name);
+  const lat = clampCoord(input.lat);
+  const lng = clampCoord(input.lng);
+  const alt = clampAltitude(input.alt);
+  const color = clampColor(input.color);
+
+  const { data: existing } = await supabase
+    .from("live_presence")
+    .select("name, lat, lng, alt, color")
+    .eq("visitor_id", input.visitorId)
+    .maybeSingle();
+
+  const row = {
+    visitor_id: input.visitorId,
+    name: input.name != null ? name : clampName(existing?.name),
+    lat: lat ?? (typeof existing?.lat === "number" ? existing.lat : null),
+    lng: lng ?? (typeof existing?.lng === "number" ? existing.lng : null),
+    alt: alt ?? (typeof existing?.alt === "number" ? existing.alt : null),
+    color:
+      input.color != null
+        ? color
+        : clampColor(typeof existing?.color === "number" ? existing.color : 0),
+    last_seen: nowIso,
+  };
+
+  const { error: upsertError } = await supabase
+    .from("live_presence")
+    .upsert(row, { onConflict: "visitor_id" });
+  if (upsertError) throw upsertError;
+
+  // Opportunistic prune of stale explorers
+  if (Math.random() < 0.25) {
+    void supabase
+      .from("live_presence")
+      .delete()
+      .lt("last_seen", cutoffIso)
+      .then(({ error }) => {
+        if (error) console.error("Supabase presence prune failed:", error);
+      });
+  }
+
+  return listSupabase();
+}
+
+async function listSupabase(): Promise<ExplorerPresence[]> {
+  const supabase = getSupabaseAdmin()!;
+  const cutoffIso = new Date(Date.now() - STALE_MS).toISOString();
+  const { data, error } = await supabase
+    .from("live_presence")
+    .select("visitor_id, name, lat, lng, alt, color, last_seen")
+    .gte("last_seen", cutoffIso)
+    .order("last_seen", { ascending: false })
+    .limit(100);
+  if (error) throw error;
+  return (data as PresenceRow[] | null)?.map(rowToExplorer) ?? [];
 }
 
 function getRedis(): Redis | null {
@@ -351,8 +431,17 @@ async function listRedis(): Promise<ExplorerPresence[]> {
 export async function touchPresence(
   input: TouchPresenceInput
 ): Promise<ExplorerPresence[]> {
-  // Always update process memory first — fast path for local / same-instance clients
+  // Always update process memory first — fast local cache / fallback
   const live = touchMemory(input);
+
+  if (hasSupabase()) {
+    try {
+      return await touchSupabase(input);
+    } catch (error) {
+      console.error("Supabase presence failed, using memory:", error);
+      return live;
+    }
+  }
 
   if (hasRedis()) {
     try {
@@ -403,6 +492,14 @@ function scheduleAirtableSync(input: TouchPresenceInput) {
 }
 
 export async function listPresence(): Promise<ExplorerPresence[]> {
+  if (hasSupabase()) {
+    try {
+      return await listSupabase();
+    } catch (error) {
+      console.error("Supabase presence list failed:", error);
+    }
+  }
+
   // Same-process clients: memory is the source of truth for live positions
   const mem = listMemory();
   if (mem.length > 0) return mem;
@@ -432,5 +529,5 @@ export async function getPresenceCount(): Promise<number> {
 }
 
 export function hasSharedPresenceStore(): boolean {
-  return hasRedis() || hasAirtable();
+  return hasSupabase() || hasRedis() || hasAirtable();
 }

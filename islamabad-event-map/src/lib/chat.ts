@@ -1,4 +1,9 @@
 import { Redis } from "@upstash/redis";
+import {
+  getSupabaseAdmin,
+  hasSupabase,
+  type ChatRow,
+} from "@/lib/supabase";
 
 const MAX_MESSAGES = 80;
 const REDIS_KEY = "isb:chat";
@@ -72,6 +77,88 @@ function listMemory(since?: number): ChatMessage[] {
   return store.filter((m) => m.createdAt > since);
 }
 
+function rowToMessage(row: ChatRow): ChatMessage {
+  return {
+    id: row.id,
+    visitorId: row.visitor_id,
+    name: clampName(row.name),
+    text: row.text,
+    color:
+      typeof row.color === "number" && Number.isFinite(row.color)
+        ? Math.abs(Math.floor(row.color)) % 7
+        : 0,
+    lat:
+      typeof row.lat === "number" && Number.isFinite(row.lat)
+        ? row.lat
+        : undefined,
+    lng:
+      typeof row.lng === "number" && Number.isFinite(row.lng)
+        ? row.lng
+        : undefined,
+    alt:
+      typeof row.alt === "number" && Number.isFinite(row.alt) && row.alt >= 0
+        ? Math.min(row.alt, 50_000)
+        : undefined,
+    createdAt: new Date(row.created_at).getTime() || Date.now(),
+  };
+}
+
+async function pushSupabase(message: ChatMessage): Promise<ChatMessage> {
+  const supabase = getSupabaseAdmin()!;
+  const { error } = await supabase.from("chat_messages").insert({
+    id: message.id,
+    visitor_id: message.visitorId,
+    name: message.name,
+    text: message.text,
+    color: message.color,
+    lat: message.lat ?? null,
+    lng: message.lng ?? null,
+    alt: message.alt ?? null,
+    created_at: new Date(message.createdAt).toISOString(),
+  });
+  if (error) throw error;
+
+  // Keep table small — delete older than the newest MAX_MESSAGES
+  if (Math.random() < 0.2) {
+    const { data: keep } = await supabase
+      .from("chat_messages")
+      .select("id")
+      .order("created_at", { ascending: false })
+      .range(MAX_MESSAGES, MAX_MESSAGES + 40);
+    const ids = (keep ?? []).map((r) => r.id as string).filter(Boolean);
+    if (ids.length > 0) {
+      void supabase
+        .from("chat_messages")
+        .delete()
+        .in("id", ids)
+        .then(({ error: delError }) => {
+          if (delError) console.error("Supabase chat prune failed:", delError);
+        });
+    }
+  }
+
+  return message;
+}
+
+async function listSupabase(since?: number): Promise<ChatMessage[]> {
+  const supabase = getSupabaseAdmin()!;
+  let query = supabase
+    .from("chat_messages")
+    .select("id, visitor_id, name, text, color, lat, lng, alt, created_at")
+    .order("created_at", { ascending: false })
+    .limit(MAX_MESSAGES);
+
+  if (since != null && Number.isFinite(since)) {
+    query = query.gt("created_at", new Date(since).toISOString());
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  const messages = (data as ChatRow[] | null)?.map(rowToMessage) ?? [];
+  // Query is newest-first; return chronological
+  return messages.reverse();
+}
+
 async function pushRedis(message: ChatMessage): Promise<ChatMessage[]> {
   const redis = getRedis()!;
   await redis.lpush(REDIS_KEY, JSON.stringify(message));
@@ -138,6 +225,16 @@ export async function postChatMessage(input: {
     createdAt: Date.now(),
   };
 
+  if (hasSupabase()) {
+    try {
+      await pushSupabase(message);
+      pushMemory(message);
+      return message;
+    } catch (error) {
+      console.error("Supabase chat failed, falling back:", error);
+    }
+  }
+
   if (hasRedis()) {
     try {
       await pushRedis(message);
@@ -152,6 +249,14 @@ export async function postChatMessage(input: {
 }
 
 export async function listChatMessages(since?: number): Promise<ChatMessage[]> {
+  if (hasSupabase()) {
+    try {
+      return await listSupabase(since);
+    } catch (error) {
+      console.error("Supabase chat list failed:", error);
+    }
+  }
+
   if (hasRedis()) {
     try {
       return await listRedis(since);

@@ -5,7 +5,8 @@ Discover events and interesting places in Islamabad on an interactive map. Anyon
 ## Tech stack
 
 - **Next.js 14** (App Router) + TypeScript + Tailwind CSS
-- **Airtable** as the database (server-side API routes only)
+- **Airtable** for curated spots/events (server-side API routes)
+- **Supabase** (optional, preferred) for live explorers + public chat
 - **Mapbox GL JS** via `react-map-gl`
 - **Vercel** for hosting
 
@@ -25,12 +26,25 @@ Fill in `.env.local`:
 | `AIRTABLE_TOKEN` | Personal access token from [Airtable](https://airtable.com/create/tokens) with `data.records:read` and `data.records:write` |
 | `AIRTABLE_BASE_ID` | Base ID from your Airtable URL (`https://airtable.com/appXXXXXXXX/...`) |
 | `NEXT_PUBLIC_MAPBOX_TOKEN` | Public token from [Mapbox](https://account.mapbox.com/access-tokens/) |
-| `UPSTASH_REDIS_REST_URL` | Optional — Upstash Redis REST URL (preferred for live viewer count) |
-| `UPSTASH_REDIS_REST_TOKEN` | Optional — Upstash Redis REST token |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL (Settings → API) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase **service_role** key (server only — never expose in the browser) |
+| `UPSTASH_REDIS_REST_URL` | Optional fallback — Upstash Redis REST URL |
+| `UPSTASH_REDIS_REST_TOKEN` | Optional fallback — Upstash Redis REST token |
 | `AUTH_SECRET` | Random secret for Auth.js sessions (`openssl rand -base64 32`) |
 | `AUTH_URL` | App origin, e.g. `http://localhost:3000` |
 | `AUTH_GOOGLE_ID` | Google OAuth client ID |
 | `AUTH_GOOGLE_SECRET` | Google OAuth client secret |
+
+### Supabase (live explorers + chat)
+
+1. Create a free project at [supabase.com/dashboard](https://supabase.com/dashboard)
+2. Open **SQL Editor** → New query → paste `supabase/schema.sql` → **Run**
+3. Open **Project Settings → API** and copy:
+   - Project URL → `NEXT_PUBLIC_SUPABASE_URL`
+   - `service_role` key → `SUPABASE_SERVICE_ROLE_KEY`
+4. Restart `npm run dev`
+
+Priority for live data: **Supabase → Redis → Airtable/memory**. Spots/events stay in Airtable.
 
 ### Google sign-in
 
@@ -40,8 +54,6 @@ Fill in `.env.local`:
 4. Restart `npm run dev` — use **Sign in** in the top-right chrome (or `/login`)
 
 Spots without uploaded photos show a category-colored placeholder (no stock Unsplash images).
-
-Live “people viewing” uses **Upstash Redis** when set, otherwise **Airtable** (rejected `__presence__:` rows in `Entries`), otherwise in-memory (local only).
 
 ### Airtable table: `Entries`
 

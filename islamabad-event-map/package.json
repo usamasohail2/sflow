@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.110.8",
     "@upstash/redis": "^1.38.0",
     "airtable": "^0.12.2",
     "lucide-react": "^1.24.0",
