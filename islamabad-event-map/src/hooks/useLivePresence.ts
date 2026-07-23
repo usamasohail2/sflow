@@ -104,9 +104,27 @@ export function useLivePresence(
     if (withPosition) {
       const map = mapRef.current;
       if (map) {
-        const center = map.getCenter();
-        lat = center.lat;
-        lng = center.lng;
+        // Prefer the 3D camera eye (where the viewer is "standing" in the sky),
+        // not the look-at center in the middle of the screen.
+        try {
+          const camera = map.getFreeCameraOptions?.();
+          const eye = camera?.position?.toLngLat?.();
+          if (
+            eye &&
+            Number.isFinite(eye.lat) &&
+            Number.isFinite(eye.lng)
+          ) {
+            lat = eye.lat;
+            lng = eye.lng;
+          }
+        } catch {
+          // fall through to center
+        }
+        if (lat == null || lng == null) {
+          const center = map.getCenter();
+          lat = center.lat;
+          lng = center.lng;
+        }
       }
     }
 
