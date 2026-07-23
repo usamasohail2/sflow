@@ -1,5 +1,6 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
+import { upsertSignedInProfile } from "@/lib/profiles";
 
 export function isGoogleAuthConfigured(): boolean {
   return Boolean(
@@ -25,6 +26,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   pages: {
     signIn: "/login",
     error: "/login",
+  },
+  events: {
+    async signIn({ user, account }) {
+      try {
+        await upsertSignedInProfile({
+          providerAccountId: account?.providerAccountId,
+          provider: account?.provider,
+          email: user.email,
+          name: user.name,
+          image: user.image,
+        });
+      } catch (error) {
+        console.error("Failed to upsert signed-in profile:", error);
+      }
+    },
   },
   callbacks: {
     async jwt({ token, account, profile }) {

@@ -10,6 +10,17 @@ import {
 import type { Entry, EntryStatus } from "@/lib/types";
 
 type StatusFilter = "all" | EntryStatus;
+type ManageTab = "entries" | "users";
+
+type UserProfile = {
+  id: string;
+  email: string | null;
+  name: string | null;
+  image: string | null;
+  provider: string;
+  createdAt: number;
+  lastSeen: number;
+};
 
 const jsonHeaders: HeadersInit = {
   "Content-Type": "application/json",
@@ -34,7 +45,11 @@ function formatAddedAt(iso: string): string {
 }
 
 export default function ManagePage() {
+  const [tab, setTab] = useState<ManageTab>("entries");
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [profiles, setProfiles] = useState<UserProfile[]>([]);
+  const [profilesLoading, setProfilesLoading] = useState(false);
+  const [profilesError, setProfilesError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("pending");
@@ -71,6 +86,33 @@ export default function ManagePage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const loadProfiles = useCallback(async () => {
+    setProfilesLoading(true);
+    setProfilesError(null);
+    try {
+      const res = await fetch("/api/admin/profiles");
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Could not load users");
+      }
+      setProfiles(Array.isArray(data.profiles) ? data.profiles : []);
+      if (typeof data.error === "string" && data.error) {
+        setProfilesError(data.error);
+      }
+    } catch (err) {
+      setProfiles([]);
+      setProfilesError(
+        err instanceof Error ? err.message : "Could not load users"
+      );
+    } finally {
+      setProfilesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tab === "users") void loadProfiles();
+  }, [tab, loadProfiles]);
 
   const submitterCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -149,28 +191,122 @@ export default function ManagePage() {
 
   return (
     <main className="min-h-dvh bg-wash text-ink">
-      <header className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur">
+      <header className="sticky top-0 z-20 border-b border-line bg-surface">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
           <div>
             <h1 className="text-base font-semibold sm:text-lg">
-              Manage entries
+              {tab === "users" ? "Signed-in users" : "Manage entries"}
             </h1>
             <p className="text-xs text-ink-muted">
-              {counts.pending} pending · {counts.approved} approved ·{" "}
-              {counts.rejected} rejected
+              {tab === "users"
+                ? `${profiles.length} Google account${profiles.length === 1 ? "" : "s"}`
+                : `${counts.pending} pending · ${counts.approved} approved · ${counts.rejected} rejected`}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => void load()}
-            className="rounded-full border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted hover:text-ink"
-          >
-            Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-full border border-line bg-wash p-0.5">
+              <button
+                type="button"
+                onClick={() => setTab("entries")}
+                className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                  tab === "entries"
+                    ? "bg-surface text-ink shadow-sm"
+                    : "text-ink-muted hover:text-ink"
+                }`}
+              >
+                Entries
+              </button>
+              <button
+                type="button"
+                onClick={() => setTab("users")}
+                className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                  tab === "users"
+                    ? "bg-surface text-ink shadow-sm"
+                    : "text-ink-muted hover:text-ink"
+                }`}
+              >
+                Users
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                void (tab === "users" ? loadProfiles() : load())
+              }
+              className="rounded-full border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted hover:text-ink"
+            >
+              Refresh
+            </button>
+          </div>
         </div>
       </header>
 
       <div className="mx-auto max-w-5xl px-4 py-4">
+        {tab === "users" ? (
+          <section className="space-y-3">
+            {profilesError && (
+              <div className="rounded-xl border border-danger/30 bg-danger-soft px-3 py-2 text-xs text-danger">
+                {profilesError}
+                <span className="mt-1 block text-ink-muted">
+                  If the table is missing, run{" "}
+                  <code className="text-ink">supabase/profiles.sql</code> in
+                  the Supabase SQL Editor, then refresh.
+                </span>
+              </div>
+            )}
+            {profilesLoading ? (
+              <p className="text-sm text-ink-muted">Loading users…</p>
+            ) : profiles.length === 0 && !profilesError ? (
+              <p className="rounded-xl border border-line bg-surface px-4 py-6 text-center text-sm text-ink-muted">
+                No sign-ins yet. After someone uses Google login, they appear
+                here (and in Supabase → Table Editor →{" "}
+                <code className="text-ink">profiles</code>).
+              </p>
+            ) : (
+              <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface">
+                {profiles.map((p) => (
+                  <li
+                    key={p.id}
+                    className="flex items-center gap-3 px-3 py-2.5 sm:px-4"
+                  >
+                    {p.image ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={p.image}
+                        alt=""
+                        className="h-9 w-9 shrink-0 rounded-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-wash text-xs font-bold text-ink-muted">
+                        {(p.name || p.email || "?").charAt(0).toUpperCase()}
+                      </span>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-ink">
+                        {p.name || "Unnamed"}
+                      </p>
+                      <p className="truncate text-xs text-ink-muted">
+                        {p.email || p.id}
+                      </p>
+                    </div>
+                    <div className="shrink-0 text-right text-[10px] text-ink-faint">
+                      <p>
+                        Last{" "}
+                        {formatAddedAt(new Date(p.lastSeen).toISOString())}
+                      </p>
+                      <p className="mt-0.5">
+                        Joined{" "}
+                        {formatAddedAt(new Date(p.createdAt).toISOString())}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        ) : (
+          <>
         <div className="flex flex-wrap items-center gap-2">
           {(
             [
@@ -388,6 +524,8 @@ export default function ManagePage() {
               </li>
             ))}
           </ul>
+        )}
+          </>
         )}
       </div>
 

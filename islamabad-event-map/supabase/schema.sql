@@ -53,6 +53,33 @@ create policy "deny all chat_messages"
   using (false)
   with check (false);
 
+-- Signed-in users (Google OAuth via Auth.js) — oversee in Table Editor → profiles
+create table if not exists public.profiles (
+  id text primary key,
+  email text,
+  name text,
+  image text,
+  provider text not null default 'google',
+  created_at timestamptz not null default now(),
+  last_seen timestamptz not null default now()
+);
+
+create index if not exists profiles_last_seen_idx
+  on public.profiles (last_seen desc);
+
+create index if not exists profiles_email_idx
+  on public.profiles (email);
+
+alter table public.profiles enable row level security;
+
+drop policy if exists "deny all profiles" on public.profiles;
+create policy "deny all profiles"
+  on public.profiles
+  for all
+  to anon, authenticated
+  using (false)
+  with check (false);
+
 -- Optional: enable Realtime later for push updates
 -- alter publication supabase_realtime add table public.live_presence;
 -- alter publication supabase_realtime add table public.chat_messages;
