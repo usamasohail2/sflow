@@ -7,7 +7,6 @@ import Map, {
   AttributionControl,
 } from "react-map-gl/mapbox";
 import type { MapRef } from "react-map-gl/mapbox";
-import { LngLatBounds } from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type { Entry } from "@/lib/types";
 import {
@@ -78,12 +77,14 @@ interface EntryMapProps {
   selectedId: string | null;
   onSelect: (entry: Entry | null) => void;
   flyToEntry?: Entry | null;
-  /**
-   * When this key changes with a non-empty entry list, fit the camera to those
-   * pins (used by search so results are visible on the map).
-   */
-  fitToEntries?: Entry[] | null;
-  fitToEntriesKey?: string;
+  /** Jump the camera to a geocoded world place (location search) */
+  flyToPlace?: {
+    lat: number;
+    lng: number;
+    name?: string;
+    bbox?: [number, number, number, number];
+  } | null;
+  flyToPlaceKey?: number;
   /** Active city — drives map bounds / fly-to when toggled */
   city?: CityId;
   /** When true, map clicks drop a draft pin for the suggest form */
@@ -633,8 +634,8 @@ export function EntryMap({
   selectedId,
   onSelect,
   flyToEntry,
-  fitToEntries = null,
-  fitToEntriesKey = "",
+  flyToPlace = null,
+  flyToPlaceKey = 0,
   city = DEFAULT_CITY,
   pinMode = false,
   draftPin = null,
@@ -1483,39 +1484,44 @@ export function EntryMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flyToEntry, pinMode]);
 
-  // Search (and similar) — frame matching pins on the map
+  // Place search — fly to a real-world location for easier pinning
   useEffect(() => {
-    if (!mapReady || pinMode || !fitToEntriesKey) return;
-    const targets = (fitToEntries ?? []).filter(hasCoordinates);
-    if (targets.length === 0) return;
+    if (!mapReady || !flyToPlace || !flyToPlaceKey) return;
     const map = mapRef.current?.getMap();
     if (!map) return;
 
-    if (targets.length === 1) {
-      const only = targets[0]!;
-      setPopupEntry(only);
-      setHoveredId(null);
-      onSelect(only);
-      focusPinNearCardRef.current(only);
+    setPopupEntry(null);
+    setHoveredId(null);
+    setSuggestPrompt(null);
+
+    if (flyToPlace.bbox && flyToPlace.bbox.length === 4) {
+      const [minLng, minLat, maxLng, maxLat] = flyToPlace.bbox;
+      map.fitBounds(
+        [
+          [minLng, minLat],
+          [maxLng, maxLat],
+        ],
+        {
+          padding: isMobile
+            ? { top: 72, bottom: 140, left: 36, right: 36 }
+            : { top: 88, bottom: 120, left: 72, right: 72 },
+          maxZoom: 16,
+          duration: 1100,
+          essential: true,
+        }
+      );
       return;
     }
 
-    const bounds = new LngLatBounds();
-    for (const entry of targets) {
-      bounds.extend([entry.lng!, entry.lat!]);
-    }
-    if (bounds.isEmpty()) return;
-
-    setPopupEntry(null);
-    map.fitBounds(bounds, {
-      padding: isMobile
-        ? { top: 72, bottom: 160, left: 36, right: 36 }
-        : { top: 88, bottom: 140, left: 72, right: 72 },
-      maxZoom: 14.5,
-      duration: 900,
+    mapRef.current?.flyTo({
+      center: [flyToPlace.lng, flyToPlace.lat],
+      zoom: Math.max(map.getZoom(), 15),
+      pitch: is3D ? pitch : MAP_2D_PITCH,
+      bearing: is3D ? bearing : 0,
+      duration: 1100,
       essential: true,
     });
-  }, [fitToEntriesKey, fitToEntries, mapReady, pinMode, isMobile]);
+  }, [flyToPlace, flyToPlaceKey, mapReady, isMobile, is3D, pitch, bearing]);
 
   useEffect(() => {
     if (draftPin && pinMode) {
