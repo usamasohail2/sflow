@@ -712,6 +712,32 @@ body {
   animation: pin-tooltip-in 0.12s ease-out;
 }
 
+/* Faint ambient title above nearby pins — readable but not loud */
+.pin-name-label {
+  max-width: 7.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.15;
+  color: color-mix(in srgb, var(--ink) 42%, transparent);
+  text-shadow:
+    0 0 4px color-mix(in srgb, var(--surface) 90%, transparent),
+    0 1px 2px color-mix(in srgb, var(--surface) 75%, transparent);
+  opacity: 0.72;
+}
+
+.dusk .pin-name-label,
+.dark .pin-name-label {
+  color: color-mix(in srgb, var(--ink) 55%, transparent);
+  text-shadow:
+    0 0 5px color-mix(in srgb, #0b1020 85%, transparent),
+    0 1px 2px color-mix(in srgb, #0b1020 70%, transparent);
+  opacity: 0.65;
+}
+
 @keyframes pin-tooltip-in {
   from {
     opacity: 0;

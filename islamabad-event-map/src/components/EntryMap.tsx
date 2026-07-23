@@ -62,6 +62,11 @@ import { useSession } from "next-auth/react";
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "";
 
+/** Show ambient pin name labels only when zoomed in this close */
+const PIN_LABEL_MIN_ZOOM = 13;
+/** Approx. screen separation (px) so faint labels don't pile up */
+const PIN_LABEL_SEP_PX = 58;
+
 /** Gentle accelerate-then-decelerate curve for pin-focus camera moves */
 function easeInOutCubic(t: number) {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -305,6 +310,7 @@ function MapPin({
   isViewed,
   isDimmed,
   showTooltip,
+  showNameLabel,
   onHoverChange,
   enter,
   is3D,
@@ -314,6 +320,8 @@ function MapPin({
   isViewed?: boolean;
   isDimmed?: boolean;
   showTooltip: boolean;
+  /** Very faint title above the pin when zoomed in */
+  showNameLabel?: boolean;
   onHoverChange: (hovering: boolean) => void;
   enter?: boolean;
   is3D?: boolean;
@@ -346,6 +354,14 @@ function MapPin({
         <div className="absolute bottom-[calc(100%+10px)] left-1/2 z-20 -translate-x-1/2">
           <PinTooltip entry={entry} />
         </div>
+      )}
+      {showNameLabel && !showTooltip && !isSelected && (
+        <span
+          className="pin-name-label pointer-events-none absolute bottom-[calc(100%+3px)] left-1/2 z-[1] -translate-x-1/2"
+          aria-hidden
+        >
+          {truncate(entry.title, 22)}
+        </span>
       )}
       <button
         type="button"
@@ -709,6 +725,10 @@ export function EntryMap({
   const [pinDepthOrder, setPinDepthOrder] = useState<Map<string, number>>(
     () => new globalThis.Map()
   );
+  /** Pin ids that get a faint ambient name label at the current camera */
+  const [labeledPinIds, setLabeledPinIds] = useState<Set<string>>(
+    () => new Set()
+  );
   const revealGen = useRef(0);
   const shellRef = useRef<HTMLDivElement>(null);
 
@@ -786,27 +806,83 @@ export function EntryMap({
 
   // Rank pins by projected screen Y so pins nearer the camera (lower on
   // screen in a tilted view) draw above pins farther away, instead of
-  // stacking in arbitrary DOM order. Recomputed on every camera move —
-  // pan, zoom, rotate, and pitch all fire Mapbox's "move" event.
+  // stacking in arbitrary DOM order. Also pick a sparse set of nearby
+  // pins that can show a dim name label without crowding.
+  // Recomputed on every camera move — pan, zoom, rotate, and pitch.
   const recomputePinDepthOrder = useCallback(() => {
     const map = mapRef.current?.getMap();
     if (!map) return;
     const list = mappableRef.current;
     if (list.length === 0) {
       setPinDepthOrder((prev) => (prev.size === 0 ? prev : new globalThis.Map()));
+      setLabeledPinIds((prev) => (prev.size === 0 ? prev : new Set()));
       return;
     }
 
-    const ranked = list
-      .map((entry) => {
-        const pos = mapPinPosition(entry, list);
-        return { id: entry.id, y: map.project([pos.lng, pos.lat]).y };
-      })
-      .sort((a, b) => a.y - b.y);
+    const projected = list.map((entry) => {
+      const pos = mapPinPosition(entry, list);
+      const pt = map.project([pos.lng, pos.lat]);
+      return { id: entry.id, x: pt.x, y: pt.y };
+    });
 
+    const ranked = [...projected].sort((a, b) => a.y - b.y);
     setPinDepthOrder(
       new globalThis.Map(ranked.map((item, index) => [item.id, index]))
     );
+
+    const zoom = map.getZoom();
+    if (zoom < PIN_LABEL_MIN_ZOOM) {
+      setLabeledPinIds((prev) => (prev.size === 0 ? prev : new Set()));
+      return;
+    }
+
+    // Tighter spacing as you zoom further in — more labels can fit.
+    const sep =
+      zoom >= 15 ? 42 : zoom >= 14 ? 50 : PIN_LABEL_SEP_PX;
+    const sepSq = sep * sep;
+
+    // Prefer nearer-to-camera pins (higher screen Y) for labels.
+    const byNear = [...projected].sort((a, b) => b.y - a.y);
+    const placed: Array<{ x: number; y: number }> = [];
+    const nextLabels = new Set<string>();
+
+    for (const pin of byNear) {
+      // Skip off-screen-ish pins (small pad)
+      if (
+        pin.x < -40 ||
+        pin.y < -40 ||
+        pin.x > map.getContainer().clientWidth + 40 ||
+        pin.y > map.getContainer().clientHeight + 40
+      ) {
+        continue;
+      }
+      let clashes = false;
+      for (const other of placed) {
+        const dx = pin.x - other.x;
+        const dy = pin.y - other.y;
+        if (dx * dx + dy * dy < sepSq) {
+          clashes = true;
+          break;
+        }
+      }
+      if (clashes) continue;
+      placed.push({ x: pin.x, y: pin.y });
+      nextLabels.add(pin.id);
+    }
+
+    setLabeledPinIds((prev) => {
+      if (prev.size === nextLabels.size) {
+        let same = true;
+        for (const id of Array.from(nextLabels)) {
+          if (!prev.has(id)) {
+            same = false;
+            break;
+          }
+        }
+        if (same) return prev;
+      }
+      return nextLabels;
+    });
   }, []);
 
   useEffect(() => {
@@ -1657,6 +1733,9 @@ export function EntryMap({
                       !focusedCategories.includes(entry.category)
                     }
                     showTooltip={showTooltip}
+                    showNameLabel={
+                      !pinMode && labeledPinIds.has(entry.id)
+                    }
                     enter={enter}
                     is3D={is3D && !pinMode}
                     onHoverChange={(hovering) =>
