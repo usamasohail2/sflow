@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  getPresenceSnapshot,
   hasSharedPresenceStore,
-  isValidCameraPose,
+  isValidChatText,
   isValidDisplayName,
-  touchPresence,
+  listChatMessages,
+  postChatMessage,
 } from "@/lib/presence";
 
 export const dynamic = "force-dynamic";
@@ -19,10 +19,9 @@ function isValidVisitorId(value: unknown): value is string {
 }
 
 export async function GET() {
-  const snap = await getPresenceSnapshot();
+  const messages = await listChatMessages();
   return NextResponse.json({
-    viewers: snap.viewers,
-    peers: snap.peers,
+    messages,
     shared: hasSharedPresenceStore(),
   });
 }
@@ -30,26 +29,36 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+
+    // Honeypot
+    if (typeof body.website === "string" && body.website.trim()) {
+      return NextResponse.json({ ok: true, messages: [] });
+    }
+
     if (!isValidVisitorId(body.visitorId)) {
       return NextResponse.json({ error: "Invalid visitorId" }, { status: 400 });
     }
+    if (!isValidDisplayName(body.name)) {
+      return NextResponse.json({ error: "Invalid name" }, { status: 400 });
+    }
+    if (!isValidChatText(body.text)) {
+      return NextResponse.json({ error: "Invalid message" }, { status: 400 });
+    }
 
-    const camera = isValidCameraPose(body.camera)
-      ? body.camera
-      : isValidCameraPose({ lat: body.lat, lng: body.lng })
-        ? { lat: body.lat as number, lng: body.lng as number }
-        : null;
+    const result = await postChatMessage({
+      visitorId: body.visitorId,
+      name: body.name,
+      text: body.text,
+    });
 
-    const name = isValidDisplayName(body.name) ? body.name.trim() : null;
-
-    const snap = await touchPresence(body.visitorId, { camera, name });
     return NextResponse.json({
-      viewers: snap.viewers,
-      peers: snap.peers,
+      ok: true,
+      message: result.message,
+      messages: result.messages,
       shared: hasSharedPresenceStore(),
     });
   } catch (error) {
-    console.error("Presence error:", error);
+    console.error("Chat error:", error);
     return NextResponse.json({ error: "Bad request" }, { status: 400 });
   }
 }

@@ -350,7 +350,7 @@ export async function fetchAllEntries(): Promise<Entry[]> {
 
   return records
     .map(mapRecord)
-    .filter((e) => !e.title.startsWith("__presence__:"))
+    .filter((e) => !e.title.startsWith("__presence__:") && !e.title.startsWith("__chat__:"))
     .sort((a, b) => {
       const order = { pending: 0, approved: 1, rejected: 2 } as const;
       const byStatus = order[a.status] - order[b.status];
