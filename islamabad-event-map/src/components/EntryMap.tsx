@@ -659,6 +659,7 @@ export function EntryMap({
     messages: chatMessages,
     floating: floatingChats,
     sending: chatSending,
+    sendError: chatSendError,
     sendMessage,
   } = usePublicChat({
     mapRef,
@@ -675,6 +676,7 @@ export function EntryMap({
       selfId,
       displayName,
       sending: chatSending,
+      sendError: chatSendError,
       onSend: sendMessage,
     });
     return () => onPublicChatChange(null);
@@ -684,6 +686,7 @@ export function EntryMap({
     selfId,
     displayName,
     chatSending,
+    chatSendError,
     sendMessage,
   ]);
 

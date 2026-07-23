@@ -9,6 +9,7 @@ export interface PublicChatHandle {
   selfId: string;
   displayName: string;
   sending: boolean;
+  sendError?: string | null;
   onSend: (text: string) => Promise<boolean>;
 }
 
@@ -29,6 +30,7 @@ export function PublicChat({
   selfId,
   displayName,
   sending,
+  sendError = null,
   onSend,
   className = "",
   open: openProp,
@@ -160,28 +162,37 @@ export function PublicChat({
           </div>
 
           <form
-            className="flex items-center gap-1.5 border-t border-line p-2"
+            className="flex flex-col gap-1 border-t border-line p-2"
             onSubmit={(e) => {
               e.preventDefault();
               void submit();
             }}
           >
-            <input
-              ref={inputRef}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              maxLength={160}
-              placeholder={`Chat as ${displayName}…`}
-              className="min-w-0 flex-1 rounded-full border border-line bg-wash px-3 py-1.5 text-[11px] text-ink outline-none placeholder:text-ink-faint focus:border-[var(--blue)]"
-              disabled={sending || !selfId}
-            />
-            <button
-              type="submit"
-              disabled={sending || !draft.trim() || !selfId}
-              className="shrink-0 rounded-full bg-[var(--blue)] px-2.5 py-1.5 text-[11px] font-semibold text-white transition enabled:hover:opacity-90 disabled:opacity-40"
-            >
-              Send
-            </button>
+            <div className="flex items-center gap-1.5">
+              <input
+                ref={inputRef}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                maxLength={160}
+                placeholder={
+                  selfId ? `Chat as ${displayName}…` : "Connecting…"
+                }
+                className="min-w-0 flex-1 rounded-full border border-line bg-wash px-3 py-1.5 text-[11px] text-ink outline-none placeholder:text-ink-faint focus:border-[var(--blue)]"
+                disabled={sending || !selfId}
+              />
+              <button
+                type="submit"
+                disabled={sending || !draft.trim() || !selfId}
+                className="shrink-0 rounded-full bg-[var(--blue)] px-2.5 py-1.5 text-[11px] font-semibold text-white transition enabled:hover:opacity-90 disabled:opacity-40"
+              >
+                {sending ? "…" : "Send"}
+              </button>
+            </div>
+            {sendError && (
+              <p className="px-1 text-[10px] font-medium text-danger">
+                {sendError}
+              </p>
+            )}
           </form>
         </>
       )}

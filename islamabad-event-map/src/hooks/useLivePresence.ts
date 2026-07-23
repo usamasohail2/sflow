@@ -14,9 +14,9 @@ export interface LiveExplorer {
   lastSeen: number;
 }
 
-const HEARTBEAT_MS = 12_000;
+const HEARTBEAT_MS = 8_000;
 /** How often we publish eye position while the camera is moving */
-const MOVE_THROTTLE_MS = 400;
+const MOVE_THROTTLE_MS = 500;
 const STORAGE_KEY = "isb-map-visitor-id";
 const SHOW_KEY = "isb-map-show-explorers";
 
@@ -117,8 +117,11 @@ export function useLivePresence(
     if (withPosition) {
       const map = mapRef.current;
       if (map) {
-        // Prefer the 3D camera eye (where the viewer is "standing" in the sky),
-        // not the look-at center in the middle of the screen.
+        // Blend look-at center with 3D eye so avatars stay near what the
+        // player is viewing, without sitting on the far-behind eye point.
+        const center = map.getCenter();
+        let eyeLat = center.lat;
+        let eyeLng = center.lng;
         try {
           const camera = map.getFreeCameraOptions?.();
           const eye = camera?.position?.toLngLat?.();
@@ -127,20 +130,16 @@ export function useLivePresence(
             Number.isFinite(eye.lat) &&
             Number.isFinite(eye.lng)
           ) {
-            lat = eye.lat;
-            lng = eye.lng;
+            eyeLat = eye.lat;
+            eyeLng = eye.lng;
           }
         } catch {
-          // fall through to center
+          // keep center
         }
-        if (lat == null || lng == null) {
-          const center = map.getCenter();
-          lat = center.lat;
-          lng = center.lng;
-        }
-        if (lat != null && lng != null) {
-          setSelfPosition({ lat, lng });
-        }
+        const mix = 0.35; // 0 = center only, 1 = eye only
+        lat = center.lat * (1 - mix) + eyeLat * mix;
+        lng = center.lng * (1 - mix) + eyeLng * mix;
+        setSelfPosition({ lat, lng });
       }
     }
 
@@ -165,11 +164,15 @@ export function useLivePresence(
       if (typeof data.viewers === "number") {
         setViewers(Math.max(1, data.viewers));
       }
-      if (Array.isArray(data.explorers)) {
+      // Only replace the roster on a healthy payload — never wipe on glitches
+      if (Array.isArray(data.explorers) && data.explorers.length > 0) {
+        setExplorers(data.explorers);
+      } else if (Array.isArray(data.explorers) && data.viewers === 1) {
+        // Alone on the map — clear others
         setExplorers(data.explorers);
       }
     } catch {
-      // ignore transient network errors
+      // keep last known explorers on transient errors
     }
   }, [mapRef, selfId]);
 

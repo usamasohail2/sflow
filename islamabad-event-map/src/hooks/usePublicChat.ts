@@ -31,17 +31,24 @@ function readEyePosition(
 ): { lat: number; lng: number } | null {
   const map = mapRef.current;
   if (!map) return null;
+  const center = map.getCenter();
+  let eyeLat = center.lat;
+  let eyeLng = center.lng;
   try {
     const camera = map.getFreeCameraOptions?.();
     const eye = camera?.position?.toLngLat?.();
     if (eye && Number.isFinite(eye.lat) && Number.isFinite(eye.lng)) {
-      return { lat: eye.lat, lng: eye.lng };
+      eyeLat = eye.lat;
+      eyeLng = eye.lng;
     }
   } catch {
-    // fall through
+    // keep center
   }
-  const center = map.getCenter();
-  return { lat: center.lat, lng: center.lng };
+  const mix = 0.35;
+  return {
+    lat: center.lat * (1 - mix) + eyeLat * mix,
+    lng: center.lng * (1 - mix) + eyeLng * mix,
+  };
 }
 
 export function usePublicChat({
@@ -60,9 +67,11 @@ export function usePublicChat({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [floating, setFloating] = useState<FloatingBubble[]>([]);
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const seenIds = useRef(new Set<string>());
   const sinceRef = useRef(0);
   const bootstrapped = useRef(false);
+  const sendingLock = useRef(false);
 
   const ingest = useCallback((incoming: ChatMessage[], isBootstrap: boolean) => {
     if (!incoming.length) return;
@@ -150,12 +159,18 @@ export function usePublicChat({
 
   const sendMessage = useCallback(
     async (text: string) => {
-      if (!selfId || sending) return false;
+      if (!selfId || sendingLock.current) return false;
       const trimmed = text.trim();
       if (!trimmed) return false;
 
       const pos = readEyePosition(mapRef);
+      sendingLock.current = true;
       setSending(true);
+      setSendError(null);
+
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 8000);
+
       try {
         const res = await fetch("/api/chat", {
           method: "POST",
@@ -168,8 +183,12 @@ export function usePublicChat({
             lat: pos?.lat,
             lng: pos?.lng,
           }),
+          signal: controller.signal,
         });
-        if (!res.ok) return false;
+        if (!res.ok) {
+          setSendError("Couldn't send — try again");
+          return false;
+        }
         const data = (await res.json()) as {
           message?: ChatMessage;
           messages?: ChatMessage[];
@@ -181,18 +200,22 @@ export function usePublicChat({
         }
         return true;
       } catch {
+        setSendError("Couldn't send — check connection");
         return false;
       } finally {
+        window.clearTimeout(timeout);
+        sendingLock.current = false;
         setSending(false);
       }
     },
-    [displayName, ingest, mapRef, selfColor, selfId, sending]
+    [displayName, ingest, mapRef, selfColor, selfId]
   );
 
   return {
     messages,
     floating,
     sending,
+    sendError,
     sendMessage,
   };
 }

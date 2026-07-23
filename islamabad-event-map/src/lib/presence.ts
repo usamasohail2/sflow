@@ -1,11 +1,13 @@
 import Airtable from "airtable";
 import { Redis } from "@upstash/redis";
 
-const STALE_MS = 45_000;
+const STALE_MS = 90_000;
 const REDIS_ZKEY = "isb:presence:z";
 const REDIS_HKEY = "isb:presence:h";
 const ENTRIES_TABLE = "Entries";
 const PRESENCE_PREFIX = "__presence__:";
+/** Don't hammer Airtable on every camera move — sync at most this often per visitor */
+const AIRTABLE_SYNC_MS = 4_000;
 
 export interface ExplorerPresence {
   id: string;
@@ -29,6 +31,10 @@ type PresenceStore = Map<string, ExplorerPresence>;
 declare global {
   // eslint-disable-next-line no-var
   var __isbPresence: PresenceStore | undefined;
+  // eslint-disable-next-line no-var
+  var __isbAirtableSyncAt: Map<string, number> | undefined;
+  // eslint-disable-next-line no-var
+  var __isbAirtableSyncing: Set<string> | undefined;
 }
 
 function memoryStore(): PresenceStore {
@@ -323,26 +329,62 @@ async function listRedis(): Promise<ExplorerPresence[]> {
 export async function touchPresence(
   input: TouchPresenceInput
 ): Promise<ExplorerPresence[]> {
+  // Always update process memory first — fast path for local / same-instance clients
+  const live = touchMemory(input);
+
   if (hasRedis()) {
     try {
       return await touchRedis(input);
     } catch (error) {
-      console.error("Redis presence failed, falling back:", error);
+      console.error("Redis presence failed, using memory:", error);
+      return live;
     }
   }
 
   if (hasAirtable()) {
-    try {
-      return await touchAirtable(input);
-    } catch (error) {
-      console.error("Airtable presence failed, falling back to memory:", error);
-    }
+    scheduleAirtableSync(input);
   }
 
-  return touchMemory(input);
+  return live;
+}
+
+function airtableSyncAt(): Map<string, number> {
+  if (!globalThis.__isbAirtableSyncAt) {
+    globalThis.__isbAirtableSyncAt = new Map();
+  }
+  return globalThis.__isbAirtableSyncAt;
+}
+
+function airtableSyncing(): Set<string> {
+  if (!globalThis.__isbAirtableSyncing) {
+    globalThis.__isbAirtableSyncing = new Set();
+  }
+  return globalThis.__isbAirtableSyncing;
+}
+
+/** Fire-and-forget Airtable write, throttled per visitor */
+function scheduleAirtableSync(input: TouchPresenceInput) {
+  const now = Date.now();
+  const last = airtableSyncAt().get(input.visitorId) ?? 0;
+  if (now - last < AIRTABLE_SYNC_MS) return;
+  if (airtableSyncing().has(input.visitorId)) return;
+
+  airtableSyncAt().set(input.visitorId, now);
+  airtableSyncing().add(input.visitorId);
+  void touchAirtable(input)
+    .catch((error) => {
+      console.error("Airtable presence sync failed:", error);
+    })
+    .finally(() => {
+      airtableSyncing().delete(input.visitorId);
+    });
 }
 
 export async function listPresence(): Promise<ExplorerPresence[]> {
+  // Same-process clients: memory is the source of truth for live positions
+  const mem = listMemory();
+  if (mem.length > 0) return mem;
+
   if (hasRedis()) {
     try {
       return await listRedis();
@@ -359,7 +401,7 @@ export async function listPresence(): Promise<ExplorerPresence[]> {
     }
   }
 
-  return listMemory();
+  return mem;
 }
 
 export async function getPresenceCount(): Promise<number> {
