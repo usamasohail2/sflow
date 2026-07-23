@@ -361,21 +361,27 @@ export function HomePage() {
                 "linear-gradient(to top, color-mix(in srgb, var(--surface) 50%, transparent) 0%, transparent 100%)",
             }}
           >
-            <CategoryStrip
-              categories={availableCategories}
-              selected={selectedCategories}
-              onChange={handleCategoriesChange}
-            />
+            {/* Mobile: categories above spots */}
+            <div className="sm:hidden">
+              <CategoryStrip
+                categories={availableCategories}
+                selected={selectedCategories}
+                onChange={handleCategoriesChange}
+              />
+            </div>
 
-            {/* Desktop: chat sits above the spots rail, right-aligned */}
-            {publicChat && (
-              <div className="pointer-events-auto hidden justify-end px-3 sm:flex">
-                <PublicChat
-                  {...publicChat}
-                  layout="desktop"
-                />
-              </div>
-            )}
+            {/* Desktop: categories left, chat right */}
+            <div className="pointer-events-auto hidden items-end justify-between gap-3 px-3 sm:flex">
+              <CategoryStrip
+                categories={availableCategories}
+                selected={selectedCategories}
+                onChange={handleCategoriesChange}
+                className="min-w-0 flex-1 px-0 py-1"
+              />
+              {publicChat ? (
+                <PublicChat {...publicChat} layout="desktop" />
+              ) : null}
+            </div>
 
             {/* Spots — hidden on mobile while chat is open */}
             <div

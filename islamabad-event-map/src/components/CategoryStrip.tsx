@@ -15,7 +15,7 @@ export function CategoryStrip({
   categories,
   selected,
   onChange,
-  className = "",
+  className = "px-3 py-1",
 }: CategoryStripProps) {
   if (categories.length === 0) return null;
 
@@ -24,11 +24,13 @@ export function CategoryStrip({
 
   return (
     <div
-      className={`pointer-events-auto ${className}`}
+      className="pointer-events-auto"
       role="listbox"
       aria-label="Categories"
     >
-      <div className="flex gap-1.5 overflow-x-auto px-3 py-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div
+        className={`flex gap-1.5 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${className}`}
+      >
         <button
           type="button"
           role="option"
