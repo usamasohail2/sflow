@@ -141,7 +141,7 @@ export interface MapCameraView {
 export const LAUNCH_CAMERA = {
   pitch: MAP_3D_PITCH,
   bearing: DEFAULT_MAP_BEARING,
-  durationMs: 10000,
+  durationMs: 3500,
   /** Opening frame — matches LAUNCH_CAMERA_TRACK[0] */
   start: {
     lng: 73.0372,

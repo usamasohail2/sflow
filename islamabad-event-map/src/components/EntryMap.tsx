@@ -825,7 +825,7 @@ export function EntryMap({
         prepareUnderSplash();
         const reveal = () => revealMap();
         map.once("idle", reveal);
-        window.setTimeout(reveal, 1200);
+        window.setTimeout(reveal, 500);
         fireLaunchCameraDone();
       });
       return cancelReady;
@@ -850,7 +850,7 @@ export function EntryMap({
 
       onIdle = show;
       map.once("idle", show);
-      settleTimer = window.setTimeout(show, 2000);
+      settleTimer = window.setTimeout(show, 600);
     });
 
     return () => {
@@ -1140,8 +1140,8 @@ export function EntryMap({
 
     let i = 0;
     const stepMs = Math.max(
-      40,
-      Math.min(90, 1600 / Math.max(pins.length, 1))
+      28,
+      Math.min(55, 900 / Math.max(pins.length, 1))
     );
     const clearEnterTimers: number[] = [];
     let timer = 0;

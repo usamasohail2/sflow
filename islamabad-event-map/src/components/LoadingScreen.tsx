@@ -15,7 +15,7 @@ interface LoadingScreenProps {
 /** Full-viewport splash — the only Koh loader on first paint */
 export function LoadingScreen({
   ready = false,
-  minDuration = 900,
+  minDuration = 400,
   label = "Finding spots in Islamabad…",
   onDone,
 }: LoadingScreenProps) {
@@ -56,7 +56,7 @@ export function LoadingScreen({
       setExiting(true);
       setGone(true);
       onDoneRef.current?.();
-    }, 10000);
+    }, 5000);
     return () => window.clearTimeout(t);
   }, []);
 
@@ -142,7 +142,7 @@ export function AppSplash({ children, ready, onIntroDone }: AppSplashProps) {
 
   useEffect(() => {
     if (!showSplash) return;
-    const t = window.setTimeout(dismiss, 12000);
+    const t = window.setTimeout(dismiss, 6000);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showSplash]);

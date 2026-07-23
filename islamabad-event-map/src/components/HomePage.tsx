@@ -167,15 +167,21 @@ export function HomePage() {
   );
   const handleMapReadyToShow = useCallback(() => setMapReadyToShow(true), []);
 
-  // Map + pins first; sidebar arrives once the launch camera fly-through
-  // has settled into its final position (or right away if it never runs)
+  // Show chrome as soon as the splash is gone — don't wait for the fly-through
   useEffect(() => {
-    if (!introReady || !launchCameraDone) return;
+    if (!introReady) return;
     const reduceMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)"
     ).matches;
-    const delay = reduceMotion ? 0 : 300;
+    const delay = reduceMotion ? 0 : 80;
     const t = window.setTimeout(() => setSidebarReady(true), delay);
+    return () => window.clearTimeout(t);
+  }, [introReady]);
+
+  // Mark launch done even if the camera path is skipped / interrupted
+  useEffect(() => {
+    if (!introReady || launchCameraDone) return;
+    const t = window.setTimeout(() => setLaunchCameraDone(true), 4500);
     return () => window.clearTimeout(t);
   }, [introReady, launchCameraDone]);
 
@@ -200,7 +206,7 @@ export function HomePage() {
   // Never leave the splash waiting forever if the fetch hangs
   useEffect(() => {
     if (!loading) return;
-    const t = window.setTimeout(() => setLoading(false), 10000);
+    const t = window.setTimeout(() => setLoading(false), 4000);
     return () => window.clearTimeout(t);
   }, [loading]);
 
