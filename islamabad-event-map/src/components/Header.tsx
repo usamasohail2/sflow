@@ -53,10 +53,9 @@ function CitySegmentToggle({
       {/* Sliding thumb */}
       <span
         aria-hidden
-        className={`pointer-events-none absolute inset-y-0.5 w-[calc(50%-2px)] rounded-lg border border-line bg-surface shadow-sm transition-transform duration-300 ease-out ${
-          city === "lahore" ? "translate-x-[calc(100%+4px)]" : "translate-x-0"
+        className={`pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc(50%-0.25rem)] rounded-lg border border-line bg-surface shadow-sm transition-transform duration-300 ease-out ${
+          city === "lahore" ? "translate-x-full" : "translate-x-0"
         }`}
-        style={{ left: 2 }}
       />
 
       {(["islamabad", "lahore"] as const).map((id) => {
