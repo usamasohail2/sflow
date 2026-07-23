@@ -268,7 +268,7 @@ export function HomePage() {
                   mapExpanded ? "opacity-0" : "opacity-100"
                 }`}
               >
-                <div className="pointer-events-auto max-w-[min(100%,22rem)] overflow-hidden rounded-xl border border-line bg-surface shadow-sm sm:max-w-none">
+                <div className="pointer-events-auto w-[min(100%,20rem)] overflow-hidden rounded-xl border border-line bg-surface shadow-sm sm:w-[22rem]">
                   <Header
                     variant="sidebar"
                     listingCount={filteredEntries.length}

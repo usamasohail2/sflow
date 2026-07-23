@@ -35,56 +35,61 @@ function listingCountLabel(count: number): string {
   return `${count} spot${count !== 1 ? "s" : ""}`;
 }
 
-function CityToggle({
+function CitySegmentToggle({
   city,
+  listingCount,
   onCityChange,
 }: {
   city: CityId;
+  listingCount?: number;
   onCityChange: (city: CityId) => void;
 }) {
-  const isLahore = city === "lahore";
-
   return (
     <div
-      className="flex shrink-0 items-center gap-1.5"
-      role="group"
+      role="tablist"
       aria-label="City"
+      className="relative flex h-8 items-stretch overflow-hidden rounded-[10px] bg-wash p-0.5"
     >
+      {/* Sliding thumb */}
       <span
-        className={`text-[10px] font-semibold tabular-nums transition-colors ${
-          !isLahore ? "text-ink" : "text-ink-faint"
+        aria-hidden
+        className={`pointer-events-none absolute inset-y-0.5 w-[calc(50%-2px)] rounded-lg border border-line bg-surface shadow-sm transition-transform duration-300 ease-out ${
+          city === "lahore" ? "translate-x-[calc(100%+4px)]" : "translate-x-0"
         }`}
-      >
-        {CITY_CONFIG.islamabad.shortLabel}
-      </span>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={isLahore}
-        aria-label={
-          isLahore ? "Switch to Islamabad" : "Switch to Lahore"
-        }
-        title={isLahore ? "Switch to Islamabad" : "Switch to Lahore"}
-        onClick={() => onCityChange(isLahore ? "islamabad" : "lahore")}
-        className={`relative h-5 w-9 shrink-0 rounded-full border transition-colors ${
-          isLahore
-            ? "border-[var(--blue)] bg-[var(--blue)]"
-            : "border-line-strong bg-wash"
-        }`}
-      >
-        <span
-          className={`absolute top-0.5 h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform ${
-            isLahore ? "left-[1.125rem]" : "left-0.5"
-          }`}
-        />
-      </button>
-      <span
-        className={`text-[10px] font-semibold tabular-nums transition-colors ${
-          isLahore ? "text-ink" : "text-ink-faint"
-        }`}
-      >
-        {CITY_CONFIG.lahore.shortLabel}
-      </span>
+        style={{ left: 2 }}
+      />
+
+      {(["islamabad", "lahore"] as const).map((id) => {
+        const active = city === id;
+        const label = CITY_CONFIG[id].label;
+        return (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            aria-label={`${label} Explore`}
+            onClick={() => onCityChange(id)}
+            className={`relative z-10 flex min-w-0 flex-1 items-center justify-center gap-1.5 px-2.5 transition-colors ${
+              active ? "text-ink" : "text-ink-faint hover:text-ink-muted"
+            }`}
+          >
+            {active && (
+              <MapLogo className="h-4 w-4 shrink-0 sm:h-[1.125rem] sm:w-[1.125rem]" />
+            )}
+            <span className="flex min-w-0 items-baseline gap-x-1">
+              <span className="truncate text-[11px] font-semibold tracking-tight sm:text-xs">
+                {label}
+              </span>
+              {active && listingCount != null && (
+                <span className="shrink-0 text-[10px] font-medium tabular-nums text-ink-muted">
+                  · {listingCountLabel(listingCount)}
+                </span>
+              )}
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -110,6 +115,18 @@ export function Header({
   const cityLabel = CITY_CONFIG[city].label;
 
   if (variant === "sidebar") {
+    if (onCityChange) {
+      return (
+        <header className="shrink-0 bg-transparent p-1">
+          <CitySegmentToggle
+            city={city}
+            listingCount={listingCount}
+            onCityChange={onCityChange}
+          />
+        </header>
+      );
+    }
+
     return (
       <header className="shrink-0 bg-transparent px-2.5 py-1.5">
         <div
@@ -136,9 +153,6 @@ export function Header({
               </span>
             </span>
           </Link>
-          {onCityChange && (
-            <CityToggle city={city} onCityChange={onCityChange} />
-          )}
           {showThemeToggle && (
             <div className="shrink-0">
               <DarkModeToggle />
@@ -169,7 +183,13 @@ export function Header({
         </Link>
         <div className="flex shrink-0 items-center gap-3">
           {onCityChange && (
-            <CityToggle city={city} onCityChange={onCityChange} />
+            <div className="w-[min(100%,18rem)]">
+              <CitySegmentToggle
+                city={city}
+                listingCount={listingCount}
+                onCityChange={onCityChange}
+              />
+            </div>
           )}
           <DarkModeToggle />
         </div>
