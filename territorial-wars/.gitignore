@@ -27,9 +27,4 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .yarn/install-state.gz
-
-# Territorial Wars local
-territorial-wars/node_modules
-territorial-wars/.next
-territorial-wars/.vercel
-territorial-wars/.env*.local
+.env*

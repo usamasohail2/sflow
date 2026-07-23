@@ -1,0 +1,122 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --ink: #e8ebe4;
+  --ink-muted: #9aa392;
+  --ink-faint: #6a7264;
+  --surface: #0c100e;
+  --surface-raised: #141a16;
+  --wash: #1a221c;
+  --line: #2a342c;
+  --line-strong: #3d4a3f;
+  --signal: #e23b2f;
+  --signal-bright: #ff5245;
+  --signal-deep: #a8241c;
+  --field: #3d6b45;
+  --field-bright: #5a9a63;
+  --sand: #c4b089;
+  --accent: #e23b2f;
+  --accent-soft: rgba(226, 59, 47, 0.18);
+  --ring: #e23b2f;
+  --btn: #e23b2f;
+  --btn-ink: #ffffff;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  background: var(--surface);
+}
+
+/* Contested-grid atmosphere */
+.war-grid {
+  background-color: #0c100e;
+  background-image:
+    linear-gradient(rgba(61, 107, 69, 0.12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(61, 107, 69, 0.12) 1px, transparent 1px),
+    radial-gradient(ellipse 80% 60% at 50% 20%, rgba(226, 59, 47, 0.22), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 80% 80%, rgba(61, 107, 69, 0.25), transparent 50%),
+    radial-gradient(ellipse 50% 40% at 15% 70%, rgba(196, 176, 137, 0.12), transparent 45%);
+  background-size:
+    48px 48px,
+    48px 48px,
+    100% 100%,
+    100% 100%,
+    100% 100%;
+}
+
+@keyframes war-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes war-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.04);
+  }
+}
+
+@keyframes war-scan {
+  from {
+    transform: translateY(-100%);
+  }
+  to {
+    transform: translateY(100vh);
+  }
+}
+
+.animate-war-rise {
+  animation: war-rise 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-war-rise-delay {
+  animation: war-rise 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.15s both;
+}
+
+.animate-war-rise-delay-2 {
+  animation: war-rise 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.28s both;
+}
+
+.animate-war-pulse {
+  animation: war-pulse 3.6s ease-in-out infinite;
+}
+
+.war-scanline {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  opacity: 0.12;
+}
+
+.war-scanline::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 28%;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgba(232, 235, 228, 0.35),
+    transparent
+  );
+  animation: war-scan 7s linear infinite;
+}
