@@ -14,8 +14,9 @@ import {
   PublicChat,
   type PublicChatHandle,
 } from "@/components/PublicChat";
+import { SpotSearch } from "@/components/SpotSearch";
 import type { Category, CityId, DateFilter, ViewFilter } from "@/lib/constants";
-import { CATEGORIES, DEFAULT_CITY } from "@/lib/constants";
+import { CATEGORIES, CATEGORY_LABELS, DEFAULT_CITY } from "@/lib/constants";
 import type { Entry } from "@/lib/types";
 import { entryInCity, matchesDateFilter, sortEntries } from "@/lib/utils";
 import {
@@ -60,6 +61,7 @@ export function HomePage() {
   );
   const [publicChat, setPublicChat] = useState<PublicChatHandle | null>(null);
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     setViewedIds(loadViewedEntryIds());
@@ -110,6 +112,7 @@ export function HomePage() {
     setCity(next);
     setSelectedId(null);
     setFlyToEntry(null);
+    setSearchQuery("");
   }, []);
 
   const availableCategories = useMemo(() => {
@@ -125,6 +128,24 @@ export function HomePage() {
       result = result.filter((e) => matchesDateFilter(e, dateFilter));
     }
 
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
+      result = result.filter((e) => {
+        const haystack = [
+          e.title,
+          e.description,
+          e.locationText,
+          e.organizerName,
+          CATEGORY_LABELS[e.category],
+          e.category,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(q);
+      });
+    }
+
     const sorted = sortEntries(result, viewFilter);
 
     // Preferred interests float to the top; others stay visible (dulled in UI)
@@ -134,10 +155,24 @@ export function HomePage() {
       const bHit = selectedCategories.includes(b.category) ? 0 : 1;
       return aHit - bHit;
     });
-  }, [typeEntries, viewFilter, dateFilter, selectedCategories]);
+  }, [
+    typeEntries,
+    viewFilter,
+    dateFilter,
+    selectedCategories,
+    searchQuery,
+  ]);
 
-  /** Map shows the full Events/Spots set; category focus only dulls pins */
+  /** Map follows search; category focus only dulls pins */
   const mapEntries = useMemo(() => filteredEntries, [filteredEntries]);
+
+  // Clear selection if the active spot falls out of the search results
+  useEffect(() => {
+    if (!selectedId) return;
+    if (filteredEntries.some((e) => e.id === selectedId)) return;
+    setSelectedId(null);
+    setFlyToEntry(null);
+  }, [filteredEntries, selectedId]);
 
   const handleSelect = useCallback((entry: Entry | null) => {
     setSelectedId(entry?.id ?? null);
@@ -389,6 +424,18 @@ export function HomePage() {
                 mobileChatOpen ? "hidden sm:block" : ""
               }`}
             >
+              <div className="mb-1.5 px-3 sm:max-w-xs">
+                <SpotSearch
+                  value={searchQuery}
+                  onChange={setSearchQuery}
+                  resultCount={
+                    searchQuery.trim()
+                      ? filteredEntries.filter((e) => e.status !== "pending")
+                          .length
+                      : undefined
+                  }
+                />
+              </div>
               {error ? (
                 <div className="mx-3 rounded-xl bg-danger-soft px-3 py-3 text-center">
                   <p className="text-sm text-danger">{error}</p>
@@ -404,6 +451,7 @@ export function HomePage() {
                   viewedIds={viewedIds}
                   focusedCategories={selectedCategories}
                   onAdd={openSuggest}
+                  searching={Boolean(searchQuery.trim())}
                 />
               )}
             </div>

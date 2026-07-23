@@ -20,9 +20,17 @@ interface EntryListProps {
   viewedIds?: Set<string>;
   focusedCategories?: Category[];
   onAdd?: () => void;
+  /** Empty-state copy when a search query is active */
+  searching?: boolean;
 }
 
-function emptyCopy(): { title: string; body: string } {
+function emptyCopy(searching: boolean): { title: string; body: string } {
+  if (searching) {
+    return {
+      title: "No matches",
+      body: "Try another name, area, or category — or clear the search.",
+    };
+  }
   return {
     title: "No spots yet",
     body: "No places match these filters — try another category, or add a café, trail, or hangout you know.",
@@ -38,6 +46,7 @@ export function EntryList({
   viewedIds,
   focusedCategories = [],
   onAdd,
+  searching = false,
 }: EntryListProps) {
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const scrollerRef = useRef<HTMLDivElement | null>(null);
@@ -93,7 +102,7 @@ export function EntryList({
   }
 
   if (entries.length === 0) {
-    const empty = emptyCopy();
+    const empty = emptyCopy(searching);
     return (
       <div className="flex items-center gap-3 px-3 py-2">
         <KohMascot size={36} mood="look" interactive />
