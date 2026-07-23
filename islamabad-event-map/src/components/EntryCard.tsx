@@ -1,14 +1,13 @@
 "use client";
 
-import Image from "next/image";
 import type { Entry } from "@/lib/types";
 import {
   formatEventSchedule,
-  getEntryImage,
   happeningSoonLabel,
   isEventHappeningSoon,
 } from "@/lib/utils";
 import { CategoryIcon, categoryColor } from "@/components/CategoryIcon";
+import { EntryMedia } from "@/components/EntryMedia";
 
 interface EntryCardProps {
   entry: Entry;
@@ -59,7 +58,6 @@ export function EntryCard({
 }: EntryCardProps) {
   const isEvent = entry.type === "event";
   const schedule = formatEventSchedule(entry);
-  const image = getEntryImage(entry);
   const soon = isEvent && isEventHappeningSoon(entry);
   const soonLabel = soon ? happeningSoonLabel(entry) : null;
   const isPending = entry.status === "pending";
@@ -93,14 +91,13 @@ export function EntryCard({
         className={`group flex w-full flex-col overflow-hidden rounded-xl border text-left shadow-sm backdrop-blur-sm transition ${tone}`}
       >
         <div className="relative aspect-[5/4] w-full overflow-hidden bg-line">
-          <Image
-            src={image}
-            alt=""
-            fill
-            className={`object-cover transition duration-300 group-hover:scale-[1.03] ${
+          <EntryMedia
+            entry={entry}
+            sizes="120px"
+            imageClassName={`object-cover transition duration-300 group-hover:scale-[1.03] ${
               isPending ? "opacity-85 saturate-[0.7]" : ""
             }`}
-            sizes="120px"
+            fallbackIconClassName="h-3.5 w-3.5"
           />
           <span
             className={`absolute left-1 top-1 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full text-white shadow-sm ${
@@ -175,14 +172,13 @@ export function EntryCard({
       className={`group flex w-full items-center gap-1.5 rounded-none border p-1 text-left transition sm:gap-2 sm:p-1.5 ${tone}`}
     >
       <div className="relative h-9 w-11 shrink-0 overflow-hidden rounded-none bg-line sm:h-10 sm:w-12">
-        <Image
-          src={image}
-          alt=""
-          fill
-          className={`object-cover transition duration-300 group-hover:scale-[1.03] ${
+        <EntryMedia
+          entry={entry}
+          sizes="48px"
+          imageClassName={`object-cover transition duration-300 group-hover:scale-[1.03] ${
             isPending ? "opacity-85 saturate-[0.7]" : ""
           }`}
-          sizes="48px"
+          fallbackIconClassName="h-3 w-3"
         />
         <span
           className={`absolute left-0.5 top-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full text-white shadow-sm sm:h-4 sm:w-4 ${

@@ -13,6 +13,7 @@ import {
   happeningSoonLabel,
   truncate,
 } from "@/lib/utils";
+import { EntryImageFallback } from "@/components/EntryMedia";
 import { categoryColor } from "@/components/CategoryIcon";
 import { loadSavedCommentName, saveCommentName } from "@/lib/commentAuthor";
 
@@ -84,13 +85,10 @@ export function MapPopupCard({
   const sliderRef = useRef<HTMLDivElement>(null);
 
   const images = useMemo(() => getEntryImages(entry), [entry]);
-  const image = images[0]!;
-  /** Prefer real uploads for the hero slider; otherwise a single fallback */
-  const slides = useMemo(
-    () => (entry.imageUrls?.length ? entry.imageUrls : [image]),
-    [entry.imageUrls, image]
-  );
+  /** Real uploads only — empty when the spot has no photos */
+  const slides = images;
   const isSlider = slides.length > 1;
+  const hasPhotos = slides.length > 0;
   const schedule = formatEventSchedule(entry);
   const body = entryBodyText(entry);
   const contactPhone = entryContactPhone(entry);
@@ -302,31 +300,40 @@ export function MapPopupCard({
       onClick={(e) => e.stopPropagation()}
     >
       <div className="relative h-[220px] w-full bg-line sm:h-[240px]">
-        <div
-          ref={sliderRef}
-          onScroll={onSliderScroll}
-          className={`flex h-full w-full ${
-            isSlider
-              ? "snap-x snap-mandatory overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-              : "overflow-hidden"
-          }`}
-        >
-          {slides.map((src, i) => (
-            <div
-              key={`${src}-${i}`}
-              className="relative h-full w-full shrink-0 snap-center"
-            >
-              <Image
-                src={src}
-                alt=""
-                fill
-                className="object-cover"
-                sizes="100vw"
-                priority={i === 0}
-              />
-            </div>
-          ))}
-        </div>
+        {hasPhotos ? (
+          <div
+            ref={sliderRef}
+            onScroll={onSliderScroll}
+            className={`flex h-full w-full ${
+              isSlider
+                ? "snap-x snap-mandatory overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                : "overflow-hidden"
+            }`}
+          >
+            {slides.map((src, i) => (
+              <div
+                key={`${src}-${i}`}
+                className="relative h-full w-full shrink-0 snap-center"
+              >
+                <Image
+                  src={src}
+                  alt=""
+                  fill
+                  className="object-cover"
+                  sizes="100vw"
+                  priority={i === 0}
+                />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EntryImageFallback
+            entry={entry}
+            className="h-full w-full"
+            iconClassName="h-7 w-7"
+            label
+          />
+        )}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/28 via-black/[0.04] to-transparent" />
         <button
           type="button"

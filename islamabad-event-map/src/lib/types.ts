@@ -16,7 +16,7 @@ export interface Entry {
   contactPhone?: string;
   eventDate?: string;
   eventEndDate?: string;
-  /** User-uploaded Airtable attachment URLs (preferred over Unsplash fallback) */
+  /** User-uploaded Airtable attachment URLs */
   imageUrls?: string[];
   status: EntryStatus;
   createdTime: string;

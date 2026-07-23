@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { EntryList } from "@/components/EntryList";
 import { Header } from "@/components/Header";
 import { DarkModeToggle } from "@/components/DarkModeToggle";
+import { AuthButton } from "@/components/AuthButton";
 import { CategoryStrip } from "@/components/CategoryStrip";
 import { SubmitForm } from "@/components/SubmitForm";
 import { AppSplash, QuietLoader } from "@/components/LoadingScreen";
@@ -280,7 +281,8 @@ export function HomePage() {
                 </div>
               </div>
 
-              <div className="pointer-events-auto relative z-10 shrink-0">
+              <div className="pointer-events-auto relative z-10 flex shrink-0 items-center gap-1.5">
+                <AuthButton />
                 <DarkModeToggle />
               </div>
             </div>

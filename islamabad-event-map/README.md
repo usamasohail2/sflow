@@ -27,6 +27,19 @@ Fill in `.env.local`:
 | `NEXT_PUBLIC_MAPBOX_TOKEN` | Public token from [Mapbox](https://account.mapbox.com/access-tokens/) |
 | `UPSTASH_REDIS_REST_URL` | Optional — Upstash Redis REST URL (preferred for live viewer count) |
 | `UPSTASH_REDIS_REST_TOKEN` | Optional — Upstash Redis REST token |
+| `AUTH_SECRET` | Random secret for Auth.js sessions (`openssl rand -base64 32`) |
+| `AUTH_URL` | App origin, e.g. `http://localhost:3000` |
+| `AUTH_GOOGLE_ID` | Google OAuth client ID |
+| `AUTH_GOOGLE_SECRET` | Google OAuth client secret |
+
+### Google sign-in
+
+1. Create an OAuth client in [Google Cloud Console](https://console.cloud.google.com/apis/credentials) (type: Web application)
+2. Add authorized redirect URI: `http://localhost:3000/api/auth/callback/google` (and your production URL’s `/api/auth/callback/google`)
+3. Paste the client ID/secret into `.env.local` as `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET`
+4. Restart `npm run dev` — use **Sign in** in the top-right chrome (or `/login`)
+
+Spots without uploaded photos show a category-colored placeholder (no stock Unsplash images).
 
 Live “people viewing” uses **Upstash Redis** when set, otherwise **Airtable** (rejected `__presence__:` rows in `Entries`), otherwise in-memory (local only).
 

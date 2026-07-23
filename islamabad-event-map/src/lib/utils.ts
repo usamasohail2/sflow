@@ -1,38 +1,15 @@
 import type { CityId, DateFilter } from "./constants";
-import {
-  CATEGORY_IMAGE_POOLS,
-  CATEGORY_LABELS,
-  CITY_CONFIG,
-  DEFAULT_CITY,
-  PLACE_IMAGES,
-} from "./constants";
+import { CATEGORY_LABELS, CITY_CONFIG, DEFAULT_CITY } from "./constants";
 import type { Entry } from "./types";
 
-function hashString(value: string): number {
-  let hash = 0;
-  for (let i = 0; i < value.length; i++) {
-    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
-  }
-  return hash;
+/** First uploaded photo, or null when the spot has no images */
+export function getEntryImage(entry: Entry): string | null {
+  return getEntryImages(entry)[0] ?? null;
 }
 
-/** Stable thumbnail per listing — uploads first, then place overrides, else category pool */
-export function getEntryImage(entry: Entry): string {
-  return getEntryImages(entry)[0]!;
-}
-
-/** All photos for a listing (uploads), or a single fallback image */
+/** Uploaded photos only — no stock/Unsplash fallbacks */
 export function getEntryImages(entry: Entry): string[] {
-  if (entry.imageUrls?.length) return entry.imageUrls;
-
-  const title = entry.title.toLowerCase();
-  for (const place of PLACE_IMAGES) {
-    if (title.includes(place.match)) return [place.url];
-  }
-
-  const pool = CATEGORY_IMAGE_POOLS[entry.category];
-  const index = hashString(entry.id || entry.title) % pool.length;
-  return [pool[index]!];
+  return entry.imageUrls?.length ? entry.imageUrls : [];
 }
 
 export function hasCoordinates(entry: Entry): boolean {

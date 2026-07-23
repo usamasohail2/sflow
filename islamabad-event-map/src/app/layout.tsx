@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { DM_Sans, Fraunces, Press_Start_2P } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { AuthSessionProvider } from "@/components/AuthSessionProvider";
 
 const sans = DM_Sans({
   subsets: ["latin"],
@@ -65,7 +66,9 @@ export default function RootLayout({
       <body
         className={`${sans.variable} ${display.variable} ${pixel.variable} bg-[var(--surface)] font-sans text-[var(--ink)] antialiased`}
       >
-        <ThemeProvider>{children}</ThemeProvider>
+        <AuthSessionProvider>
+          <ThemeProvider>{children}</ThemeProvider>
+        </AuthSessionProvider>
       </body>
     </html>
   );
