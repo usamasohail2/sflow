@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/auth";
 import { listChatMessages, postChatMessage } from "@/lib/chat";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +13,20 @@ function isValidVisitorId(value: unknown): value is string {
   );
 }
 
+async function requireSession() {
+  const session = await auth();
+  if (!session?.user) {
+    return null;
+  }
+  return session;
+}
+
 export async function GET(request: NextRequest) {
+  const session = await requireSession();
+  if (!session) {
+    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+  }
+
   const sinceRaw = request.nextUrl.searchParams.get("since");
   const since = sinceRaw ? Number(sinceRaw) : undefined;
   const messages = await listChatMessages(
@@ -23,19 +37,28 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await requireSession();
+    if (!session) {
+      return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+    }
+
     const body = await request.json();
     if (!isValidVisitorId(body.visitorId)) {
       return NextResponse.json({ error: "Invalid visitorId" }, { status: 400 });
     }
 
+    const sessionName =
+      typeof session.user?.name === "string"
+        ? session.user.name.trim().split(/\s+/)[0]
+        : undefined;
+
     const message = await postChatMessage({
       visitorId: body.visitorId,
-      name: body.name,
+      name: sessionName || body.name,
       text: body.text,
       color: body.color,
       lat: body.lat,
       lng: body.lng,
-      alt: typeof body.alt === "number" ? body.alt : undefined,
     });
 
     if (!message) {

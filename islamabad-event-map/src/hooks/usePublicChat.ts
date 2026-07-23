@@ -118,7 +118,14 @@ export function usePublicChat({
   }, []);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled) {
+      setMessages([]);
+      setFloating([]);
+      seenIds.current = new Set();
+      sinceRef.current = 0;
+      bootstrapped.current = false;
+      return;
+    }
     let cancelled = false;
 
     const poll = async () => {
@@ -128,6 +135,7 @@ export function usePublicChat({
             ? `?since=${sinceRef.current}`
             : "";
         const res = await fetch(`/api/chat${qs}`);
+        if (res.status === 401) return;
         if (!res.ok) return;
         const data = (await res.json()) as { messages?: ChatMessage[] };
         if (cancelled || !Array.isArray(data.messages)) return;
@@ -186,7 +194,11 @@ export function usePublicChat({
           signal: controller.signal,
         });
         if (!res.ok) {
-          setSendError("Couldn't send — try again");
+          setSendError(
+            res.status === 401
+              ? "Sign in with Google to chat"
+              : "Couldn't send — try again"
+          );
           return false;
         }
         const data = (await res.json()) as {

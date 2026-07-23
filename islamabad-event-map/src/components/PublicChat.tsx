@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { ChatMessage } from "@/hooks/usePublicChat";
 import { EXPLORER_PALETTES } from "@/hooks/useLivePresence";
@@ -23,6 +24,35 @@ interface PublicChatProps extends PublicChatHandle {
    * desktop — panel above spots, open by default
    */
   layout?: "desktop" | "mobile";
+}
+
+/** Flat prompt when the visitor isn’t signed in */
+export function PublicChatSignIn({
+  className = "",
+  layout = "desktop",
+}: {
+  className?: string;
+  layout?: "desktop" | "mobile";
+}) {
+  const isMobile = layout === "mobile";
+  return (
+    <Link
+      href="/login?callbackUrl=/"
+      className={`pointer-events-auto flex items-center justify-between gap-2 rounded-2xl border border-line bg-surface px-3 py-2.5 text-left shadow-sm transition hover:bg-wash ${
+        isMobile ? "w-full" : "w-[min(100%,18.5rem)]"
+      } ${className}`}
+    >
+      <span className="min-w-0">
+        <span className="block text-xs font-semibold text-ink">Public chat</span>
+        <span className="mt-0.5 block text-[11px] text-ink-muted">
+          Sign in with Google to chat
+        </span>
+      </span>
+      <span className="shrink-0 rounded-full bg-wash px-2 py-1 text-[10px] font-semibold text-ink">
+        Sign in
+      </span>
+    </Link>
+  );
 }
 
 export function PublicChat({

@@ -58,6 +58,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import { CategoryIcon, categoryColor } from "@/components/CategoryIcon";
 import { useLivePresence } from "@/hooks/useLivePresence";
 import { usePublicChat } from "@/hooks/usePublicChat";
+import { useSession } from "next-auth/react";
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "";
 
@@ -645,6 +646,8 @@ export function EntryMap({
     lng: number;
   } | null>(null);
   const [mapReady, setMapReady] = useState(false);
+  const { data: session, status: authStatus } = useSession();
+  const signedIn = authStatus === "authenticated" && Boolean(session?.user);
   const {
     selfId,
     displayName,
@@ -666,11 +669,15 @@ export function EntryMap({
     selfId,
     displayName,
     selfColor,
-    enabled: mapReady,
+    enabled: mapReady && signedIn,
   });
 
   useEffect(() => {
     if (!onPublicChatChange) return;
+    if (!signedIn) {
+      onPublicChatChange(null);
+      return () => onPublicChatChange(null);
+    }
     onPublicChatChange({
       messages: chatMessages,
       selfId,
@@ -682,6 +689,7 @@ export function EntryMap({
     return () => onPublicChatChange(null);
   }, [
     onPublicChatChange,
+    signedIn,
     chatMessages,
     selfId,
     displayName,

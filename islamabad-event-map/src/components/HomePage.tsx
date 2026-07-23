@@ -12,8 +12,10 @@ import { AppSplash, QuietLoader } from "@/components/LoadingScreen";
 import { InterestsModal, saveInterests } from "@/components/InterestsModal";
 import {
   PublicChat,
+  PublicChatSignIn,
   type PublicChatHandle,
 } from "@/components/PublicChat";
+import { useSession } from "next-auth/react";
 import type { Category, CityId, DateFilter, ViewFilter } from "@/lib/constants";
 import { CATEGORIES, DEFAULT_CITY } from "@/lib/constants";
 import type { Entry } from "@/lib/types";
@@ -36,6 +38,8 @@ const EntryMap = dynamic(
 );
 
 export function HomePage() {
+  const { status: authStatus } = useSession();
+  const signedIn = authStatus === "authenticated";
   const [allEntries, setAllEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
   const [mapReadyToShow, setMapReadyToShow] = useState(false);
@@ -378,8 +382,10 @@ export function HomePage() {
                 onChange={handleCategoriesChange}
                 className="min-w-0 flex-1 px-0 py-1"
               />
-              {publicChat ? (
+              {signedIn && publicChat ? (
                 <PublicChat {...publicChat} layout="desktop" />
+              ) : authStatus !== "loading" ? (
+                <PublicChatSignIn layout="desktop" />
               ) : null}
             </div>
 
@@ -409,16 +415,18 @@ export function HomePage() {
             </div>
 
             {/* Mobile: chat bar below spots; opening it hides spots */}
-            {publicChat && (
-              <div className="pointer-events-auto px-3 sm:hidden">
+            <div className="pointer-events-auto px-3 sm:hidden">
+              {signedIn && publicChat ? (
                 <PublicChat
                   {...publicChat}
                   layout="mobile"
                   open={mobileChatOpen}
                   onOpenChange={setMobileChatOpen}
                 />
-              </div>
-            )}
+              ) : authStatus !== "loading" ? (
+                <PublicChatSignIn layout="mobile" />
+              ) : null}
+            </div>
           </div>
         )}
       </div>
