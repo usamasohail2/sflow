@@ -1,11 +1,17 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { Marker } from "react-map-gl/mapbox";
 import {
   EXPLORER_PALETTES,
   type LiveExplorer,
 } from "@/hooks/useLivePresence";
 import type { FloatingBubble } from "@/hooks/usePublicChat";
+
+/** Smoothing time constant — lower = snappier, higher = silkier */
+const SMOOTH_MS = 160;
+/** Jump instantly if the gap is huge (teleport / first spawn) */
+const SNAP_DEG = 0.08;
 
 function HumanSprite({
   shirt,
@@ -53,6 +59,102 @@ function SpeechBubble({ text }: { text: string }) {
   );
 }
 
+interface SmoothExplorer {
+  id: string;
+  name: string;
+  color: number;
+  lat: number;
+  lng: number;
+  targetLat: number;
+  targetLng: number;
+}
+
+function useSmoothedExplorers(explorers: LiveExplorer[]): SmoothExplorer[] {
+  const [smooth, setSmooth] = useState<SmoothExplorer[]>([]);
+  const stateRef = useRef<Map<string, SmoothExplorer>>(new Map());
+  const lastTs = useRef<number>(0);
+
+  // Sync targets whenever server positions change
+  useEffect(() => {
+    const next = new Map(stateRef.current);
+    const liveIds = new Set<string>();
+
+    for (const explorer of explorers) {
+      if (explorer.lat == null || explorer.lng == null) continue;
+      liveIds.add(explorer.id);
+      const prev = next.get(explorer.id);
+      if (!prev) {
+        next.set(explorer.id, {
+          id: explorer.id,
+          name: explorer.name,
+          color: explorer.color,
+          lat: explorer.lat,
+          lng: explorer.lng,
+          targetLat: explorer.lat,
+          targetLng: explorer.lng,
+        });
+      } else {
+        prev.name = explorer.name;
+        prev.color = explorer.color;
+        prev.targetLat = explorer.lat;
+        prev.targetLng = explorer.lng;
+        const dLat = Math.abs(prev.lat - explorer.lat);
+        const dLng = Math.abs(prev.lng - explorer.lng);
+        if (dLat > SNAP_DEG || dLng > SNAP_DEG) {
+          prev.lat = explorer.lat;
+          prev.lng = explorer.lng;
+        }
+      }
+    }
+
+    for (const id of Array.from(next.keys())) {
+      if (!liveIds.has(id)) next.delete(id);
+    }
+
+    stateRef.current = next;
+    setSmooth(Array.from(next.values()).map((e) => ({ ...e })));
+  }, [explorers]);
+
+  // Lerp displayed positions toward targets every frame
+  useEffect(() => {
+    let raf = 0;
+    lastTs.current = performance.now();
+
+    const tick = (now: number) => {
+      const dt = Math.min(64, now - lastTs.current);
+      lastTs.current = now;
+      const alpha = 1 - Math.exp(-dt / SMOOTH_MS);
+      let moved = false;
+
+      stateRef.current.forEach((e) => {
+        const dLat = e.targetLat - e.lat;
+        const dLng = e.targetLng - e.lng;
+        if (Math.abs(dLat) < 1e-7 && Math.abs(dLng) < 1e-7) {
+          if (e.lat !== e.targetLat || e.lng !== e.targetLng) {
+            e.lat = e.targetLat;
+            e.lng = e.targetLng;
+            moved = true;
+          }
+          return;
+        }
+        e.lat += dLat * alpha;
+        e.lng += dLng * alpha;
+        moved = true;
+      });
+
+      if (moved) {
+        setSmooth(Array.from(stateRef.current.values()).map((e) => ({ ...e })));
+      }
+      raf = window.requestAnimationFrame(tick);
+    };
+
+    raf = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(raf);
+  }, []);
+
+  return smooth;
+}
+
 export function LiveExplorerMarkers({
   explorers,
   floating = [],
@@ -64,13 +166,13 @@ export function LiveExplorerMarkers({
   selfId?: string;
   selfPosition?: { lat: number; lng: number } | null;
 }) {
+  const smoothExplorers = useSmoothedExplorers(explorers);
   const floatingByVisitor = new Map(
     floating.map((b) => [b.visitorId, b] as const)
   );
 
-  const explorerIds = new Set(explorers.map((e) => e.id));
+  const explorerIds = new Set(smoothExplorers.map((e) => e.id));
 
-  // Bubbles for people not currently rendered as explorers (e.g. yourself)
   const orphanBubbles = floating.filter((b) => {
     if (explorerIds.has(b.visitorId)) return false;
     if (b.visitorId === selfId && selfPosition) return true;
@@ -79,15 +181,15 @@ export function LiveExplorerMarkers({
 
   return (
     <>
-      {explorers.map((explorer) => {
+      {smoothExplorers.map((explorer) => {
         const palette =
           EXPLORER_PALETTES[explorer.color % EXPLORER_PALETTES.length]!;
         const bubble = floatingByVisitor.get(explorer.id);
         return (
           <Marker
             key={explorer.id}
-            latitude={explorer.lat!}
-            longitude={explorer.lng!}
+            latitude={explorer.lat}
+            longitude={explorer.lng}
             anchor="bottom"
             style={{ zIndex: bubble ? 35 : 25 }}
           >

@@ -15,7 +15,8 @@ export interface LiveExplorer {
 }
 
 const HEARTBEAT_MS = 12_000;
-const MOVE_THROTTLE_MS = 1_800;
+/** How often we publish eye position while the camera is moving */
+const MOVE_THROTTLE_MS = 400;
 const STORAGE_KEY = "isb-map-visitor-id";
 const SHOW_KEY = "isb-map-show-explorers";
 
@@ -194,7 +195,7 @@ export function useLivePresence(
     };
   }, [beat, selfId]);
 
-  // Push position when the map camera moves
+  // Push position while the camera moves (throttled) and on settle
   useEffect(() => {
     if (!selfId || !mapReady) return;
     const map = mapRef.current?.getMap?.();
@@ -207,9 +208,16 @@ export function useLivePresence(
       void beat(true);
     };
 
-    map.on("moveend", onMove);
+    const onMoveEnd = () => {
+      lastMoveSent.current = Date.now();
+      void beat(true);
+    };
+
+    map.on("move", onMove);
+    map.on("moveend", onMoveEnd);
     return () => {
-      map.off("moveend", onMove);
+      map.off("move", onMove);
+      map.off("moveend", onMoveEnd);
     };
   }, [beat, mapRef, mapReady, selfId]);
 
