@@ -370,13 +370,13 @@ export function HomePage() {
               />
             </div>
 
-            {/* Desktop: categories left, chat right */}
-            <div className="pointer-events-auto hidden items-end justify-between gap-3 px-3 sm:flex">
+            {/* Desktop: categories left, chat right — container lets map clicks through */}
+            <div className="pointer-events-none hidden items-end justify-between gap-3 px-3 sm:flex">
               <CategoryStrip
                 categories={availableCategories}
                 selected={selectedCategories}
                 onChange={handleCategoriesChange}
-                className="min-w-0 flex-1 px-0 py-1"
+                className="min-w-0 px-0 py-1"
               />
               {publicChat ? (
                 <PublicChat {...publicChat} layout="desktop" />
