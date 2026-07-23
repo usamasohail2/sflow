@@ -101,13 +101,19 @@ function mapRecord(record: Airtable.Record<FieldSet>): Entry {
         .trim() || undefined
     : undefined;
 
+  const organizerName = organizerFromField || organizerFromDesc || "";
+  const isDrawing =
+    /^\s*__drawing__/i.test(rawDescription ?? "") ||
+    organizerName.trim().toLowerCase() === "map drawing";
+
   return {
     id: record.id,
     type: parseType(fields.Type),
     title: String(fields.Title ?? ""),
-    description,
+    // Keep drawing GeoJSON out of the public spot UI
+    description: isDrawing ? undefined : description,
     category: parseCategory(fields.Category),
-    organizerName: organizerFromField || organizerFromDesc || "",
+    organizerName,
     lat: typeof fields.Lat === "number" ? fields.Lat : undefined,
     lng: typeof fields.Lng === "number" ? fields.Lng : undefined,
     locationText: fields.LocationText
@@ -122,6 +128,7 @@ function mapRecord(record: Airtable.Record<FieldSet>): Entry {
     imageUrls: parsePhotos(fields.Photos),
     status: parseStatus(fields.Status),
     createdTime: record._rawJson.createdTime,
+    isDrawing,
     submitterId: submitterFromField || submitterFromDesc || undefined,
     ipHash: ipHashFromField || ipHashFromDesc || undefined,
   };

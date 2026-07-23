@@ -55,7 +55,7 @@ export function EntryList({
   );
 
   const activeEntries = useMemo(
-    () => entries.filter((e) => e.status !== "pending"),
+    () => entries.filter((e) => e.status !== "pending" && !e.isDrawing),
     [entries]
   );
 

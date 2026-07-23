@@ -20,6 +20,8 @@ export interface Entry {
   imageUrls?: string[];
   status: EntryStatus;
   createdTime: string;
+  /** Map area / polygon drawing — not a spot listing */
+  isDrawing?: boolean;
   /** Anonymous browser cookie id — admin only; links submissions from one device */
   submitterId?: string;
   /** Daily-rotated IP hash — admin only; weak backup when cookie is cleared */

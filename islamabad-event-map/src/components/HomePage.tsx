@@ -104,7 +104,11 @@ export function HomePage() {
 
   const typeEntries = useMemo(() => {
     return allEntries.filter(
-      (e) => e.type === viewFilter && entryInCity(e, city)
+      (e) =>
+        e.type === viewFilter &&
+        entryInCity(e, city) &&
+        // Drawn map areas are separate from spot listings
+        !e.isDrawing
     );
   }, [allEntries, viewFilter, city]);
 
