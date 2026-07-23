@@ -41,11 +41,14 @@ function ClearIcon({ className = "" }: { className?: string }) {
 export function SpotSearch({
   value,
   onChange,
+  onSubmit,
   resultCount,
   className = "",
 }: {
   value: string;
   onChange: (value: string) => void;
+  /** Enter — jump to the best match on the map */
+  onSubmit?: () => void;
   /** When searching, show how many spots matched */
   resultCount?: number;
   className?: string;
@@ -128,6 +131,11 @@ export function SpotSearch({
                     setOpen(false);
                     inputRef.current?.blur();
                   }
+                  return;
+                }
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  onSubmit?.();
                 }
               }}
               placeholder="Search spots…"

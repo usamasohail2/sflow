@@ -18,7 +18,7 @@ import { SpotSearch } from "@/components/SpotSearch";
 import type { Category, CityId, DateFilter, ViewFilter } from "@/lib/constants";
 import { CATEGORIES, CATEGORY_LABELS, DEFAULT_CITY } from "@/lib/constants";
 import type { Entry } from "@/lib/types";
-import { entryInCity, matchesDateFilter, sortEntries } from "@/lib/utils";
+import { entryInCity, hasCoordinates, matchesDateFilter, sortEntries } from "@/lib/utils";
 import {
   loadViewedEntryIds,
   markEntryViewed,
@@ -62,6 +62,10 @@ export function HomePage() {
   const [publicChat, setPublicChat] = useState<PublicChatHandle | null>(null);
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchFitKey, setSearchFitKey] = useState("");
+  const [searchFitEntries, setSearchFitEntries] = useState<Entry[] | null>(
+    null
+  );
 
   useEffect(() => {
     setViewedIds(loadViewedEntryIds());
@@ -170,6 +174,24 @@ export function HomePage() {
   /** Map follows search; category focus only dulls pins */
   const mapEntries = useMemo(() => filteredEntries, [filteredEntries]);
 
+  // After the user pauses typing, frame matching pins on the map
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q) {
+      setSearchFitKey("");
+      setSearchFitEntries(null);
+      return;
+    }
+    const t = window.setTimeout(() => {
+      const matches = filteredEntries.filter(
+        (e) => e.status !== "pending" && hasCoordinates(e)
+      );
+      setSearchFitEntries(matches);
+      setSearchFitKey(`${q}::${matches.map((e) => e.id).join("|")}`);
+    }, 320);
+    return () => window.clearTimeout(t);
+  }, [searchQuery, filteredEntries]);
+
   // Clear selection if the active spot falls out of the search results
   useEffect(() => {
     if (!selectedId) return;
@@ -177,6 +199,21 @@ export function HomePage() {
     setSelectedId(null);
     setFlyToEntry(null);
   }, [filteredEntries, selectedId]);
+
+  const handleSearchSubmit = useCallback(() => {
+    const matches = filteredEntries.filter(
+      (e) => e.status !== "pending" && hasCoordinates(e)
+    );
+    if (matches.length === 0) return;
+    const first = matches[0]!;
+    setSelectedId(first.id);
+    setFlyToEntry({ ...first });
+    setViewedIds(markEntryViewed(first.id));
+    setSearchFitEntries(matches);
+    setSearchFitKey(
+      `enter:${searchQuery.trim()}::${matches.map((e) => e.id).join("|")}`
+    );
+  }, [filteredEntries, searchQuery]);
 
   const handleSelect = useCallback((entry: Entry | null) => {
     setSelectedId(entry?.id ?? null);
@@ -269,6 +306,8 @@ export function HomePage() {
             selectedId={selectedId}
             onSelect={handleSelect}
             flyToEntry={flyToEntry}
+            fitToEntries={searchFitEntries}
+            fitToEntriesKey={searchFitKey}
             city={city}
             pinMode={showSubmit && pinMode}
             draftPin={draftPin}
@@ -337,6 +376,7 @@ export function HomePage() {
                 <SpotSearch
                   value={searchQuery}
                   onChange={setSearchQuery}
+                  onSubmit={handleSearchSubmit}
                   resultCount={
                     searchQuery.trim()
                       ? filteredEntries.filter((e) => e.status !== "pending")

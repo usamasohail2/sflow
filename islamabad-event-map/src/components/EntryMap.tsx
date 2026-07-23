@@ -7,6 +7,7 @@ import Map, {
   AttributionControl,
 } from "react-map-gl/mapbox";
 import type { MapRef } from "react-map-gl/mapbox";
+import { LngLatBounds } from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type { Entry } from "@/lib/types";
 import {
@@ -77,6 +78,12 @@ interface EntryMapProps {
   selectedId: string | null;
   onSelect: (entry: Entry | null) => void;
   flyToEntry?: Entry | null;
+  /**
+   * When this key changes with a non-empty entry list, fit the camera to those
+   * pins (used by search so results are visible on the map).
+   */
+  fitToEntries?: Entry[] | null;
+  fitToEntriesKey?: string;
   /** Active city — drives map bounds / fly-to when toggled */
   city?: CityId;
   /** When true, map clicks drop a draft pin for the suggest form */
@@ -626,6 +633,8 @@ export function EntryMap({
   selectedId,
   onSelect,
   flyToEntry,
+  fitToEntries = null,
+  fitToEntriesKey = "",
   city = DEFAULT_CITY,
   pinMode = false,
   draftPin = null,
@@ -1473,6 +1482,40 @@ export function EntryMap({
     // changes (that used to re-open the last card on every pitch/rotate).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flyToEntry, pinMode]);
+
+  // Search (and similar) — frame matching pins on the map
+  useEffect(() => {
+    if (!mapReady || pinMode || !fitToEntriesKey) return;
+    const targets = (fitToEntries ?? []).filter(hasCoordinates);
+    if (targets.length === 0) return;
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+
+    if (targets.length === 1) {
+      const only = targets[0]!;
+      setPopupEntry(only);
+      setHoveredId(null);
+      onSelect(only);
+      focusPinNearCardRef.current(only);
+      return;
+    }
+
+    const bounds = new LngLatBounds();
+    for (const entry of targets) {
+      bounds.extend([entry.lng!, entry.lat!]);
+    }
+    if (bounds.isEmpty()) return;
+
+    setPopupEntry(null);
+    map.fitBounds(bounds, {
+      padding: isMobile
+        ? { top: 72, bottom: 160, left: 36, right: 36 }
+        : { top: 88, bottom: 140, left: 72, right: 72 },
+      maxZoom: 14.5,
+      duration: 900,
+      essential: true,
+    });
+  }, [fitToEntriesKey, fitToEntries, mapReady, pinMode, isMobile]);
 
   useEffect(() => {
     if (draftPin && pinMode) {
