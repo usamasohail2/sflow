@@ -5,6 +5,7 @@ import {
   EXPLORER_PALETTES,
   type LiveExplorer,
 } from "@/hooks/useLivePresence";
+import type { FloatingBubble } from "@/hooks/usePublicChat";
 
 function HumanSprite({
   shirt,
@@ -40,27 +41,58 @@ function HumanSprite({
   );
 }
 
+function SpeechBubble({ text }: { text: string }) {
+  return (
+    <div className="chat-float-bubble relative mb-1 max-w-[10rem] rounded-2xl rounded-bl-md border border-line bg-surface px-2 py-1 text-center text-[11px] font-semibold leading-snug text-ink shadow-md">
+      <span className="line-clamp-3 break-words">{text}</span>
+      <span
+        aria-hidden
+        className="absolute -bottom-1 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 border-b border-r border-line bg-surface"
+      />
+    </div>
+  );
+}
+
 export function LiveExplorerMarkers({
   explorers,
+  floating = [],
+  selfId,
+  selfPosition,
 }: {
   explorers: LiveExplorer[];
+  floating?: FloatingBubble[];
+  selfId?: string;
+  selfPosition?: { lat: number; lng: number } | null;
 }) {
-  if (explorers.length === 0) return null;
+  const floatingByVisitor = new Map(
+    floating.map((b) => [b.visitorId, b] as const)
+  );
+
+  const explorerIds = new Set(explorers.map((e) => e.id));
+
+  // Bubbles for people not currently rendered as explorers (e.g. yourself)
+  const orphanBubbles = floating.filter((b) => {
+    if (explorerIds.has(b.visitorId)) return false;
+    if (b.visitorId === selfId && selfPosition) return true;
+    return typeof b.lat === "number" && typeof b.lng === "number";
+  });
 
   return (
     <>
       {explorers.map((explorer) => {
         const palette =
           EXPLORER_PALETTES[explorer.color % EXPLORER_PALETTES.length]!;
+        const bubble = floatingByVisitor.get(explorer.id);
         return (
           <Marker
             key={explorer.id}
             latitude={explorer.lat!}
             longitude={explorer.lng!}
             anchor="bottom"
-            style={{ zIndex: 25 }}
+            style={{ zIndex: bubble ? 35 : 25 }}
           >
             <div className="pointer-events-none flex -translate-y-0.5 flex-col items-center">
+              {bubble && <SpeechBubble text={bubble.text} />}
               <span className="mb-0.5 max-w-[7.5rem] truncate rounded-md border border-line bg-surface/95 px-1.5 py-0.5 text-[10px] font-semibold leading-tight text-ink shadow-sm backdrop-blur-sm">
                 {explorer.name}
               </span>
@@ -70,6 +102,30 @@ export function LiveExplorerMarkers({
                 hair={palette.hair}
                 className="drop-shadow-sm"
               />
+            </div>
+          </Marker>
+        );
+      })}
+
+      {orphanBubbles.map((bubble) => {
+        const lat =
+          bubble.visitorId === selfId && selfPosition
+            ? selfPosition.lat
+            : bubble.lat;
+        const lng =
+          bubble.visitorId === selfId && selfPosition
+            ? selfPosition.lng
+            : bubble.lng;
+        return (
+          <Marker
+            key={`bubble-${bubble.messageId}`}
+            latitude={lat}
+            longitude={lng}
+            anchor="bottom"
+            style={{ zIndex: 36 }}
+          >
+            <div className="pointer-events-none flex -translate-y-1 flex-col items-center">
+              <SpeechBubble text={bubble.text} />
             </div>
           </Marker>
         );

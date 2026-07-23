@@ -61,6 +61,12 @@ export function useLivePresence(
   const [viewers, setViewers] = useState<number | null>(null);
   const [explorers, setExplorers] = useState<LiveExplorer[]>([]);
   const [showExplorers, setShowExplorersState] = useState(true);
+  const [displayName, setDisplayName] = useState("Explorer");
+  const [selfColor, setSelfColor] = useState(0);
+  const [selfPosition, setSelfPosition] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
   const lastMoveSent = useRef(0);
   const nameRef = useRef("Explorer");
   const colorRef = useRef(0);
@@ -68,7 +74,9 @@ export function useLivePresence(
   useEffect(() => {
     const id = getVisitorId();
     setSelfId(id);
-    colorRef.current = colorFromId(id);
+    const color = colorFromId(id);
+    colorRef.current = color;
+    setSelfColor(color);
     try {
       const stored = localStorage.getItem(SHOW_KEY);
       if (stored === "0") setShowExplorersState(false);
@@ -80,11 +88,15 @@ export function useLivePresence(
   useEffect(() => {
     const fromSession = session?.user?.name?.trim().split(/\s+/)[0];
     if (fromSession) {
-      nameRef.current = fromSession.slice(0, 24);
+      const name = fromSession.slice(0, 24);
+      nameRef.current = name;
+      setDisplayName(name);
       return;
     }
     if (selfId) {
-      nameRef.current = generateUsernameFromSeed(selfId);
+      const name = generateUsernameFromSeed(selfId);
+      nameRef.current = name;
+      setDisplayName(name);
     }
   }, [session?.user?.name, selfId]);
 
@@ -124,6 +136,9 @@ export function useLivePresence(
           const center = map.getCenter();
           lat = center.lat;
           lng = center.lng;
+        }
+        if (lat != null && lng != null) {
+          setSelfPosition({ lat, lng });
         }
       }
     }
@@ -211,10 +226,12 @@ export function useLivePresence(
 
   return {
     selfId,
+    displayName,
+    selfColor,
+    selfPosition,
     viewers,
     explorers: others,
     showExplorers,
     setShowExplorers,
-    selfColor: colorRef.current,
   };
 }

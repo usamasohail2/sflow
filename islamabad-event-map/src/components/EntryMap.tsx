@@ -53,9 +53,11 @@ import { FloatingSprites, KohCompanion } from "@/components/KohMascot";
 import { MapPopupCard } from "@/components/MapPopupCard";
 import { ViewerTicker } from "@/components/ViewerTicker";
 import { LiveExplorerMarkers } from "@/components/LiveExplorerMarkers";
+import { PublicChat } from "@/components/PublicChat";
 import { useTheme } from "@/components/ThemeProvider";
 import { CategoryIcon, categoryColor } from "@/components/CategoryIcon";
 import { useLivePresence } from "@/hooks/useLivePresence";
+import { usePublicChat } from "@/hooks/usePublicChat";
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "";
 
@@ -641,11 +643,27 @@ export function EntryMap({
   } | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const {
+    selfId,
+    displayName,
+    selfColor,
+    selfPosition,
     viewers,
     explorers: liveExplorers,
     showExplorers,
     setShowExplorers,
   } = useLivePresence(mapRef, mapReady);
+  const {
+    messages: chatMessages,
+    floating: floatingChats,
+    sending: chatSending,
+    sendMessage,
+  } = usePublicChat({
+    mapRef,
+    selfId,
+    displayName,
+    selfColor,
+    enabled: mapReady,
+  });
   const [visiblePinCount, setVisiblePinCount] = useState(0);
   const [enteringPinIds, setEnteringPinIds] = useState<Set<string>>(
     () => new Set()
@@ -1529,7 +1547,20 @@ export function EntryMap({
           <AttributionControl compact position="bottom-right" />
 
           {showExplorers && !pinMode && (
-            <LiveExplorerMarkers explorers={liveExplorers} />
+            <LiveExplorerMarkers
+              explorers={liveExplorers}
+              floating={floatingChats}
+              selfId={selfId}
+              selfPosition={selfPosition}
+            />
+          )}
+          {!showExplorers && !pinMode && floatingChats.length > 0 && (
+            <LiveExplorerMarkers
+              explorers={[]}
+              floating={floatingChats}
+              selfId={selfId}
+              selfPosition={selfPosition}
+            />
           )}
 
           {mappableEntries
@@ -1736,6 +1767,18 @@ export function EntryMap({
                 browseTotal={mappableEntries.length}
               />
             </div>
+          </div>
+        )}
+
+        {!pinMode && (
+          <div className="absolute bottom-[max(0.75rem,env(safe-area-inset-bottom))] right-2 z-30 sm:right-3">
+            <PublicChat
+              messages={chatMessages}
+              selfId={selfId}
+              displayName={displayName}
+              sending={chatSending}
+              onSend={sendMessage}
+            />
           </div>
         )}
 
