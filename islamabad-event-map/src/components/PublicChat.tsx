@@ -80,7 +80,7 @@ export function PublicChat({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className={`pointer-events-auto flex w-full items-center justify-between gap-2 rounded-2xl border border-line bg-surface/95 px-3 py-2.5 text-left shadow-sm backdrop-blur-md dark:bg-surface-raised/95 ${className}`}
+        className={`pointer-events-auto flex w-full items-center justify-between gap-2 rounded-2xl border border-line bg-surface px-3 py-2.5 text-left shadow-sm ${className}`}
         aria-expanded={false}
       >
         <span className="min-w-0 flex-1">
