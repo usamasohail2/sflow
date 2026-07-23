@@ -4,6 +4,7 @@ import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 import { useEffect, useRef, useState } from "react";
 import type { ChatMessage } from "@/hooks/usePublicChat";
 import { EXPLORER_PALETTES } from "@/hooks/useLivePresence";
+import { FOUNDER_PALETTE, isFounderColor } from "@/lib/founder";
 
 export interface PublicChatHandle {
   messages: ChatMessage[];
@@ -164,24 +165,42 @@ export function PublicChat({
             ) : (
               messages.map((msg) => {
                 const mine = msg.visitorId === selfId;
-                const palette =
-                  EXPLORER_PALETTES[msg.color % EXPLORER_PALETTES.length]!;
+                const star = msg.star === true || isFounderColor(msg.color);
+                const palette = star
+                  ? FOUNDER_PALETTE
+                  : EXPLORER_PALETTES[msg.color % EXPLORER_PALETTES.length]!;
                 return (
                   <div
                     key={msg.id}
                     className={`flex flex-col ${mine ? "items-end" : "items-start"}`}
                   >
                     <span
-                      className="mb-0.5 text-[9px] font-semibold"
-                      style={{ color: palette.shirt }}
+                      className="mb-0.5 inline-flex items-center gap-0.5 text-[9px] font-semibold"
+                      style={{ color: star ? FOUNDER_PALETTE.shirt : palette.shirt }}
                     >
+                      {star && (
+                        <svg
+                          className="h-2.5 w-2.5"
+                          viewBox="0 0 16 16"
+                          aria-hidden
+                        >
+                          <path
+                            fill="currentColor"
+                            d="M8 1.2 9.8 5.6l4.7.4-3.6 3.1 1.1 4.6L8 11.4l-4 2.3 1.1-4.6L1.5 6l4.7-.4L8 1.2z"
+                          />
+                        </svg>
+                      )}
                       {mine ? "You" : msg.name}
                     </span>
                     <span
                       className={`max-w-[95%] rounded-2xl px-2.5 py-1 text-[11px] leading-snug ${
                         mine
-                          ? "rounded-br-md bg-[var(--blue)] text-white"
-                          : "rounded-bl-md bg-wash text-ink"
+                          ? star
+                            ? "rounded-br-md bg-[#C9A227] text-[#1a1508]"
+                            : "rounded-br-md bg-[var(--blue)] text-white"
+                          : star
+                            ? "rounded-bl-md border border-[#C9A227]/40 bg-[#1a1508] text-[#FFE566]"
+                            : "rounded-bl-md bg-wash text-ink"
                       }`}
                     >
                       {msg.text}

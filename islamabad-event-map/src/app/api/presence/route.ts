@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/auth";
+import { isFounderEmail } from "@/lib/founder";
 import {
   hasSharedPresenceStore,
   listPresence,
@@ -32,6 +34,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid visitorId" }, { status: 400 });
     }
 
+    const session = await auth();
+    const star = isFounderEmail(session?.user?.email);
+
     const explorers = await touchPresence({
       visitorId: body.visitorId,
       name: typeof body.name === "string" ? body.name : undefined,
@@ -39,6 +44,7 @@ export async function POST(request: NextRequest) {
       lng: typeof body.lng === "number" ? body.lng : undefined,
       alt: typeof body.alt === "number" ? body.alt : undefined,
       color: typeof body.color === "number" ? body.color : undefined,
+      star,
     });
 
     return NextResponse.json({

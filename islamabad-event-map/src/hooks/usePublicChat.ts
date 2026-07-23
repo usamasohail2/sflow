@@ -9,6 +9,7 @@ export interface ChatMessage {
   name: string;
   text: string;
   color: number;
+  star?: boolean;
   lat?: number;
   lng?: number;
   createdAt: number;

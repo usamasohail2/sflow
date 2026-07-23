@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { listChatMessages, postChatMessage } from "@/lib/chat";
+import { isFounderEmail } from "@/lib/founder";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +58,7 @@ export async function POST(request: NextRequest) {
       name: sessionName || body.name,
       text: body.text,
       color: body.color,
+      star: isFounderEmail(session.user?.email),
       lat: body.lat,
       lng: body.lng,
     });

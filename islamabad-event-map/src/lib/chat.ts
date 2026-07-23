@@ -1,4 +1,5 @@
 import { Redis } from "@upstash/redis";
+import { FOUNDER_COLOR } from "@/lib/founder";
 import {
   getSupabaseAdmin,
   hasSupabase,
@@ -15,6 +16,7 @@ export interface ChatMessage {
   name: string;
   text: string;
   color: number;
+  star?: boolean;
   lat?: number;
   lng?: number;
   /** Meters above local ground / terrain */
@@ -78,15 +80,18 @@ function listMemory(since?: number): ChatMessage[] {
 }
 
 function rowToMessage(row: ChatRow): ChatMessage {
+  const rawColor =
+    typeof row.color === "number" && Number.isFinite(row.color)
+      ? Math.floor(row.color)
+      : 0;
+  const color = rawColor === FOUNDER_COLOR ? FOUNDER_COLOR : Math.abs(rawColor) % 7;
   return {
     id: row.id,
     visitorId: row.visitor_id,
     name: clampName(row.name),
     text: row.text,
-    color:
-      typeof row.color === "number" && Number.isFinite(row.color)
-        ? Math.abs(Math.floor(row.color)) % 7
-        : 0,
+    color,
+    star: color === FOUNDER_COLOR,
     lat:
       typeof row.lat === "number" && Number.isFinite(row.lat)
         ? row.lat
@@ -194,6 +199,7 @@ export async function postChatMessage(input: {
   name?: string;
   text: unknown;
   color?: number;
+  star?: boolean;
   lat?: number;
   lng?: number;
   alt?: number;
@@ -201,15 +207,20 @@ export async function postChatMessage(input: {
   const text = clampText(input.text);
   if (!text) return null;
 
+  const star = input.star === true;
+  const color = star
+    ? FOUNDER_COLOR
+    : typeof input.color === "number" && Number.isFinite(input.color)
+      ? Math.abs(Math.floor(input.color)) % 7
+      : 0;
+
   const message: ChatMessage = {
     id: makeId(),
     visitorId: input.visitorId,
     name: clampName(input.name),
     text,
-    color:
-      typeof input.color === "number" && Number.isFinite(input.color)
-        ? Math.abs(Math.floor(input.color)) % 7
-        : 0,
+    color,
+    star,
     lat:
       typeof input.lat === "number" && Number.isFinite(input.lat)
         ? input.lat

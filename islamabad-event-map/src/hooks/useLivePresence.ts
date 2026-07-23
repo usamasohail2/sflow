@@ -11,6 +11,7 @@ export interface LiveExplorer {
   lat?: number;
   lng?: number;
   color: number;
+  star?: boolean;
   lastSeen: number;
 }
 

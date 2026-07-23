@@ -1,5 +1,6 @@
 import Airtable from "airtable";
 import { Redis } from "@upstash/redis";
+import { FOUNDER_COLOR } from "@/lib/founder";
 import {
   getSupabaseAdmin,
   hasSupabase,
@@ -22,6 +23,8 @@ export interface ExplorerPresence {
   /** Meters above local ground / terrain (camera eye AGL) */
   alt?: number;
   color: number;
+  /** Founder / special explorer */
+  star?: boolean;
   lastSeen: number;
 }
 
@@ -32,6 +35,7 @@ export interface TouchPresenceInput {
   lng?: number;
   alt?: number;
   color?: number;
+  star?: boolean;
 }
 
 type PresenceStore = Map<string, ExplorerPresence>;
@@ -80,20 +84,27 @@ function clampAltitude(value: unknown): number | undefined {
 
 function clampColor(value: unknown): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return 0;
-  return Math.abs(Math.floor(value)) % 7;
+  const n = Math.floor(value);
+  if (n === FOUNDER_COLOR) return FOUNDER_COLOR;
+  return Math.abs(n) % 7;
 }
 
 function touchMemory(input: TouchPresenceInput): ExplorerPresence[] {
   const now = Date.now();
   const map = memoryStore();
   const prev = map.get(input.visitorId);
+  const star = input.star === true;
+  const color = star
+    ? FOUNDER_COLOR
+    : clampColor(input.color ?? prev?.color ?? 0);
   map.set(input.visitorId, {
     id: input.visitorId,
     name: clampName(input.name ?? prev?.name),
     lat: clampCoord(input.lat) ?? prev?.lat,
     lng: clampCoord(input.lng) ?? prev?.lng,
     alt: clampAltitude(input.alt) ?? prev?.alt,
-    color: clampColor(input.color ?? prev?.color ?? 0),
+    color,
+    star,
     lastSeen: now,
   });
   pruneMemory(now);
@@ -116,13 +127,15 @@ function hasAirtable(): boolean {
 }
 
 function rowToExplorer(row: PresenceRow): ExplorerPresence {
+  const color = clampColor(row.color);
   return {
     id: row.visitor_id,
     name: clampName(row.name),
     lat: clampCoord(row.lat),
     lng: clampCoord(row.lng),
     alt: clampAltitude(row.alt),
-    color: clampColor(row.color),
+    color,
+    star: color === FOUNDER_COLOR,
     lastSeen: new Date(row.last_seen).getTime() || Date.now(),
   };
 }
@@ -137,7 +150,10 @@ async function touchSupabase(
   const lat = clampCoord(input.lat);
   const lng = clampCoord(input.lng);
   const alt = clampAltitude(input.alt);
-  const color = clampColor(input.color);
+  const star = input.star === true;
+  const color = star
+    ? FOUNDER_COLOR
+    : clampColor(input.color);
 
   const { data: existing } = await supabase
     .from("live_presence")
@@ -152,11 +168,14 @@ async function touchSupabase(
     lng: lng ?? (typeof existing?.lng === "number" ? existing.lng : null),
     alt: alt ?? (typeof existing?.alt === "number" ? existing.alt : null),
     color:
-      input.color != null
+      input.star != null || input.color != null
         ? color
         : clampColor(typeof existing?.color === "number" ? existing.color : 0),
     last_seen: nowIso,
   };
+
+  // If founder flag is set, always force founder color
+  if (star) row.color = FOUNDER_COLOR;
 
   const { error: upsertError } = await supabase
     .from("live_presence")
@@ -224,9 +243,10 @@ function parseAirtableDescription(raw: unknown): {
   const tsMatch = text.match(/ts=(\d+)/);
   const colorMatch = text.match(/color=(\d+)/);
   const altMatch = text.match(/alt=([\d.]+)/);
+  const colorNum = colorMatch ? Number(colorMatch[1]) : 0;
   return {
     lastSeen: tsMatch ? Number(tsMatch[1]) : 0,
-    color: colorMatch ? Number(colorMatch[1]) % 7 : 0,
+    color: colorNum === FOUNDER_COLOR ? FOUNDER_COLOR : colorNum % 7,
     alt: altMatch ? Number(altMatch[1]) : undefined,
   };
 }
@@ -333,13 +353,15 @@ async function listAirtable(): Promise<ExplorerPresence[]> {
         typeof r.fields.Lat === "number" ? (r.fields.Lat as number) : undefined;
       const lng =
         typeof r.fields.Lng === "number" ? (r.fields.Lng as number) : undefined;
+      const clamped = clampColor(color);
       return {
         id,
         name: clampName(r.fields.Organizer),
         lat,
         lng,
         alt: clampAltitude(alt),
-        color,
+        color: clamped,
+        star: clamped === FOUNDER_COLOR,
         lastSeen,
       } satisfies ExplorerPresence;
     })
@@ -365,13 +387,17 @@ async function touchRedis(
     }
   }
 
+  const star = input.star === true;
   const record: ExplorerPresence = {
     id: input.visitorId,
     name: clampName(input.name ?? prev.name),
     lat: clampCoord(input.lat) ?? prev.lat,
     lng: clampCoord(input.lng) ?? prev.lng,
     alt: clampAltitude(input.alt) ?? prev.alt,
-    color: clampColor(input.color ?? prev.color ?? 0),
+    color: star
+      ? FOUNDER_COLOR
+      : clampColor(input.color ?? prev.color ?? 0),
+    star,
     lastSeen: now,
   };
 
@@ -418,6 +444,8 @@ async function listRedis(): Promise<ExplorerPresence[]> {
           lng: clampCoord(parsed.lng),
           alt: clampAltitude(parsed.alt),
           color: clampColor(parsed.color),
+          star:
+            parsed.star === true || clampColor(parsed.color) === FOUNDER_COLOR,
           lastSeen: parsed.lastSeen,
         });
       }
