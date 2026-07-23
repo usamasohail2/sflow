@@ -26,10 +26,14 @@ export type VisitorStats = {
 };
 
 const VISITOR_TOUCH_MS = 5 * 60 * 1000;
+const STORAGE_BUCKET = "explore-analytics";
+const STORAGE_PREFIX = "visitors";
 
 declare global {
   // eslint-disable-next-line no-var
   var __isbVisitorTouchAt: Map<string, number> | undefined;
+  // eslint-disable-next-line no-var
+  var __isbVisitorsTableOk: boolean | undefined;
 }
 
 function visitorTouchAt(): Map<string, number> {
@@ -49,78 +53,8 @@ function startOfUtcMonth(d = new Date()): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
 }
 
-/**
- * Upsert a durable visitor row on map presence.
- * first_seen is set only on insert; last_seen updates at most every 5 minutes.
- * visit_count increments at most once per UTC day.
- */
-export async function recordVisitorVisit(input: {
-  visitorId: string;
-  name?: string;
-}): Promise<void> {
-  if (!hasSupabase()) return;
-  const supabase = getSupabaseAdmin();
-  if (!supabase) return;
-
-  const visitorId = input.visitorId.trim();
-  if (!visitorId || visitorId.length < 8) return;
-
-  const now = Date.now();
-  const lastTouch = visitorTouchAt().get(visitorId) ?? 0;
-  if (now - lastTouch < VISITOR_TOUCH_MS) return;
-  visitorTouchAt().set(visitorId, now);
-
-  const nowIso = new Date(now).toISOString();
-  const name =
-    typeof input.name === "string" && input.name.trim()
-      ? input.name.trim().slice(0, 24)
-      : "Explorer";
-
-  const { data: existing, error: readError } = await supabase
-    .from("visitors")
-    .select("visitor_id, name, last_seen, visit_count")
-    .eq("visitor_id", visitorId)
-    .maybeSingle();
-
-  if (readError) {
-    // Table missing until SQL is run — don't break the map
-    console.error("Visitor read failed:", readError.message);
-    return;
-  }
-
-  if (!existing) {
-    const { error } = await supabase.from("visitors").insert({
-      visitor_id: visitorId,
-      name,
-      first_seen: nowIso,
-      last_seen: nowIso,
-      visit_count: 1,
-    });
-    if (error) console.error("Visitor insert failed:", error.message);
-    return;
-  }
-
-  const lastSeenMs = new Date(existing.last_seen).getTime();
-  const newDay =
-    Number.isFinite(lastSeenMs) &&
-    lastSeenMs < startOfUtcDay(new Date(now)).getTime();
-
-  const { error } = await supabase
-    .from("visitors")
-    .update({
-      name: input.name != null ? name : existing.name,
-      last_seen: nowIso,
-      visit_count: newDay
-        ? (existing.visit_count || 1) + 1
-        : existing.visit_count || 1,
-    })
-    .eq("visitor_id", visitorId);
-
-  if (error) console.error("Visitor update failed:", error.message);
-}
-
-export async function getVisitorStats(): Promise<VisitorStats> {
-  const empty: VisitorStats = {
+function emptyStats(): VisitorStats {
+  return {
     allTime: 0,
     thisMonth: 0,
     last30Days: 0,
@@ -128,22 +62,9 @@ export async function getVisitorStats(): Promise<VisitorStats> {
     recent: [],
     byMonth: [],
   };
+}
 
-  if (!hasSupabase()) return empty;
-  const supabase = getSupabaseAdmin();
-  if (!supabase) return empty;
-
-  const { data, error } = await supabase
-    .from("visitors")
-    .select("visitor_id, name, first_seen, last_seen, visit_count")
-    .order("first_seen", { ascending: false })
-    .limit(5000);
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  const rows = (data as VisitorRow[] | null) ?? [];
+function buildStats(rows: VisitorRow[]): VisitorStats {
   const now = new Date();
   const monthStart = startOfUtcMonth(now).getTime();
   const dayStart = startOfUtcDay(now).getTime();
@@ -154,7 +75,12 @@ export async function getVisitorStats(): Promise<VisitorStats> {
   let last30Days = 0;
   let today = 0;
 
-  for (const row of rows) {
+  const sorted = [...rows].sort(
+    (a, b) =>
+      new Date(b.first_seen).getTime() - new Date(a.first_seen).getTime()
+  );
+
+  for (const row of sorted) {
     const first = new Date(row.first_seen).getTime();
     if (!Number.isFinite(first)) continue;
     if (first >= monthStart) thisMonth += 1;
@@ -171,11 +97,11 @@ export async function getVisitorStats(): Promise<VisitorStats> {
     .sort((a, b) => b.month.localeCompare(a.month));
 
   return {
-    allTime: rows.length,
+    allTime: sorted.length,
     thisMonth,
     last30Days,
     today,
-    recent: rows.slice(0, 40).map((row) => ({
+    recent: sorted.slice(0, 40).map((row) => ({
       visitorId: row.visitor_id,
       name: row.name,
       firstSeen: new Date(row.first_seen).getTime(),
@@ -184,4 +110,250 @@ export async function getVisitorStats(): Promise<VisitorStats> {
     })),
     byMonth,
   };
+}
+
+function isMissingTableError(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    m.includes("could not find the table") ||
+    m.includes("schema cache") ||
+    m.includes("pgrst205")
+  );
+}
+
+async function ensureAnalyticsBucket(): Promise<void> {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return;
+  const { data } = await supabase.storage.listBuckets();
+  if (data?.some((b) => b.name === STORAGE_BUCKET || b.id === STORAGE_BUCKET)) {
+    return;
+  }
+  await supabase.storage.createBucket(STORAGE_BUCKET, { public: false });
+}
+
+function storagePath(visitorId: string): string {
+  return `${STORAGE_PREFIX}/${visitorId}.json`;
+}
+
+async function readStorageVisitor(
+  visitorId: string
+): Promise<VisitorRow | null> {
+  const supabase = getSupabaseAdmin()!;
+  const { data, error } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .download(storagePath(visitorId));
+  if (error || !data) return null;
+  try {
+    const text = await data.text();
+    return JSON.parse(text) as VisitorRow;
+  } catch {
+    return null;
+  }
+}
+
+async function writeStorageVisitor(row: VisitorRow): Promise<void> {
+  const supabase = getSupabaseAdmin()!;
+  await ensureAnalyticsBucket();
+  const body = JSON.stringify(row);
+  const { error } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .upload(storagePath(row.visitor_id), body, {
+      contentType: "application/json",
+      upsert: true,
+    });
+  if (error) throw error;
+}
+
+async function listStorageVisitors(): Promise<VisitorRow[]> {
+  const supabase = getSupabaseAdmin()!;
+  await ensureAnalyticsBucket();
+  const { data: files, error } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .list(STORAGE_PREFIX, { limit: 5000 });
+  if (error) throw error;
+  if (!files?.length) return [];
+
+  const rows: VisitorRow[] = [];
+  // Batch downloads in small chunks
+  for (let i = 0; i < files.length; i += 20) {
+    const chunk = files.slice(i, i + 20);
+    const parts = await Promise.all(
+      chunk.map(async (file) => {
+        if (!file.name.endsWith(".json")) return null;
+        const id = file.name.replace(/\.json$/, "");
+        return readStorageVisitor(id);
+      })
+    );
+    for (const row of parts) {
+      if (row) rows.push(row);
+    }
+  }
+  return rows;
+}
+
+async function recordViaTable(input: {
+  visitorId: string;
+  name: string;
+  nowIso: string;
+}): Promise<"ok" | "missing_table" | "error"> {
+  const supabase = getSupabaseAdmin()!;
+  const { visitorId, name, nowIso } = input;
+
+  const { data: existing, error: readError } = await supabase
+    .from("visitors")
+    .select("visitor_id, name, last_seen, visit_count")
+    .eq("visitor_id", visitorId)
+    .maybeSingle();
+
+  if (readError) {
+    if (isMissingTableError(readError.message)) return "missing_table";
+    console.error("Visitor read failed:", readError.message);
+    return "error";
+  }
+
+  if (!existing) {
+    const { error } = await supabase.from("visitors").insert({
+      visitor_id: visitorId,
+      name,
+      first_seen: nowIso,
+      last_seen: nowIso,
+      visit_count: 1,
+    });
+    if (error) {
+      if (isMissingTableError(error.message)) return "missing_table";
+      console.error("Visitor insert failed:", error.message);
+      return "error";
+    }
+    return "ok";
+  }
+
+  const lastSeenMs = new Date(existing.last_seen).getTime();
+  const newDay =
+    Number.isFinite(lastSeenMs) &&
+    lastSeenMs < startOfUtcDay(new Date(nowIso)).getTime();
+
+  const { error } = await supabase
+    .from("visitors")
+    .update({
+      name,
+      last_seen: nowIso,
+      visit_count: newDay
+        ? (existing.visit_count || 1) + 1
+        : existing.visit_count || 1,
+    })
+    .eq("visitor_id", visitorId);
+
+  if (error) {
+    if (isMissingTableError(error.message)) return "missing_table";
+    console.error("Visitor update failed:", error.message);
+    return "error";
+  }
+  return "ok";
+}
+
+async function recordViaStorage(input: {
+  visitorId: string;
+  name: string;
+  nowIso: string;
+}): Promise<void> {
+  const { visitorId, name, nowIso } = input;
+  const existing = await readStorageVisitor(visitorId);
+  if (!existing) {
+    await writeStorageVisitor({
+      visitor_id: visitorId,
+      name,
+      first_seen: nowIso,
+      last_seen: nowIso,
+      visit_count: 1,
+    });
+    return;
+  }
+
+  const lastSeenMs = new Date(existing.last_seen).getTime();
+  const newDay =
+    Number.isFinite(lastSeenMs) &&
+    lastSeenMs < startOfUtcDay(new Date(nowIso)).getTime();
+
+  await writeStorageVisitor({
+    ...existing,
+    name,
+    last_seen: nowIso,
+    visit_count: newDay
+      ? (existing.visit_count || 1) + 1
+      : existing.visit_count || 1,
+  });
+}
+
+/**
+ * Upsert a durable visitor row on map presence.
+ * Prefers the `visitors` SQL table; falls back to Supabase Storage when the
+ * table has not been created yet.
+ */
+export async function recordVisitorVisit(input: {
+  visitorId: string;
+  name?: string;
+}): Promise<void> {
+  if (!hasSupabase()) return;
+  if (!getSupabaseAdmin()) return;
+
+  const visitorId = input.visitorId.trim();
+  if (!visitorId || visitorId.length < 8) return;
+
+  const now = Date.now();
+  const lastTouch = visitorTouchAt().get(visitorId) ?? 0;
+  if (now - lastTouch < VISITOR_TOUCH_MS) return;
+  visitorTouchAt().set(visitorId, now);
+
+  const nowIso = new Date(now).toISOString();
+  const name =
+    typeof input.name === "string" && input.name.trim()
+      ? input.name.trim().slice(0, 24)
+      : "Explorer";
+
+  if (globalThis.__isbVisitorsTableOk !== false) {
+    const result = await recordViaTable({ visitorId, name, nowIso });
+    if (result === "ok") {
+      globalThis.__isbVisitorsTableOk = true;
+      return;
+    }
+    if (result === "missing_table") {
+      globalThis.__isbVisitorsTableOk = false;
+    } else {
+      return;
+    }
+  }
+
+  try {
+    await recordViaStorage({ visitorId, name, nowIso });
+  } catch (error) {
+    console.error("Visitor storage write failed:", error);
+  }
+}
+
+export async function getVisitorStats(): Promise<VisitorStats> {
+  if (!hasSupabase()) return emptyStats();
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return emptyStats();
+
+  if (globalThis.__isbVisitorsTableOk !== false) {
+    const { data, error } = await supabase
+      .from("visitors")
+      .select("visitor_id, name, first_seen, last_seen, visit_count")
+      .order("first_seen", { ascending: false })
+      .limit(5000);
+
+    if (!error) {
+      globalThis.__isbVisitorsTableOk = true;
+      return buildStats((data as VisitorRow[] | null) ?? []);
+    }
+
+    if (isMissingTableError(error.message)) {
+      globalThis.__isbVisitorsTableOk = false;
+    } else {
+      throw new Error(error.message);
+    }
+  }
+
+  const rows = await listStorageVisitors();
+  return buildStats(rows);
 }

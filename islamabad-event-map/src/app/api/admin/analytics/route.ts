@@ -22,14 +22,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ stats });
   } catch (error) {
     console.error("Admin analytics failed:", error);
-    const message =
-      error instanceof Error ? error.message : "Could not load analytics";
     return NextResponse.json(
       {
         stats: null,
-        error: message.includes("Could not find the table")
-          ? "Run supabase/visitors.sql in the Supabase SQL Editor, then refresh."
-          : "Could not load visitor analytics from Supabase",
+        error: "Could not load visitor analytics from Supabase",
       },
       { status: 500 }
     );

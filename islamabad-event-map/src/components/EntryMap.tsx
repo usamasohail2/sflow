@@ -1233,8 +1233,10 @@ export function EntryMap({
       const mobile = window.matchMedia("(max-width: 1023px)").matches;
       // Read live camera from the map — don't close over pitch/bearing state
       // or every two-finger tilt recreates this callback and re-opens the card.
-      const livePitch = map?.getPitch() ?? pitch;
-      const liveBearing = map?.getBearing() ?? bearing;
+      const livePitch =
+        map?.getPitch() ?? (is3D ? MAP_3D_PITCH : MAP_2D_PITCH);
+      const liveBearing =
+        map?.getBearing() ?? (is3D ? DEFAULT_MAP_BEARING : 0);
 
       if (mobile) {
         // Map pane is already squeezed by the sheet — center the pin in it
@@ -1380,6 +1382,8 @@ export function EntryMap({
       cancelled = true;
       window.cancelAnimationFrame(raf);
     };
+    // Intentionally keyed by id — full popupEntry would re-run on unrelated field edits
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMobile, popupEntry?.id, pinMode, mapReady]);
 
   useEffect(() => {

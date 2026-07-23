@@ -317,11 +317,6 @@ export default function ManagePage() {
             {statsError && (
               <div className="rounded-xl border border-danger/30 bg-danger-soft px-3 py-2 text-xs text-danger">
                 {statsError}
-                <span className="mt-1 block text-ink-muted">
-                  If the table is missing, run{" "}
-                  <code className="text-ink">supabase/visitors.sql</code> in
-                  the Supabase SQL Editor, then refresh.
-                </span>
               </div>
             )}
             {statsLoading ? (
