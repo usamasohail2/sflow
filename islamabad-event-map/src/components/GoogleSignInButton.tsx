@@ -1,7 +1,6 @@
 "use client";
 
-import { useState } from "react";
-import { signIn } from "next-auth/react";
+import { useEffect, useRef, useState } from "react";
 
 function GoogleGlyph({ className = "" }: { className?: string }) {
   return (
@@ -52,7 +51,49 @@ function Spinner({ className = "" }: { className?: string }) {
   );
 }
 
-/** Client-side Google OAuth — shows immediate loading, then redirects */
+/**
+ * Auth.js client `signIn()` waits for CSRF + POST JSON before navigating —
+ * that feels laggy. Prefetch CSRF on mount, then form-POST so the browser
+ * leaves the page immediately toward Google.
+ */
+async function fetchCsrfToken(): Promise<string | null> {
+  try {
+    const res = await fetch("/api/auth/csrf", { cache: "no-store" });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { csrfToken?: string };
+    return typeof data.csrfToken === "string" ? data.csrfToken : null;
+  } catch {
+    return null;
+  }
+}
+
+function postGoogleSignIn(csrfToken: string, callbackUrl: string) {
+  const form = document.createElement("form");
+  form.method = "POST";
+  form.action = "/api/auth/signin/google";
+  form.style.display = "none";
+
+  const csrf = document.createElement("input");
+  csrf.type = "hidden";
+  csrf.name = "csrfToken";
+  csrf.value = csrfToken;
+
+  const cb = document.createElement("input");
+  cb.type = "hidden";
+  cb.name = "callbackUrl";
+  cb.value = callbackUrl;
+
+  const json = document.createElement("input");
+  json.type = "hidden";
+  json.name = "json";
+  json.value = "false";
+
+  form.append(csrf, cb, json);
+  document.body.appendChild(form);
+  form.submit();
+}
+
+/** Client-side Google OAuth — immediate spinner, then hard redirect to Google */
 export function GoogleSignInButton({
   callbackUrl = "/",
   label = "Continue with Google",
@@ -66,13 +107,33 @@ export function GoogleSignInButton({
   compact?: boolean;
 }) {
   const [pending, setPending] = useState(false);
+  const csrfRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const token = await fetchCsrfToken();
+      if (!cancelled && token) csrfRef.current = token;
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const start = () => {
     if (pending) return;
     setPending(true);
-    void signIn("google", { callbackUrl }).catch(() => {
-      setPending(false);
-    });
+
+    void (async () => {
+      const token = csrfRef.current ?? (await fetchCsrfToken());
+      if (!token) {
+        setPending(false);
+        return;
+      }
+      csrfRef.current = token;
+      // Full navigation — no waiting for a second Auth.js JSON round-trip
+      postGoogleSignIn(token, callbackUrl);
+    })();
   };
 
   if (compact) {
