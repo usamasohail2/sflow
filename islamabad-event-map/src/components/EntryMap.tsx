@@ -53,7 +53,7 @@ import { FloatingSprites, KohCompanion } from "@/components/KohMascot";
 import { MapPopupCard } from "@/components/MapPopupCard";
 import { ViewerTicker } from "@/components/ViewerTicker";
 import { LiveExplorerMarkers } from "@/components/LiveExplorerMarkers";
-import { PublicChat } from "@/components/PublicChat";
+import type { PublicChatHandle } from "@/components/PublicChat";
 import { useTheme } from "@/components/ThemeProvider";
 import { CategoryIcon, categoryColor } from "@/components/CategoryIcon";
 import { useLivePresence } from "@/hooks/useLivePresence";
@@ -90,6 +90,8 @@ interface EntryMapProps {
   onMapReadyToShow?: () => void;
   /** Splash has dismissed — start the launch fly-through now */
   startLaunchCamera?: boolean;
+  /** Bridge public chat UI up to the page chrome (spots stack) */
+  onPublicChatChange?: (chat: PublicChatHandle | null) => void;
 }
 
 function EventPinIcon({ className }: { className?: string }) {
@@ -619,6 +621,7 @@ export function EntryMap({
   onLaunchCameraDone,
   onMapReadyToShow,
   startLaunchCamera = false,
+  onPublicChatChange,
 }: EntryMapProps) {
   const mapRef = useRef<MapRef>(null);
   const mapPaneRef = useRef<HTMLDivElement>(null);
@@ -664,6 +667,26 @@ export function EntryMap({
     selfColor,
     enabled: mapReady,
   });
+
+  useEffect(() => {
+    if (!onPublicChatChange) return;
+    onPublicChatChange({
+      messages: chatMessages,
+      selfId,
+      displayName,
+      sending: chatSending,
+      onSend: sendMessage,
+    });
+    return () => onPublicChatChange(null);
+  }, [
+    onPublicChatChange,
+    chatMessages,
+    selfId,
+    displayName,
+    chatSending,
+    sendMessage,
+  ]);
+
   const [visiblePinCount, setVisiblePinCount] = useState(0);
   const [enteringPinIds, setEnteringPinIds] = useState<Set<string>>(
     () => new Set()
@@ -1767,18 +1790,6 @@ export function EntryMap({
                 browseTotal={mappableEntries.length}
               />
             </div>
-          </div>
-        )}
-
-        {!pinMode && (
-          <div className="absolute bottom-[max(0.75rem,env(safe-area-inset-bottom))] right-2 z-30 sm:right-3">
-            <PublicChat
-              messages={chatMessages}
-              selfId={selfId}
-              displayName={displayName}
-              sending={chatSending}
-              onSend={sendMessage}
-            />
           </div>
         )}
 

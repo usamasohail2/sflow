@@ -10,6 +10,10 @@ import { CategoryStrip } from "@/components/CategoryStrip";
 import { SubmitForm } from "@/components/SubmitForm";
 import { AppSplash, QuietLoader } from "@/components/LoadingScreen";
 import { InterestsModal, saveInterests } from "@/components/InterestsModal";
+import {
+  PublicChat,
+  type PublicChatHandle,
+} from "@/components/PublicChat";
 import type { Category, CityId, DateFilter, ViewFilter } from "@/lib/constants";
 import { CATEGORIES, DEFAULT_CITY } from "@/lib/constants";
 import type { Entry } from "@/lib/types";
@@ -54,6 +58,8 @@ export function HomePage() {
   const [draftPin, setDraftPin] = useState<{ lat: number; lng: number } | null>(
     null
   );
+  const [publicChat, setPublicChat] = useState<PublicChatHandle | null>(null);
+  const [mobileChatOpen, setMobileChatOpen] = useState(false);
 
   useEffect(() => {
     setViewedIds(loadViewedEntryIds());
@@ -239,6 +245,7 @@ export function HomePage() {
             onLaunchCameraDone={handleLaunchCameraDone}
             onMapReadyToShow={handleMapReadyToShow}
             startLaunchCamera={introReady}
+            onPublicChatChange={setPublicChat}
           />
         </div>
 
@@ -360,7 +367,22 @@ export function HomePage() {
               onChange={handleCategoriesChange}
             />
 
-            <div className="pointer-events-auto">
+            {/* Desktop: chat sits above the spots rail, right-aligned */}
+            {publicChat && (
+              <div className="pointer-events-auto hidden justify-end px-3 sm:flex">
+                <PublicChat
+                  {...publicChat}
+                  layout="desktop"
+                />
+              </div>
+            )}
+
+            {/* Spots — hidden on mobile while chat is open */}
+            <div
+              className={`pointer-events-auto ${
+                mobileChatOpen ? "hidden sm:block" : ""
+              }`}
+            >
               {error ? (
                 <div className="mx-3 rounded-xl bg-danger-soft px-3 py-3 text-center">
                   <p className="text-sm text-danger">{error}</p>
@@ -379,6 +401,18 @@ export function HomePage() {
                 />
               )}
             </div>
+
+            {/* Mobile: chat bar below spots; opening it hides spots */}
+            {publicChat && (
+              <div className="pointer-events-auto px-3 sm:hidden">
+                <PublicChat
+                  {...publicChat}
+                  layout="mobile"
+                  open={mobileChatOpen}
+                  onOpenChange={setMobileChatOpen}
+                />
+              </div>
+            )}
           </div>
         )}
       </div>

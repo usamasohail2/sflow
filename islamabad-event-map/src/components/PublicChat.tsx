@@ -4,13 +4,24 @@ import { useEffect, useRef, useState } from "react";
 import type { ChatMessage } from "@/hooks/usePublicChat";
 import { EXPLORER_PALETTES } from "@/hooks/useLivePresence";
 
-interface PublicChatProps {
+export interface PublicChatHandle {
   messages: ChatMessage[];
   selfId: string;
   displayName: string;
   sending: boolean;
   onSend: (text: string) => Promise<boolean>;
+}
+
+interface PublicChatProps extends PublicChatHandle {
   className?: string;
+  /** Controlled open state (mobile). When omitted, desktop defaults to open. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /**
+   * mobile — collapsed bar under spots; tap expands chat and parent hides spots
+   * desktop — panel above spots, open by default
+   */
+  layout?: "desktop" | "mobile";
 }
 
 export function PublicChat({
@@ -20,17 +31,34 @@ export function PublicChat({
   sending,
   onSend,
   className = "",
+  open: openProp,
+  onOpenChange,
+  layout = "desktop",
 }: PublicChatProps) {
-  const [open, setOpen] = useState(true);
+  const isMobile = layout === "mobile";
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(!isMobile);
+  const open = openProp ?? uncontrolledOpen;
+  const setOpen = (next: boolean) => {
+    onOpenChange?.(next);
+    if (openProp === undefined) setUncontrolledOpen(next);
+  };
+
   const [draft, setDraft] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const el = listRef.current;
-    if (!el) return;
+    if (!el || !open) return;
     el.scrollTop = el.scrollHeight;
   }, [messages.length, open]);
+
+  useEffect(() => {
+    if (open) {
+      const t = window.setTimeout(() => inputRef.current?.focus(), 50);
+      return () => window.clearTimeout(t);
+    }
+  }, [open]);
 
   const submit = async () => {
     const text = draft;
@@ -42,27 +70,59 @@ export function PublicChat({
     }
   };
 
-  return (
-    <div
-      className={`pointer-events-auto flex w-[min(100%,18.5rem)] flex-col overflow-hidden rounded-2xl border border-line bg-surface/95 shadow-[0_10px_30px_rgba(0,0,0,0.16)] backdrop-blur-md dark:bg-surface-raised/95 ${className}`}
-    >
+  const latest = messages[messages.length - 1];
+
+  // Mobile collapsed: bar under spots
+  if (isMobile && !open) {
+    return (
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center justify-between gap-2 border-b border-line px-3 py-2 text-left"
-        aria-expanded={open}
+        onClick={() => setOpen(true)}
+        className={`pointer-events-auto flex w-full items-center justify-between gap-2 rounded-2xl border border-line bg-surface/95 px-3 py-2.5 text-left shadow-sm backdrop-blur-md dark:bg-surface-raised/95 ${className}`}
+        aria-expanded={false}
       >
-        <span className="text-xs font-semibold text-ink">Public chat</span>
-        <span className="text-[10px] font-medium text-ink-muted">
-          {open ? "Hide" : "Show"}
+        <span className="min-w-0 flex-1">
+          <span className="block text-xs font-semibold text-ink">
+            Public chat
+          </span>
+          <span className="mt-0.5 block truncate text-[11px] text-ink-muted">
+            {latest
+              ? `${latest.visitorId === selfId ? "You" : latest.name}: ${latest.text}`
+              : "Tap to open — say hi to explorers"}
+          </span>
+        </span>
+        <span className="shrink-0 rounded-full bg-wash px-2 py-1 text-[10px] font-semibold text-ink-muted">
+          Open
         </span>
       </button>
+    );
+  }
+
+  return (
+    <div
+      className={`pointer-events-auto flex flex-col overflow-hidden rounded-2xl border border-line bg-surface/95 shadow-[0_10px_30px_rgba(0,0,0,0.16)] backdrop-blur-md dark:bg-surface-raised/95 ${
+        isMobile ? "w-full" : "w-[min(100%,18.5rem)]"
+      } ${className}`}
+    >
+      <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-2">
+        <span className="text-xs font-semibold text-ink">Public chat</span>
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          className="text-[10px] font-medium text-ink-muted transition hover:text-ink"
+          aria-expanded={open}
+        >
+          {isMobile ? (open ? "Back to spots" : "Open") : open ? "Hide" : "Show"}
+        </button>
+      </div>
 
       {open && (
         <>
           <div
             ref={listRef}
-            className="flex max-h-44 flex-col gap-1.5 overflow-y-auto px-2.5 py-2 sm:max-h-52"
+            className={`flex flex-col gap-1.5 overflow-y-auto px-2.5 py-2 ${
+              isMobile ? "max-h-[42dvh]" : "max-h-40 sm:max-h-48"
+            }`}
           >
             {messages.length === 0 ? (
               <p className="px-1 py-3 text-center text-[11px] text-ink-faint">
