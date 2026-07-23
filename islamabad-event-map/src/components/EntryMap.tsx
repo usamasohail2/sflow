@@ -51,6 +51,7 @@ import {
 } from "@/lib/utils";
 import { FloatingSprites, KohCompanion } from "@/components/KohMascot";
 import { MapPopupCard } from "@/components/MapPopupCard";
+import { PublicChat } from "@/components/PublicChat";
 import {
   HumanSprite,
   paletteForId,
@@ -62,6 +63,7 @@ import {
   cameraMarkerJitter,
   useMapPresence,
 } from "@/hooks/useMapPresence";
+import type { PresencePeer } from "@/lib/presenceTypes";
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "";
 
@@ -145,6 +147,46 @@ function PlacePinIcon({ className }: { className?: string }) {
       />
       <circle cx="12" cy="11" r="2.25" stroke="currentColor" strokeWidth="2" />
     </svg>
+  );
+}
+
+function ViewerMapAvatar({
+  peer,
+  isSelf = false,
+}: {
+  peer: PresencePeer;
+  isSelf?: boolean;
+}) {
+  const palette = paletteForId(peer.id);
+  const label = peer.name?.trim() || (isSelf ? "You" : "Explorer");
+  const bubble = peer.lastMessage?.trim();
+
+  return (
+    <div
+      className={`viewer-map-marker pointer-events-none flex flex-col items-center ${
+        isSelf ? "viewer-map-marker--self" : ""
+      }`}
+      title={label}
+    >
+      {bubble ? (
+        <div className="viewer-speech-bubble mb-1 max-w-[9.5rem]">
+          <p className="line-clamp-3 break-words text-[10px] font-medium leading-snug text-ink">
+            {bubble}
+          </p>
+        </div>
+      ) : null}
+      <span className="viewer-name-tag mb-0.5 max-w-[7.5rem] truncate px-1.5 py-px text-[9px] font-bold leading-tight text-ink">
+        {isSelf ? `${label} (you)` : label}
+      </span>
+      <HumanSprite
+        shirt={palette.shirt}
+        skin={palette.skin}
+        hair={palette.hair}
+        width={16}
+        height={22}
+        className="drop-shadow-[0_1px_1px_rgba(0,0,0,0.25)]"
+      />
+    </div>
   );
 }
 
@@ -658,7 +700,17 @@ export function EntryMap({
   );
   const revealGen = useRef(0);
   const shellRef = useRef<HTMLDivElement>(null);
-  const { viewers, peers, reportCamera } = useMapPresence(mapReady);
+  const {
+    visitorId,
+    displayName,
+    viewers,
+    peers,
+    selfCamera,
+    selfBubble,
+    reportCamera,
+    noteLocalMessage,
+    rename,
+  } = useMapPresence(mapReady);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 1023px)");
@@ -1636,7 +1688,6 @@ export function EntryMap({
           {!pinMode &&
             peers.map((peer) => {
               const jitter = cameraMarkerJitter(peer.id);
-              const palette = paletteForId(peer.id);
               return (
                 <Marker
                   key={`viewer-${peer.id}`}
@@ -1645,22 +1696,29 @@ export function EntryMap({
                   anchor="bottom"
                   style={{ zIndex: 12, pointerEvents: "none" }}
                 >
-                  <div
-                    className="viewer-map-marker pointer-events-none flex flex-col items-center"
-                    title="Someone exploring here"
-                  >
-                    <HumanSprite
-                      shirt={palette.shirt}
-                      skin={palette.skin}
-                      hair={palette.hair}
-                      width={16}
-                      height={22}
-                      className="drop-shadow-[0_1px_1px_rgba(0,0,0,0.25)]"
-                    />
-                  </div>
+                  <ViewerMapAvatar peer={peer} />
                 </Marker>
               );
             })}
+
+          {!pinMode && selfCamera && visitorId && (
+            <Marker
+              latitude={selfCamera.lat}
+              longitude={selfCamera.lng}
+              anchor="bottom"
+              style={{ zIndex: 13, pointerEvents: "none" }}
+            >
+              <ViewerMapAvatar
+                peer={{
+                  id: visitorId,
+                  name: displayName || "You",
+                  lastMessage: selfBubble?.text,
+                  lastMessageAt: selfBubble?.at,
+                }}
+                isSelf
+              />
+            </Marker>
+          )}
 
           {!pinMode && suggestPrompt && onSuggestAt && (
             <>
@@ -1789,6 +1847,16 @@ export function EntryMap({
           <ViewerTicker
             viewers={viewers}
             className="absolute left-2 top-[calc(0.5rem+2.25rem+0.5rem)] z-20 sm:left-3"
+          />
+        )}
+
+        {!pinMode && visitorId && (
+          <PublicChat
+            visitorId={visitorId}
+            displayName={displayName}
+            onSent={noteLocalMessage}
+            onRename={rename}
+            className="absolute bottom-[max(0.75rem,env(safe-area-inset-bottom))] right-2 z-30 sm:right-3"
           />
         )}
 

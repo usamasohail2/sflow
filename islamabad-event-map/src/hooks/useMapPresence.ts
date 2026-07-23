@@ -2,14 +2,17 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PresencePeer } from "@/lib/presenceTypes";
+import { generateUsername } from "@/lib/usernames";
 
 const HEARTBEAT_MS = 15_000;
 const CAMERA_PUSH_MS = 2_000;
+const BUBBLE_MS = 45_000;
 const STORAGE_KEY = "isb-map-visitor-id";
+const NAME_KEY = "isb-map-visitor-name";
 
 export type MapCamera = { lat: number; lng: number };
 
-function getVisitorId(): string {
+export function getVisitorId(): string {
   try {
     const existing = localStorage.getItem(STORAGE_KEY);
     if (existing) return existing;
@@ -21,6 +24,28 @@ function getVisitorId(): string {
     return id;
   } catch {
     return `v_${Math.random().toString(36).slice(2)}`;
+  }
+}
+
+export function getVisitorName(): string {
+  try {
+    const existing = localStorage.getItem(NAME_KEY)?.trim();
+    if (existing) return existing;
+    const name = generateUsername();
+    localStorage.setItem(NAME_KEY, name);
+    return name;
+  } catch {
+    return generateUsername();
+  }
+}
+
+export function setVisitorName(name: string) {
+  const trimmed = name.trim().slice(0, 32);
+  if (trimmed.length < 2) return;
+  try {
+    localStorage.setItem(NAME_KEY, trimmed);
+  } catch {
+    // ignore
   }
 }
 
@@ -36,7 +61,15 @@ type PresenceResponse = {
 export function useMapPresence(enabled = true) {
   const [viewers, setViewers] = useState<number | null>(null);
   const [peers, setPeers] = useState<PresencePeer[]>([]);
-  const visitorIdRef = useRef<string>("");
+  const [visitorId, setVisitorId] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [selfCamera, setSelfCamera] = useState<MapCamera | null>(null);
+  const [selfBubble, setSelfBubble] = useState<{
+    text: string;
+    at: number;
+  } | null>(null);
+  const visitorIdRef = useRef("");
+  const nameRef = useRef("");
   const cameraRef = useRef<MapCamera | null>(null);
   const lastPushAt = useRef(0);
   const pendingTimer = useRef<number | null>(null);
@@ -59,13 +92,15 @@ export function useMapPresence(enabled = true) {
   }, []);
 
   const beat = useCallback(async () => {
-    const visitorId = visitorIdRef.current;
-    if (!visitorId) return;
+    const id = visitorIdRef.current;
+    if (!id) return;
     try {
       const body: {
         visitorId: string;
+        name?: string;
         camera?: MapCamera;
-      } = { visitorId };
+      } = { visitorId: id };
+      if (nameRef.current) body.name = nameRef.current;
       if (cameraRef.current) body.camera = cameraRef.current;
 
       const res = await fetch("/api/presence", {
@@ -76,7 +111,7 @@ export function useMapPresence(enabled = true) {
       });
       if (!res.ok) return;
       const data = (await res.json()) as PresenceResponse;
-      applySnapshot(data, visitorId);
+      applySnapshot(data, id);
       lastPushAt.current = Date.now();
     } catch {
       // ignore transient network errors
@@ -87,6 +122,7 @@ export function useMapPresence(enabled = true) {
     (camera: MapCamera) => {
       if (!enabled) return;
       cameraRef.current = camera;
+      setSelfCamera(camera);
       const elapsed = Date.now() - lastPushAt.current;
       if (elapsed >= CAMERA_PUSH_MS) {
         void beat();
@@ -101,10 +137,31 @@ export function useMapPresence(enabled = true) {
     [beat, enabled]
   );
 
+  const noteLocalMessage = useCallback((text: string) => {
+    setSelfBubble({ text, at: Date.now() });
+  }, []);
+
+  const rename = useCallback(
+    (name: string) => {
+      const trimmed = name.trim().slice(0, 32);
+      if (trimmed.length < 2) return;
+      setVisitorName(trimmed);
+      nameRef.current = trimmed;
+      setDisplayName(trimmed);
+      void beat();
+    },
+    [beat]
+  );
+
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
-    visitorIdRef.current = getVisitorId();
+    const id = getVisitorId();
+    const name = getVisitorName();
+    visitorIdRef.current = id;
+    nameRef.current = name;
+    setVisitorId(id);
+    setDisplayName(name);
 
     const run = async () => {
       if (cancelled) return;
@@ -112,7 +169,7 @@ export function useMapPresence(enabled = true) {
     };
 
     void run();
-    const id = window.setInterval(() => {
+    const interval = window.setInterval(() => {
       void run();
     }, HEARTBEAT_MS);
 
@@ -123,7 +180,7 @@ export function useMapPresence(enabled = true) {
 
     return () => {
       cancelled = true;
-      window.clearInterval(id);
+      window.clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisible);
       if (pendingTimer.current != null) {
         window.clearTimeout(pendingTimer.current);
@@ -132,11 +189,39 @@ export function useMapPresence(enabled = true) {
     };
   }, [beat, enabled]);
 
+  // Drop expired local bubble
+  useEffect(() => {
+    if (!selfBubble) return;
+    const left = BUBBLE_MS - (Date.now() - selfBubble.at);
+    if (left <= 0) {
+      setSelfBubble(null);
+      return;
+    }
+    const t = window.setTimeout(() => setSelfBubble(null), left);
+    return () => window.clearTimeout(t);
+  }, [selfBubble]);
+
+  const peersWithFreshBubbles = peers.map((p) => {
+    if (
+      p.lastMessage &&
+      p.lastMessageAt &&
+      Date.now() - p.lastMessageAt <= BUBBLE_MS
+    ) {
+      return p;
+    }
+    return { ...p, lastMessage: undefined, lastMessageAt: undefined };
+  });
+
   return {
-    visitorId: visitorIdRef.current,
+    visitorId,
+    displayName,
     viewers,
-    peers,
+    peers: peersWithFreshBubbles,
+    selfCamera,
+    selfBubble,
     reportCamera,
+    noteLocalMessage,
+    rename,
   };
 }
 
@@ -154,3 +239,5 @@ export function cameraMarkerJitter(id: string): { lat: number; lng: number } {
     lng: Math.cos(angle) * radius,
   };
 }
+
+export const CHAT_BUBBLE_MS = BUBBLE_MS;
