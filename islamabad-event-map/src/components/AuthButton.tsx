@@ -1,6 +1,7 @@
 "use client";
 
-import { signIn, signOut, useSession } from "next-auth/react";
+import Link from "next/link";
+import { signOut, useSession } from "next-auth/react";
 
 function GoogleGlyph({ className = "" }: { className?: string }) {
   return (
@@ -66,14 +67,13 @@ export function AuthButton() {
   }
 
   return (
-    <button
-      type="button"
-      onClick={() => signIn("google", { callbackUrl: "/" })}
+    <Link
+      href="/login"
       aria-label="Sign in with Google"
       className="pointer-events-auto inline-flex h-9 items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 text-xs font-semibold text-ink shadow-sm transition hover:bg-wash sm:px-3"
     >
       <GoogleGlyph className="h-4 w-4 shrink-0" />
       <span className="hidden sm:inline">Sign in</span>
-    </button>
+    </Link>
   );
 }
