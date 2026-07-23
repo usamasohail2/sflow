@@ -24,7 +24,7 @@ export interface FloatingBubble {
 }
 
 const POLL_MS = 2_000;
-const BUBBLE_MS = 5_000;
+const BUBBLE_MS = 10_000;
 
 function readEyePosition(
   mapRef: React.RefObject<MapRef | null>
