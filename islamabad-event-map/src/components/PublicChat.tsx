@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 import { useEffect, useRef, useState } from "react";
 import type { ChatMessage } from "@/hooks/usePublicChat";
 import { EXPLORER_PALETTES } from "@/hooks/useLivePresence";
@@ -36,9 +36,8 @@ export function PublicChatSignIn({
 }) {
   const isMobile = layout === "mobile";
   return (
-    <Link
-      href="/login?callbackUrl=/"
-      className={`pointer-events-auto flex items-center justify-between gap-2 rounded-2xl border border-line bg-surface px-3 py-2.5 text-left shadow-sm transition hover:bg-wash ${
+    <div
+      className={`pointer-events-auto flex items-center justify-between gap-2 rounded-2xl border border-line bg-surface px-3 py-2.5 shadow-sm ${
         isMobile ? "w-full" : "w-[min(100%,18.5rem)]"
       } ${className}`}
     >
@@ -48,10 +47,12 @@ export function PublicChatSignIn({
           Sign in with Google to chat
         </span>
       </span>
-      <span className="shrink-0 rounded-full bg-wash px-2 py-1 text-[10px] font-semibold text-ink">
-        Sign in
-      </span>
-    </Link>
+      <GoogleSignInButton
+        compact
+        callbackUrl="/"
+        className="!shadow-none"
+      />
+    </div>
   );
 }
 
