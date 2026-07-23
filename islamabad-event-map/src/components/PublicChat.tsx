@@ -13,6 +13,9 @@ export interface PublicChatHandle {
   sending: boolean;
   sendError?: string | null;
   onSend: (text: string) => Promise<boolean>;
+  /** Guest already used their free message — show sign-in to send more */
+  needsLoginToSend?: boolean;
+  signedIn?: boolean;
 }
 
 interface PublicChatProps extends PublicChatHandle {
@@ -27,36 +30,6 @@ interface PublicChatProps extends PublicChatHandle {
   layout?: "desktop" | "mobile";
 }
 
-/** Flat prompt when the visitor isn’t signed in */
-export function PublicChatSignIn({
-  className = "",
-  layout = "desktop",
-}: {
-  className?: string;
-  layout?: "desktop" | "mobile";
-}) {
-  const isMobile = layout === "mobile";
-  return (
-    <div
-      className={`pointer-events-auto flex items-center justify-between gap-2 rounded-2xl border border-line bg-surface px-3 py-2.5 shadow-sm ${
-        isMobile ? "w-full" : "w-[min(100%,18.5rem)]"
-      } ${className}`}
-    >
-      <span className="min-w-0">
-        <span className="block text-xs font-semibold text-ink">Public chat</span>
-        <span className="mt-0.5 block text-[11px] text-ink-muted">
-          Sign in with Google to chat
-        </span>
-      </span>
-      <GoogleSignInButton
-        compact
-        callbackUrl="/"
-        className="!shadow-none"
-      />
-    </div>
-  );
-}
-
 export function PublicChat({
   messages,
   selfId,
@@ -64,11 +37,14 @@ export function PublicChat({
   sending,
   sendError = null,
   onSend,
+  needsLoginToSend = false,
+  signedIn = false,
   className = "",
   open: openProp,
   onOpenChange,
   layout = "desktop",
 }: PublicChatProps) {
+  const sendLocked = !signedIn && needsLoginToSend;
   const isMobile = layout === "mobile";
   const [uncontrolledOpen, setUncontrolledOpen] = useState(!isMobile);
   const open = openProp ?? uncontrolledOpen;
@@ -88,15 +64,15 @@ export function PublicChat({
   }, [messages.length, open]);
 
   useEffect(() => {
-    if (open) {
+    if (open && !sendLocked) {
       const t = window.setTimeout(() => inputRef.current?.focus(), 50);
       return () => window.clearTimeout(t);
     }
-  }, [open]);
+  }, [open, sendLocked]);
 
   const submit = async () => {
     const text = draft;
-    if (!text.trim() || sending) return;
+    if (!text.trim() || sending || sendLocked) return;
     const ok = await onSend(text);
     if (ok) {
       setDraft("");
@@ -218,26 +194,43 @@ export function PublicChat({
               void submit();
             }}
           >
-            <div className="flex items-center gap-1.5">
-              <input
-                ref={inputRef}
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                maxLength={160}
-                placeholder={
-                  selfId ? `Chat as ${displayName}…` : "Connecting…"
-                }
-                className="min-w-0 flex-1 rounded-full border border-line bg-wash px-3 py-1.5 text-[11px] text-ink outline-none placeholder:text-ink-faint focus:border-[var(--blue)]"
-                disabled={sending || !selfId}
-              />
-              <button
-                type="submit"
-                disabled={sending || !draft.trim() || !selfId}
-                className="shrink-0 rounded-full bg-[var(--blue)] px-2.5 py-1.5 text-[11px] font-semibold text-white transition enabled:hover:opacity-90 disabled:opacity-40"
-              >
-                {sending ? "…" : "Send"}
-              </button>
-            </div>
+            {sendLocked ? (
+              <div className="flex items-center justify-between gap-2 px-0.5 py-0.5">
+                <span className="min-w-0 text-[10px] leading-snug text-ink-muted">
+                  Sign in to keep chatting
+                </span>
+                <GoogleSignInButton
+                  compact
+                  callbackUrl="/"
+                  className="!shadow-none"
+                />
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5">
+                <input
+                  ref={inputRef}
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  maxLength={160}
+                  placeholder={
+                    selfId
+                      ? signedIn
+                        ? `Chat as ${displayName}…`
+                        : "Say hi (1 free message)…"
+                      : "Connecting…"
+                  }
+                  className="min-w-0 flex-1 rounded-full border border-line bg-wash px-3 py-1.5 text-[11px] text-ink outline-none placeholder:text-ink-faint focus:border-[var(--blue)]"
+                  disabled={sending || !selfId}
+                />
+                <button
+                  type="submit"
+                  disabled={sending || !draft.trim() || !selfId}
+                  className="shrink-0 rounded-full bg-[var(--blue)] px-2.5 py-1.5 text-[11px] font-semibold text-white transition enabled:hover:opacity-90 disabled:opacity-40"
+                >
+                  {sending ? "…" : "Send"}
+                </button>
+              </div>
+            )}
             {sendError && (
               <p className="px-1 text-[10px] font-medium text-danger">
                 {sendError}

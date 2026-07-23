@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { listChatMessages, postChatMessage } from "@/lib/chat";
+import {
+  countMessagesByVisitor,
+  listChatMessages,
+  postChatMessage,
+} from "@/lib/chat";
 import { isFounderEmail } from "@/lib/founder";
 
 export const dynamic = "force-dynamic";
+
+const GUEST_MESSAGE_LIMIT = 1;
 
 function isValidVisitorId(value: unknown): value is string {
   return (
@@ -14,20 +20,8 @@ function isValidVisitorId(value: unknown): value is string {
   );
 }
 
-async function requireSession() {
-  const session = await auth();
-  if (!session?.user) {
-    return null;
-  }
-  return session;
-}
-
+/** Anyone can read chat */
 export async function GET(request: NextRequest) {
-  const session = await requireSession();
-  if (!session) {
-    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
-  }
-
   const sinceRaw = request.nextUrl.searchParams.get("since");
   const since = sinceRaw ? Number(sinceRaw) : undefined;
   const messages = await listChatMessages(
@@ -38,27 +32,39 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await requireSession();
-    if (!session) {
-      return NextResponse.json({ error: "Sign in required" }, { status: 401 });
-    }
-
+    const session = await auth();
+    const signedIn = Boolean(session?.user);
     const body = await request.json();
+
     if (!isValidVisitorId(body.visitorId)) {
       return NextResponse.json({ error: "Invalid visitorId" }, { status: 400 });
     }
 
+    if (!signedIn) {
+      const prior = await countMessagesByVisitor(body.visitorId);
+      if (prior >= GUEST_MESSAGE_LIMIT) {
+        return NextResponse.json(
+          {
+            error: "Sign in to send more messages",
+            code: "LOGIN_REQUIRED",
+            guestLimit: GUEST_MESSAGE_LIMIT,
+          },
+          { status: 403 }
+        );
+      }
+    }
+
     const sessionName =
-      typeof session.user?.name === "string"
+      typeof session?.user?.name === "string"
         ? session.user.name.trim().split(/\s+/)[0]
         : undefined;
 
     const message = await postChatMessage({
       visitorId: body.visitorId,
-      name: sessionName || body.name,
+      name: signedIn ? sessionName || body.name : body.name,
       text: body.text,
       color: body.color,
-      star: isFounderEmail(session.user?.email),
+      star: signedIn ? isFounderEmail(session?.user?.email) : false,
       lat: body.lat,
       lng: body.lng,
     });
@@ -68,7 +74,17 @@ export async function POST(request: NextRequest) {
     }
 
     const messages = await listChatMessages();
-    return NextResponse.json({ message, messages });
+    return NextResponse.json({
+      message,
+      messages,
+      guestRemaining: signedIn
+        ? null
+        : Math.max(
+            0,
+            GUEST_MESSAGE_LIMIT -
+              (await countMessagesByVisitor(body.visitorId))
+          ),
+    });
   } catch (error) {
     console.error("Chat error:", error);
     return NextResponse.json({ error: "Bad request" }, { status: 400 });

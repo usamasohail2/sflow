@@ -277,3 +277,12 @@ export async function listChatMessages(since?: number): Promise<ChatMessage[]> {
   }
   return listMemory(since);
 }
+
+/** How many messages this visitor has already posted (for guest send limits) */
+export async function countMessagesByVisitor(
+  visitorId: string
+): Promise<number> {
+  const messages = await listChatMessages();
+  return messages.filter((m) => m.visitorId === visitorId).length;
+}
+

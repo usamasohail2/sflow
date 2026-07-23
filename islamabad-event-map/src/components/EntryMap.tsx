@@ -664,20 +664,18 @@ export function EntryMap({
     sending: chatSending,
     sendError: chatSendError,
     sendMessage,
+    needsLoginToSend,
   } = usePublicChat({
     mapRef,
     selfId,
     displayName,
     selfColor,
-    enabled: mapReady && signedIn,
+    enabled: mapReady,
+    signedIn,
   });
 
   useEffect(() => {
     if (!onPublicChatChange) return;
-    if (!signedIn) {
-      onPublicChatChange(null);
-      return () => onPublicChatChange(null);
-    }
     onPublicChatChange({
       messages: chatMessages,
       selfId,
@@ -685,17 +683,20 @@ export function EntryMap({
       sending: chatSending,
       sendError: chatSendError,
       onSend: sendMessage,
+      needsLoginToSend,
+      signedIn,
     });
     return () => onPublicChatChange(null);
   }, [
     onPublicChatChange,
-    signedIn,
     chatMessages,
     selfId,
     displayName,
     chatSending,
     chatSendError,
     sendMessage,
+    needsLoginToSend,
+    signedIn,
   ]);
 
   const [visiblePinCount, setVisiblePinCount] = useState(0);

@@ -2,18 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MapRef } from "react-map-gl/mapbox";
+import type { ChatMessage } from "@/lib/chat";
 
-export interface ChatMessage {
-  id: string;
-  visitorId: string;
-  name: string;
-  text: string;
-  color: number;
-  star?: boolean;
-  lat?: number;
-  lng?: number;
-  createdAt: number;
-}
+export type { ChatMessage };
 
 export interface FloatingBubble {
   messageId: string;
@@ -21,11 +12,37 @@ export interface FloatingBubble {
   text: string;
   lat: number;
   lng: number;
+  alt?: number;
   expiresAt: number;
 }
 
 const POLL_MS = 2_000;
 const BUBBLE_MS = 10_000;
+const GUEST_SENT_KEY = "explore_guest_chat_sent";
+
+function readGuestSentFlag(): boolean {
+  try {
+    return window.localStorage.getItem(GUEST_SENT_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeGuestSentFlag() {
+  try {
+    window.localStorage.setItem(GUEST_SENT_KEY, "1");
+  } catch {
+    /* ignore */
+  }
+}
+
+function clearGuestSentFlag() {
+  try {
+    window.localStorage.removeItem(GUEST_SENT_KEY);
+  } catch {
+    /* ignore */
+  }
+}
 
 function readEyePosition(
   mapRef: React.RefObject<MapRef | null>
@@ -58,21 +75,33 @@ export function usePublicChat({
   displayName,
   selfColor,
   enabled = true,
+  signedIn = false,
 }: {
   mapRef: React.RefObject<MapRef | null>;
   selfId: string;
   displayName: string;
   selfColor: number;
   enabled?: boolean;
+  signedIn?: boolean;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [floating, setFloating] = useState<FloatingBubble[]>([]);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [needsLoginToSend, setNeedsLoginToSend] = useState(false);
   const seenIds = useRef(new Set<string>());
   const sinceRef = useRef(0);
   const bootstrapped = useRef(false);
   const sendingLock = useRef(false);
+
+  useEffect(() => {
+    if (signedIn) {
+      clearGuestSentFlag();
+      setNeedsLoginToSend(false);
+      return;
+    }
+    setNeedsLoginToSend(readGuestSentFlag());
+  }, [signedIn]);
 
   const ingest = useCallback((incoming: ChatMessage[], isBootstrap: boolean) => {
     if (!incoming.length) return;
@@ -111,6 +140,7 @@ export function usePublicChat({
             text: msg.text,
             lat: msg.lat!,
             lng: msg.lng!,
+            alt: typeof msg.alt === "number" ? msg.alt : undefined,
             expiresAt: now + BUBBLE_MS,
           },
         ];
@@ -119,14 +149,7 @@ export function usePublicChat({
   }, []);
 
   useEffect(() => {
-    if (!enabled) {
-      setMessages([]);
-      setFloating([]);
-      seenIds.current = new Set();
-      sinceRef.current = 0;
-      bootstrapped.current = false;
-      return;
-    }
+    if (!enabled) return;
     let cancelled = false;
 
     const poll = async () => {
@@ -136,7 +159,6 @@ export function usePublicChat({
             ? `?since=${sinceRef.current}`
             : "";
         const res = await fetch(`/api/chat${qs}`);
-        if (res.status === 401) return;
         if (!res.ok) return;
         const data = (await res.json()) as { messages?: ChatMessage[] };
         if (cancelled || !Array.isArray(data.messages)) return;
@@ -172,6 +194,11 @@ export function usePublicChat({
       const trimmed = text.trim();
       if (!trimmed) return false;
 
+      if (!signedIn && needsLoginToSend) {
+        setSendError("Sign in to send more messages");
+        return false;
+      }
+
       const pos = readEyePosition(mapRef);
       sendingLock.current = true;
       setSending(true);
@@ -194,23 +221,36 @@ export function usePublicChat({
           }),
           signal: controller.signal,
         });
-        if (!res.ok) {
-          setSendError(
-            res.status === 401
-              ? "Sign in with Google to chat"
-              : "Couldn't send — try again"
-          );
-          return false;
-        }
-        const data = (await res.json()) as {
+        const data = (await res.json().catch(() => ({}))) as {
           message?: ChatMessage;
           messages?: ChatMessage[];
+          error?: string;
+          code?: string;
         };
+
+        if (res.status === 403 && data.code === "LOGIN_REQUIRED") {
+          writeGuestSentFlag();
+          setNeedsLoginToSend(true);
+          setSendError("Sign in to send more messages");
+          return false;
+        }
+
+        if (!res.ok) {
+          setSendError(data.error || "Couldn't send — try again");
+          return false;
+        }
+
         if (Array.isArray(data.messages)) {
           ingest(data.messages, false);
         } else if (data.message) {
           ingest([data.message], false);
         }
+
+        if (!signedIn) {
+          writeGuestSentFlag();
+          setNeedsLoginToSend(true);
+        }
+
         return true;
       } catch {
         setSendError("Couldn't send — check connection");
@@ -221,7 +261,15 @@ export function usePublicChat({
         setSending(false);
       }
     },
-    [displayName, ingest, mapRef, selfColor, selfId]
+    [
+      displayName,
+      ingest,
+      mapRef,
+      needsLoginToSend,
+      selfColor,
+      selfId,
+      signedIn,
+    ]
   );
 
   return {
@@ -230,5 +278,6 @@ export function usePublicChat({
     sending,
     sendError,
     sendMessage,
+    needsLoginToSend: signedIn ? false : needsLoginToSend,
   };
 }
