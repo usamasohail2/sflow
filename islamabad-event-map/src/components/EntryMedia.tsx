@@ -4,7 +4,7 @@ import Image from "next/image";
 import type { Entry } from "@/lib/types";
 import { CATEGORY_LABELS } from "@/lib/constants";
 import { getEntryImages } from "@/lib/utils";
-import { CategoryIcon, categoryColor } from "@/components/CategoryIcon";
+import { CategoryIcon } from "@/components/CategoryIcon";
 
 function EventIcon({ className = "" }: { className?: string }) {
   return (
@@ -34,11 +34,11 @@ function EventIcon({ className = "" }: { className?: string }) {
   );
 }
 
-/** Soft category-tinted placeholder when a spot has no uploaded photos */
+/** Quiet placeholder when a spot has no uploaded photos */
 export function EntryImageFallback({
   entry,
   className = "",
-  iconClassName = "h-6 w-6",
+  iconClassName = "h-4 w-4",
   label = false,
 }: {
   entry: Entry;
@@ -47,40 +47,19 @@ export function EntryImageFallback({
   label?: boolean;
 }) {
   const isEvent = entry.type === "event";
-  const color = isEvent ? "var(--orange)" : categoryColor(entry.category);
 
   return (
     <div
-      className={`relative flex h-full w-full flex-col items-center justify-center gap-1.5 overflow-hidden ${className}`}
-      style={{
-        background: `linear-gradient(145deg, color-mix(in srgb, ${color} 22%, var(--wash)) 0%, color-mix(in srgb, ${color} 8%, var(--surface)) 55%, var(--wash) 100%)`,
-      }}
+      className={`relative flex h-full w-full flex-col items-center justify-center gap-1 bg-wash text-ink-faint ${className}`}
       aria-hidden
     >
-      <span
-        className="pointer-events-none absolute -right-4 -top-4 h-20 w-20 rounded-full opacity-30"
-        style={{ backgroundColor: color }}
-      />
-      <span
-        className="pointer-events-none absolute -bottom-6 -left-3 h-16 w-16 rounded-full opacity-20"
-        style={{ backgroundColor: color }}
-      />
-      <span
-        className="relative inline-flex items-center justify-center rounded-full text-white shadow-sm"
-        style={{
-          backgroundColor: color,
-          width: label ? 40 : 28,
-          height: label ? 40 : 28,
-        }}
-      >
-        {isEvent ? (
-          <EventIcon className={iconClassName} />
-        ) : (
-          <CategoryIcon category={entry.category} className={iconClassName} />
-        )}
-      </span>
+      {isEvent ? (
+        <EventIcon className={iconClassName} />
+      ) : (
+        <CategoryIcon category={entry.category} className={iconClassName} />
+      )}
       {label && (
-        <span className="relative text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
+        <span className="text-[10px] font-medium uppercase tracking-wide text-ink-muted">
           {isEvent ? "Event" : CATEGORY_LABELS[entry.category]}
         </span>
       )}
