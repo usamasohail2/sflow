@@ -4,12 +4,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import type { MapRef } from "react-map-gl/mapbox";
 import { generateUsernameFromSeed } from "@/lib/usernames";
+import { readHeightAboveGround } from "@/lib/mapAltitude";
 
 export interface LiveExplorer {
   id: string;
   name: string;
   lat?: number;
   lng?: number;
+  /** Meters above local ground / terrain (camera eye AGL) */
+  alt?: number;
   color: number;
   lastSeen: number;
 }
@@ -67,6 +70,7 @@ export function useLivePresence(
   const [selfPosition, setSelfPosition] = useState<{
     lat: number;
     lng: number;
+    alt?: number;
   } | null>(null);
   const lastMoveSent = useRef(0);
   const nameRef = useRef("Explorer");
@@ -114,6 +118,7 @@ export function useLivePresence(
     if (!selfId) return;
     let lat: number | undefined;
     let lng: number | undefined;
+    let alt: number | undefined;
     if (withPosition) {
       const map = mapRef.current;
       if (map) {
@@ -139,7 +144,9 @@ export function useLivePresence(
         const mix = 0.35; // 0 = center only, 1 = eye only
         lat = center.lat * (1 - mix) + eyeLat * mix;
         lng = center.lng * (1 - mix) + eyeLng * mix;
-        setSelfPosition({ lat, lng });
+        // Z = height above local ground (terrain DEM when available)
+        alt = readHeightAboveGround(map.getMap(), lng, lat);
+        setSelfPosition({ lat, lng, alt });
       }
     }
 
@@ -153,6 +160,7 @@ export function useLivePresence(
           color: colorRef.current,
           lat,
           lng,
+          alt,
         }),
         keepalive: true,
       });

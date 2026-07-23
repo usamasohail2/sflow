@@ -37,6 +37,7 @@ export async function POST(request: NextRequest) {
       name: typeof body.name === "string" ? body.name : undefined,
       lat: typeof body.lat === "number" ? body.lat : undefined,
       lng: typeof body.lng === "number" ? body.lng : undefined,
+      alt: typeof body.alt === "number" ? body.alt : undefined,
       color: typeof body.color === "number" ? body.color : undefined,
     });
 

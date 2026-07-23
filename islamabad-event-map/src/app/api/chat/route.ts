@@ -35,6 +35,7 @@ export async function POST(request: NextRequest) {
       color: body.color,
       lat: body.lat,
       lng: body.lng,
+      alt: typeof body.alt === "number" ? body.alt : undefined,
     });
 
     if (!message) {

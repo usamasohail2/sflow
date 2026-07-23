@@ -14,6 +14,8 @@ export interface ExplorerPresence {
   name: string;
   lat?: number;
   lng?: number;
+  /** Meters above local ground / terrain (camera eye AGL) */
+  alt?: number;
   color: number;
   lastSeen: number;
 }
@@ -23,6 +25,7 @@ export interface TouchPresenceInput {
   name?: string;
   lat?: number;
   lng?: number;
+  alt?: number;
   color?: number;
 }
 
@@ -62,6 +65,14 @@ function clampCoord(value: unknown): number | undefined {
   return value;
 }
 
+function clampAltitude(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  if (value < 0) return 0;
+  // Guard against absurd values
+  if (value > 50_000) return 50_000;
+  return value;
+}
+
 function clampColor(value: unknown): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return 0;
   return Math.abs(Math.floor(value)) % 7;
@@ -76,6 +87,7 @@ function touchMemory(input: TouchPresenceInput): ExplorerPresence[] {
     name: clampName(input.name ?? prev?.name),
     lat: clampCoord(input.lat) ?? prev?.lat,
     lng: clampCoord(input.lng) ?? prev?.lng,
+    alt: clampAltitude(input.alt) ?? prev?.alt,
     color: clampColor(input.color ?? prev?.color ?? 0),
     lastSeen: now,
   });
@@ -115,21 +127,27 @@ function escapeFormula(value: string): string {
 
 function encodeAirtableDescription(
   lastSeen: number,
-  color: number
+  color: number,
+  alt?: number
 ): string {
-  return `ts=${lastSeen};color=${color}`;
+  const parts = [`ts=${lastSeen}`, `color=${color}`];
+  if (alt != null && Number.isFinite(alt)) parts.push(`alt=${alt.toFixed(1)}`);
+  return parts.join(";");
 }
 
 function parseAirtableDescription(raw: unknown): {
   lastSeen: number;
   color: number;
+  alt?: number;
 } {
   const text = String(raw ?? "");
   const tsMatch = text.match(/ts=(\d+)/);
   const colorMatch = text.match(/color=(\d+)/);
+  const altMatch = text.match(/alt=([\d.]+)/);
   return {
     lastSeen: tsMatch ? Number(tsMatch[1]) : 0,
     color: colorMatch ? Number(colorMatch[1]) % 7 : 0,
+    alt: altMatch ? Number(altMatch[1]) : undefined,
   };
 }
 
@@ -144,6 +162,7 @@ async function touchAirtable(
   const name = clampName(input.name);
   const lat = clampCoord(input.lat);
   const lng = clampCoord(input.lng);
+  const alt = clampAltitude(input.alt);
   const color = clampColor(input.color);
 
   const existing = await base(ENTRIES_TABLE)
@@ -168,7 +187,7 @@ async function touchAirtable(
     Category: "hidden",
     Status: "rejected",
     Organizer: name,
-    Description: encodeAirtableDescription(now, color),
+    Description: encodeAirtableDescription(now, color, alt),
   };
   if (lat != null) fields.Lat = lat;
   if (lng != null) fields.Lng = lng;
@@ -227,7 +246,7 @@ async function listAirtable(): Promise<ExplorerPresence[]> {
       const id = title.startsWith(PRESENCE_PREFIX)
         ? title.slice(PRESENCE_PREFIX.length)
         : title;
-      const { lastSeen, color } = parseAirtableDescription(
+      const { lastSeen, color, alt } = parseAirtableDescription(
         r.fields.Description
       );
       const lat =
@@ -239,6 +258,7 @@ async function listAirtable(): Promise<ExplorerPresence[]> {
         name: clampName(r.fields.Organizer),
         lat,
         lng,
+        alt: clampAltitude(alt),
         color,
         lastSeen,
       } satisfies ExplorerPresence;
@@ -270,6 +290,7 @@ async function touchRedis(
     name: clampName(input.name ?? prev.name),
     lat: clampCoord(input.lat) ?? prev.lat,
     lng: clampCoord(input.lng) ?? prev.lng,
+    alt: clampAltitude(input.alt) ?? prev.alt,
     color: clampColor(input.color ?? prev.color ?? 0),
     lastSeen: now,
   };
@@ -315,6 +336,7 @@ async function listRedis(): Promise<ExplorerPresence[]> {
           name: clampName(parsed.name),
           lat: clampCoord(parsed.lat),
           lng: clampCoord(parsed.lng),
+          alt: clampAltitude(parsed.alt),
           color: clampColor(parsed.color),
           lastSeen: parsed.lastSeen,
         });

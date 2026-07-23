@@ -12,6 +12,8 @@ export interface ChatMessage {
   color: number;
   lat?: number;
   lng?: number;
+  /** Meters above local ground / terrain */
+  alt?: number;
   createdAt: number;
 }
 
@@ -107,6 +109,7 @@ export async function postChatMessage(input: {
   color?: number;
   lat?: number;
   lng?: number;
+  alt?: number;
 }): Promise<ChatMessage | null> {
   const text = clampText(input.text);
   if (!text) return null;
@@ -127,6 +130,10 @@ export async function postChatMessage(input: {
     lng:
       typeof input.lng === "number" && Number.isFinite(input.lng)
         ? input.lng
+        : undefined,
+    alt:
+      typeof input.alt === "number" && Number.isFinite(input.alt) && input.alt >= 0
+        ? Math.min(input.alt, 50_000)
         : undefined,
     createdAt: Date.now(),
   };
