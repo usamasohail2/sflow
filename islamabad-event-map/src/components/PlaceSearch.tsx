@@ -46,62 +46,23 @@ function ClearIcon({ className = "" }: { className?: string }) {
   );
 }
 
-type MapboxFeature = {
-  id: string;
-  place_name?: string;
-  text?: string;
-  center?: [number, number];
-  bbox?: [number, number, number, number];
-};
-
 async function geocodePlaces(
   query: string,
   city: CityId
 ): Promise<GeocodedPlace[]> {
-  const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN?.trim();
-  if (!token || query.trim().length < 2) return [];
+  const q = query.trim();
+  if (q.length < 2) return [];
 
-  const config = CITY_CONFIG[city];
-  const [[west, south], [east, north]] = config.maxBounds;
-  const params = new URLSearchParams({
-    access_token: token,
-    autocomplete: "true",
-    limit: "6",
-    country: "pk",
-    language: "en",
-    proximity: `${config.center.lng},${config.center.lat}`,
-    bbox: `${west},${south},${east},${north}`,
-    types: "poi,address,neighborhood,locality,place,district",
-  });
-
-  const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
-    query.trim()
-  )}.json?${params}`;
-
-  const res = await fetch(url);
+  const params = new URLSearchParams({ q, city });
+  const res = await fetch(`/api/geocode?${params}`);
   if (!res.ok) return [];
-  const data = (await res.json()) as { features?: MapboxFeature[] };
-  const features = Array.isArray(data.features) ? data.features : [];
 
-  const places: GeocodedPlace[] = [];
-  for (const f of features) {
-    const lng = f.center?.[0];
-    const lat = f.center?.[1];
-    if (typeof lng !== "number" || typeof lat !== "number") continue;
-    places.push({
-      id: f.id,
-      name: f.text || f.place_name || "Place",
-      placeName: f.place_name || f.text || "Place",
-      lat,
-      lng,
-      bbox: f.bbox,
-    });
-  }
-  return places;
+  const data = (await res.json()) as { places?: GeocodedPlace[] };
+  return Array.isArray(data.places) ? data.places : [];
 }
 
 /**
- * Top-chrome place search: magnifying glass → Mapbox world/location search
+ * Top-chrome place search: magnifying glass → world location search
  * so you can jump the map and pin more easily.
  */
 export function PlaceSearch({
@@ -206,7 +167,7 @@ export function PlaceSearch({
       ) : (
         <div className="absolute right-0 top-0 z-40">
           <label htmlFor={id} className="sr-only">
-            Search places
+            Search places worldwide
           </label>
           <div
             className="flex h-9 w-[min(78vw,18rem)] items-center overflow-hidden rounded-full border border-line bg-surface shadow-sm sm:w-[20rem]"
@@ -237,7 +198,9 @@ export function PlaceSearch({
                 if (e.key === "ArrowDown") {
                   e.preventDefault();
                   setActiveIndex((i) =>
-                    results.length === 0 ? 0 : Math.min(i + 1, results.length - 1)
+                    results.length === 0
+                      ? 0
+                      : Math.min(i + 1, results.length - 1)
                   );
                   return;
                 }
@@ -252,7 +215,7 @@ export function PlaceSearch({
                   if (choice) pick(choice);
                 }
               }}
-              placeholder={`Search ${CITY_CONFIG[city].label}…`}
+              placeholder="Search places…"
               autoComplete="off"
               enterKeyHint="search"
               className="min-w-0 flex-1 bg-transparent py-1.5 pr-1 text-[12px] text-ink outline-none placeholder:text-ink-faint"
@@ -284,7 +247,11 @@ export function PlaceSearch({
               ) : results.length > 0 ? (
                 <ul role="listbox" className="max-h-56 overflow-y-auto py-1">
                   {results.map((place, index) => (
-                    <li key={place.id} role="option" aria-selected={index === activeIndex}>
+                    <li
+                      key={place.id}
+                      role="option"
+                      aria-selected={index === activeIndex}
+                    >
                       <button
                         type="button"
                         onMouseEnter={() => setActiveIndex(index)}

@@ -156,12 +156,13 @@ export function HomePage() {
       setFlyToEntry(null);
       setFlyToPlace(place);
       setFlyToPlaceKey((n) => n + 1);
-      // In pin/suggest mode, drop the draft pin at the searched place
-      if (showSubmit && pinMode) {
+      // While suggesting a spot, drop the pin at the searched place
+      if (showSubmit) {
         setDraftPin({ lat: place.lat, lng: place.lng });
+        setPinMode(true);
       }
     },
-    [showSubmit, pinMode]
+    [showSubmit]
   );
 
   const handleSelect = useCallback((entry: Entry | null) => {
