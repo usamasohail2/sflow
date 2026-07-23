@@ -831,6 +831,21 @@ body {
   animation-name: viewer-pop-bounce;
 }
 
+.viewer-map-marker {
+  animation: viewer-map-bob 2.4s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+@keyframes viewer-map-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
 @keyframes viewer-pop {
   from {
     opacity: 0;
@@ -859,6 +874,10 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .viewer-person {
+    animation: none;
+  }
+
+  .viewer-map-marker {
     animation: none;
   }
 }

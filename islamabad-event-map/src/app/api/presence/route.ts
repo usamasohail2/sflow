@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  getPresenceCount,
+  getPresenceSnapshot,
   hasSharedPresenceStore,
+  isValidCameraPose,
   touchPresence,
 } from "@/lib/presence";
 
@@ -17,9 +18,10 @@ function isValidVisitorId(value: unknown): value is string {
 }
 
 export async function GET() {
-  const viewers = await getPresenceCount();
+  const snap = await getPresenceSnapshot();
   return NextResponse.json({
-    viewers,
+    viewers: snap.viewers,
+    peers: snap.peers,
     shared: hasSharedPresenceStore(),
   });
 }
@@ -31,9 +33,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid visitorId" }, { status: 400 });
     }
 
-    const viewers = await touchPresence(body.visitorId);
+    const camera = isValidCameraPose(body.camera)
+      ? body.camera
+      : isValidCameraPose({ lat: body.lat, lng: body.lng })
+        ? { lat: body.lat as number, lng: body.lng as number }
+        : null;
+
+    const snap = await touchPresence(body.visitorId, camera);
     return NextResponse.json({
-      viewers,
+      viewers: snap.viewers,
+      peers: snap.peers,
       shared: hasSharedPresenceStore(),
     });
   } catch (error) {

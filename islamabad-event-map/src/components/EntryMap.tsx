@@ -51,9 +51,17 @@ import {
 } from "@/lib/utils";
 import { FloatingSprites, KohCompanion } from "@/components/KohMascot";
 import { MapPopupCard } from "@/components/MapPopupCard";
-import { ViewerTicker } from "@/components/ViewerTicker";
+import {
+  HumanSprite,
+  paletteForId,
+  ViewerTicker,
+} from "@/components/ViewerTicker";
 import { useTheme } from "@/components/ThemeProvider";
 import { CategoryIcon, categoryColor } from "@/components/CategoryIcon";
+import {
+  cameraMarkerJitter,
+  useMapPresence,
+} from "@/hooks/useMapPresence";
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "";
 
@@ -650,6 +658,7 @@ export function EntryMap({
   );
   const revealGen = useRef(0);
   const shellRef = useRef<HTMLDivElement>(null);
+  const { viewers, peers, reportCamera } = useMapPresence(mapReady);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 1023px)");
@@ -939,6 +948,26 @@ export function EntryMap({
       map.off("moveend", sync);
     };
   }, [mapReady, is3D]);
+
+  // Broadcast this client's map-camera center (viewport, not GPS) for peer markers
+  useEffect(() => {
+    const map = mapRef.current?.getMap();
+    if (!map || !mapReady) return;
+
+    const push = () => {
+      if (launchCameraActive.current) return;
+      const c = map.getCenter();
+      reportCamera({ lat: c.lat, lng: c.lng });
+    };
+
+    push();
+    map.on("move", push);
+    map.on("moveend", push);
+    return () => {
+      map.off("move", push);
+      map.off("moveend", push);
+    };
+  }, [mapReady, reportCamera]);
 
   // After pitch / rotate / pan / zoom (esp. two-finger gestures), the browser
   // often synthesizes a click under a finger — which would open a pin detail.
@@ -1604,6 +1633,35 @@ export function EntryMap({
             </Marker>
           )}
 
+          {!pinMode &&
+            peers.map((peer) => {
+              const jitter = cameraMarkerJitter(peer.id);
+              const palette = paletteForId(peer.id);
+              return (
+                <Marker
+                  key={`viewer-${peer.id}`}
+                  latitude={(peer.lat as number) + jitter.lat}
+                  longitude={(peer.lng as number) + jitter.lng}
+                  anchor="bottom"
+                  style={{ zIndex: 12, pointerEvents: "none" }}
+                >
+                  <div
+                    className="viewer-map-marker pointer-events-none flex flex-col items-center"
+                    title="Someone exploring here"
+                  >
+                    <HumanSprite
+                      shirt={palette.shirt}
+                      skin={palette.skin}
+                      hair={palette.hair}
+                      width={16}
+                      height={22}
+                      className="drop-shadow-[0_1px_1px_rgba(0,0,0,0.25)]"
+                    />
+                  </div>
+                </Marker>
+              );
+            })}
+
           {!pinMode && suggestPrompt && onSuggestAt && (
             <>
               <Marker
@@ -1728,7 +1786,10 @@ export function EntryMap({
         )}
 
         {!pinMode && (
-          <ViewerTicker className="absolute left-2 top-[calc(0.5rem+2.25rem+0.5rem)] z-20 sm:left-3" />
+          <ViewerTicker
+            viewers={viewers}
+            className="absolute left-2 top-[calc(0.5rem+2.25rem+0.5rem)] z-20 sm:left-3"
+          />
         )}
 
         {pinMode && (

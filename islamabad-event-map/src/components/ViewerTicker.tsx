@@ -1,9 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 
-const HEARTBEAT_MS = 15_000;
-const STORAGE_KEY = "isb-map-visitor-id";
 const MAX_VISIBLE = 7;
 
 const PALETTES = [
@@ -16,38 +14,37 @@ const PALETTES = [
   { shirt: "#ea580c", skin: "#f1c27d", hair: "#6b4423" },
 ] as const;
 
-function getVisitorId(): string {
-  try {
-    const existing = localStorage.getItem(STORAGE_KEY);
-    if (existing) return existing;
-    const id =
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID().replace(/-/g, "")
-        : `v_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
-    localStorage.setItem(STORAGE_KEY, id);
-    return id;
-  } catch {
-    return `v_${Math.random().toString(36).slice(2)}`;
+export type ViewerPalette = (typeof PALETTES)[number];
+
+export function paletteForId(id: string): ViewerPalette {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) {
+    h = (h * 31 + id.charCodeAt(i)) >>> 0;
   }
+  return PALETTES[h % PALETTES.length];
 }
 
-function HumanSprite({
+export function HumanSprite({
   shirt,
   skin,
   hair,
   className = "",
+  width = 18,
+  height = 24,
 }: {
   shirt: string;
   skin: string;
   hair: string;
   className?: string;
+  width?: number;
+  height?: number;
 }) {
   return (
     <svg
       className={className}
       viewBox="0 0 16 22"
-      width="18"
-      height="24"
+      width={width}
+      height={height}
       aria-hidden
     >
       <rect x="4" y="1" width="8" height="3" fill={hair} />
@@ -67,47 +64,14 @@ function HumanSprite({
 
 interface ViewerTickerProps {
   className?: string;
+  /** Live viewer count from shared presence; defaults to 1 while loading */
+  viewers?: number | null;
 }
 
-export function ViewerTicker({ className = "" }: ViewerTickerProps) {
-  const [viewers, setViewers] = useState<number | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    const visitorId = getVisitorId();
-
-    const beat = async () => {
-      try {
-        const res = await fetch("/api/presence", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ visitorId }),
-          keepalive: true,
-        });
-        if (!res.ok) return;
-        const data = (await res.json()) as { viewers?: number };
-        if (!cancelled && typeof data.viewers === "number") {
-          setViewers(Math.max(1, data.viewers));
-        }
-      } catch {
-        // ignore transient network errors
-      }
-    };
-
-    void beat();
-    const id = window.setInterval(beat, HEARTBEAT_MS);
-    const onVisible = () => {
-      if (document.visibilityState === "visible") void beat();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, []);
-
+export function ViewerTicker({
+  className = "",
+  viewers = null,
+}: ViewerTickerProps) {
   const count = viewers ?? 1;
   const visible = Math.min(count, MAX_VISIBLE);
   const overflow = Math.max(0, count - MAX_VISIBLE);
@@ -168,9 +132,7 @@ export function ViewerTicker({ className = "" }: ViewerTickerProps) {
 
       <p className="mb-0.5 whitespace-nowrap text-[10px] font-semibold text-ink sm:text-[11px]">
         <span className="tabular-nums text-[var(--blue)]">{count}</span>{" "}
-        <span className="text-ink-muted">
-          {count === 1 ? "viewing" : "viewing"}
-        </span>
+        <span className="text-ink-muted">viewing</span>
       </p>
     </div>
   );
