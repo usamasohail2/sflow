@@ -83,21 +83,21 @@ async function geocodePlaces(
   const data = (await res.json()) as { features?: MapboxFeature[] };
   const features = Array.isArray(data.features) ? data.features : [];
 
-  return features
-    .map((f) => {
-      const lng = f.center?.[0];
-      const lat = f.center?.[1];
-      if (typeof lng !== "number" || typeof lat !== "number") return null;
-      return {
-        id: f.id,
-        name: f.text || f.place_name || "Place",
-        placeName: f.place_name || f.text || "Place",
-        lat,
-        lng,
-        bbox: f.bbox,
-      } satisfies GeocodedPlace;
-    })
-    .filter((p): p is GeocodedPlace => p != null);
+  const places: GeocodedPlace[] = [];
+  for (const f of features) {
+    const lng = f.center?.[0];
+    const lat = f.center?.[1];
+    if (typeof lng !== "number" || typeof lat !== "number") continue;
+    places.push({
+      id: f.id,
+      name: f.text || f.place_name || "Place",
+      placeName: f.place_name || f.text || "Place",
+      lat,
+      lng,
+      bbox: f.bbox,
+    });
+  }
+  return places;
 }
 
 /**
