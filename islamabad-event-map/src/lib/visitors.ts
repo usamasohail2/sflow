@@ -167,27 +167,44 @@ async function writeStorageVisitor(row: VisitorRow): Promise<void> {
 async function listStorageVisitors(): Promise<VisitorRow[]> {
   const supabase = getSupabaseAdmin()!;
   await ensureAnalyticsBucket();
-  const { data: files, error } = await supabase.storage
-    .from(STORAGE_BUCKET)
-    .list(STORAGE_PREFIX, { limit: 5000 });
-  if (error) throw error;
-  if (!files?.length) return [];
 
   const rows: VisitorRow[] = [];
-  // Batch downloads in small chunks
-  for (let i = 0; i < files.length; i += 20) {
-    const chunk = files.slice(i, i + 20);
-    const parts = await Promise.all(
-      chunk.map(async (file) => {
-        if (!file.name.endsWith(".json")) return null;
-        const id = file.name.replace(/\.json$/, "");
-        return readStorageVisitor(id);
-      })
-    );
-    for (const row of parts) {
-      if (row) rows.push(row);
+  let offset = 0;
+  const pageSize = 100;
+
+  for (;;) {
+    const { data: files, error } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .list(STORAGE_PREFIX, {
+        limit: pageSize,
+        offset,
+        sortBy: { column: "name", order: "asc" },
+      });
+    if (error) throw error;
+    if (!files?.length) break;
+
+    const jsonFiles = files.filter((file) => file.name.endsWith(".json"));
+    for (let i = 0; i < jsonFiles.length; i += 25) {
+      const chunk = jsonFiles.slice(i, i + 25);
+      const parts = await Promise.all(
+        chunk.map(async (file) => {
+          const id = file.name.replace(/\.json$/i, "");
+          try {
+            return await readStorageVisitor(id);
+          } catch {
+            return null;
+          }
+        })
+      );
+      for (const row of parts) {
+        if (row) rows.push(row);
+      }
     }
+
+    if (files.length < pageSize) break;
+    offset += pageSize;
   }
+
   return rows;
 }
 

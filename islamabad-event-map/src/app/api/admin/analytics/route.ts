@@ -4,6 +4,7 @@ import { hasSupabase } from "@/lib/supabase";
 import { getVisitorStats } from "@/lib/visitors";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export async function GET(request: NextRequest) {
   if (!isAdminAuthorized(request)) {
@@ -11,15 +12,25 @@ export async function GET(request: NextRequest) {
   }
 
   if (!hasSupabase()) {
-    return NextResponse.json({
-      stats: null,
-      error: "Supabase is not configured",
-    });
+    return NextResponse.json(
+      {
+        stats: null,
+        error: "Supabase is not configured",
+      },
+      {
+        headers: { "Cache-Control": "no-store" },
+      }
+    );
   }
 
   try {
     const stats = await getVisitorStats();
-    return NextResponse.json({ stats });
+    return NextResponse.json(
+      { stats },
+      {
+        headers: { "Cache-Control": "no-store" },
+      }
+    );
   } catch (error) {
     console.error("Admin analytics failed:", error);
     return NextResponse.json(
@@ -27,7 +38,10 @@ export async function GET(request: NextRequest) {
         stats: null,
         error: "Could not load visitor analytics from Supabase",
       },
-      { status: 500 }
+      {
+        status: 500,
+        headers: { "Cache-Control": "no-store" },
+      }
     );
   }
 }
