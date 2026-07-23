@@ -63,9 +63,9 @@ import { useSession } from "next-auth/react";
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "";
 
 /** Show ambient pin name labels only when zoomed in this close */
-const PIN_LABEL_MIN_ZOOM = 13;
+const PIN_LABEL_MIN_ZOOM = 11.5;
 /** Approx. screen separation (px) so faint labels don't pile up */
-const PIN_LABEL_SEP_PX = 58;
+const PIN_LABEL_SEP_PX = 64;
 
 /** Gentle accelerate-then-decelerate curve for pin-focus camera moves */
 function easeInOutCubic(t: number) {
@@ -837,8 +837,9 @@ export function EntryMap({
     }
 
     // Tighter spacing as you zoom further in — more labels can fit.
+    // Farther out, keep more gap so names stay readable.
     const sep =
-      zoom >= 15 ? 42 : zoom >= 14 ? 50 : PIN_LABEL_SEP_PX;
+      zoom >= 15 ? 44 : zoom >= 14 ? 52 : zoom >= 13 ? 60 : PIN_LABEL_SEP_PX;
     const sepSq = sep * sep;
 
     // Prefer nearer-to-camera pins (higher screen Y) for labels.

@@ -712,30 +712,32 @@ body {
   animation: pin-tooltip-in 0.12s ease-out;
 }
 
-/* Faint ambient title above nearby pins — readable but not loud */
+/* Ambient title above nearby pins — soft but readable */
 .pin-name-label {
-  max-width: 7.25rem;
+  max-width: 8rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 9px;
-  font-weight: 600;
+  font-size: 10px;
+  font-weight: 650;
   letter-spacing: 0.01em;
   line-height: 1.15;
-  color: color-mix(in srgb, var(--ink) 42%, transparent);
+  color: color-mix(in srgb, var(--ink) 72%, transparent);
   text-shadow:
-    0 0 4px color-mix(in srgb, var(--surface) 90%, transparent),
-    0 1px 2px color-mix(in srgb, var(--surface) 75%, transparent);
-  opacity: 0.72;
+    0 0 5px color-mix(in srgb, var(--surface) 95%, transparent),
+    0 0 2px var(--surface),
+    0 1px 2px color-mix(in srgb, var(--surface) 85%, transparent);
+  opacity: 0.92;
 }
 
 .dusk .pin-name-label,
 .dark .pin-name-label {
-  color: color-mix(in srgb, var(--ink) 55%, transparent);
+  color: color-mix(in srgb, var(--ink) 88%, transparent);
   text-shadow:
-    0 0 5px color-mix(in srgb, #0b1020 85%, transparent),
-    0 1px 2px color-mix(in srgb, #0b1020 70%, transparent);
-  opacity: 0.65;
+    0 0 6px color-mix(in srgb, #0b1020 90%, transparent),
+    0 0 2px #0b1020,
+    0 1px 2px color-mix(in srgb, #0b1020 80%, transparent);
+  opacity: 0.88;
 }
 
 @keyframes pin-tooltip-in {
