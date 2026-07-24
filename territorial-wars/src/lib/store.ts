@@ -1,21 +1,31 @@
 import { Redis } from "@upstash/redis";
 import {
   BUILDING_CATALOG,
+  EXPLORE_ZOOM,
   GATHER_TRIP_MS,
+  GEM_META,
   INVITE_VILLAGER_BONUS,
+  MAX_ROAM_FINDS,
+  ROAM_METERS_TO_SPAWN,
+  SPAWN_COOLDOWN_MS,
   STARTING,
   buildingBonus,
   buildingCost,
   type BuildingType,
   type GameSnapshot,
   type GameState,
+  type GemType,
   type Player,
   type PublicPlayer,
   type ResourceSpot,
   type Sector,
 } from "@/lib/gameTypes";
 import { AUTH_DISABLED, buildDummySectors } from "@/lib/devMode";
+import { pointInRing } from "@/lib/geo";
 import {
+  distMeters,
+  offsetBearing,
+  pickRoamGem,
   randomPointInRing,
   ringCentroid,
   seedSpotsForSector,
@@ -43,6 +53,21 @@ function emptyState(): GameState {
   };
 }
 
+function normalizeSpot(s: ResourceSpot): ResourceSpot {
+  const gem: GemType =
+    s.gem && s.gem in GEM_META
+      ? s.gem
+      : s.kind === "easy"
+        ? "amber"
+        : "emerald";
+  return {
+    ...s,
+    gem,
+    yield: s.yield || GEM_META[gem].yield,
+    refillMs: s.refillMs ?? GEM_META[gem].refillMs,
+  };
+}
+
 function seedSectorsIfEmpty(state: GameState): GameState {
   if (state.sectors.length > 0) return state;
   // Starter map: F-6 + G-9 so play works before admin draws more
@@ -59,11 +84,18 @@ function migrateLegacy(raw: unknown): GameState {
 
   // New shape
   if (o.version === 2 && Array.isArray(o.sectors)) {
+    const players = (o.players as Record<string, Player>) ?? {};
+    for (const p of Object.values(players)) {
+      if (p.lastRoamSpawnAt == null) p.lastRoamSpawnAt = 0;
+    }
+    const spots = (Array.isArray(o.spots) ? (o.spots as ResourceSpot[]) : []).map(
+      normalizeSpot
+    );
     return {
       version: 2,
       sectors: o.sectors as Sector[],
-      spots: Array.isArray(o.spots) ? (o.spots as ResourceSpot[]) : [],
-      players: (o.players as Record<string, Player>) ?? {},
+      spots,
+      players,
       invites: (o.invites as Record<string, string>) ?? {},
       updatedAt: Number(o.updatedAt) || Date.now(),
     };
@@ -146,12 +178,19 @@ export async function loadAccruedState(): Promise<{
 }> {
   const state = await loadState();
   const now = Date.now();
+  // Drop legacy pre-placed hiddens (roam-spawned finds always have ownerId)
+  const before = state.spots.length;
+  state.spots = state.spots
+    .map(normalizeSpot)
+    .filter((s) => s.kind === "easy" || Boolean(s.ownerId));
+  const changedSpots = state.spots.length !== before;
+
   const { players, spots, changed } = accrueGather(
     state.players,
     state.spots,
     now
   );
-  if (changed) {
+  if (changed || changedSpots) {
     state.players = players;
     state.spots = spots;
     await saveState(state);
@@ -205,6 +244,7 @@ export async function ensurePlayer(
       inviteCode,
       invitedBy,
       lastGatherAt: now,
+      lastRoamSpawnAt: 0,
       createdAt: now,
       updatedAt: now,
     };
@@ -226,11 +266,22 @@ export async function ensurePlayer(
 
 export async function getSnapshot(meId?: string | null): Promise<GameSnapshot> {
   const { state, serverNow } = await loadAccruedState();
+  const me = meId ? state.players[meId] ?? null : null;
+  // Only show easy nodes + roam finds the player owns / discovered
+  const spots = state.spots.filter((s) => {
+    if (s.kind === "easy") {
+      return !me?.homeSectorId || s.sectorId === me.homeSectorId;
+    }
+    if (!me) return false;
+    return (
+      s.ownerId === me.id || me.discoveredSpotIds.includes(s.id)
+    );
+  });
   return {
     sectors: state.sectors,
-    spots: state.spots,
+    spots,
     players: Object.values(state.players).map(publicPlayer),
-    me: meId ? state.players[meId] ?? null : null,
+    me,
     serverNow,
     gatherTripMs: GATHER_TRIP_MS,
     buildingCatalog: BUILDING_CATALOG,
@@ -273,11 +324,126 @@ export async function claimSector(
     buildings: [],
     discoveredSpotIds: easyIds,
     lastGatherAt: now,
+    lastRoamSpawnAt: 0,
     updatedAt: now,
   };
 
   await saveState(state);
   return { ok: true };
+}
+
+/**
+ * After roaming fully zoomed inside your sector, spawn a gem ahead of the camera.
+ */
+export async function spawnRoamFind(
+  playerId: string,
+  opts: {
+    lat: number;
+    lng: number;
+    bearing: number;
+    zoom: number;
+    roamMeters: number;
+  }
+): Promise<
+  | { ok: true; gem: GemType; bonus: number; spotId: string }
+  | { error: string }
+> {
+  const { state } = await loadAccruedState();
+  const me = state.players[playerId];
+  if (!me?.homeSectorId || !me.house) return { error: "Claim a sector first" };
+  if (opts.zoom < EXPLORE_ZOOM) {
+    return { error: "Zoom all the way in to explore" };
+  }
+  if ((opts.roamMeters || 0) < ROAM_METERS_TO_SPAWN * 0.85) {
+    return { error: "Keep roaming…" };
+  }
+
+  const sector = state.sectors.find((s) => s.id === me.homeSectorId);
+  if (!sector) return { error: "Home sector missing" };
+
+  const view: { lat: number; lng: number } = {
+    lat: opts.lat,
+    lng: opts.lng,
+  };
+  if (!pointInRing(view, sector.ring)) {
+    return { error: "Roam inside your own sector" };
+  }
+
+  const now = Date.now();
+  if (me.lastRoamSpawnAt && now - me.lastRoamSpawnAt < SPAWN_COOLDOWN_MS) {
+    return { error: "Keep exploring…" };
+  }
+
+  const finds = state.spots.filter(
+    (s) =>
+      s.sectorId === me.homeSectorId &&
+      s.kind === "hidden" &&
+      s.ownerId === playerId
+  );
+  if (finds.length >= MAX_ROAM_FINDS) {
+    return { error: "You've found every vein in this sector for now" };
+  }
+
+  // Place gem "in front" of the explorer along camera bearing
+  const ahead = 35 + Math.random() * 45;
+  let pos = offsetBearing(view, opts.bearing, ahead);
+  // slight lateral drift so it isn't dead-center
+  pos = offsetBearing(pos, opts.bearing + 90, (Math.random() - 0.5) * 28);
+
+  if (!pointInRing(pos, sector.ring)) {
+    pos = offsetBearing(view, opts.bearing, 25);
+  }
+  if (!pointInRing(pos, sector.ring)) {
+    return { error: "Edge of the sector — turn back and keep roaming" };
+  }
+
+  // Don't stack on existing spots
+  const tooClose = state.spots.some(
+    (s) =>
+      s.sectorId === me.homeSectorId &&
+      distMeters(pos, { lat: s.lat, lng: s.lng }) < 25
+  );
+  if (tooClose) {
+    pos = offsetBearing(view, opts.bearing + 40, 40);
+    if (
+      !pointInRing(pos, sector.ring) ||
+      state.spots.some(
+        (s) =>
+          s.sectorId === me.homeSectorId &&
+          distMeters(pos, { lat: s.lat, lng: s.lng }) < 20
+      )
+    ) {
+      return { error: "Keep roaming a bit further" };
+    }
+  }
+
+  const gem = pickRoamGem();
+  const meta = GEM_META[gem];
+  const spotId = `find_${playerId.slice(-4)}_${now.toString(36)}`;
+  const spot: ResourceSpot = {
+    id: spotId,
+    sectorId: me.homeSectorId,
+    kind: "hidden",
+    gem,
+    lat: pos.lat,
+    lng: pos.lng,
+    yield: meta.yield,
+    refillMs: meta.refillMs,
+    availableAt: 0,
+    ownerId: playerId,
+  };
+
+  const bonus = meta.yield * 2;
+  state.spots.push(spot);
+  state.players[playerId] = {
+    ...me,
+    discoveredSpotIds: [...me.discoveredSpotIds, spotId],
+    gold: me.gold + bonus,
+    lastRoamSpawnAt: now,
+    updatedAt: now,
+  };
+  await saveState(state);
+  return { ok: true, gem, bonus, spotId };
 }
 
 export async function discoverSpot(

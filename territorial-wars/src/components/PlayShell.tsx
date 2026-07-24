@@ -94,7 +94,7 @@ export function PlayShell() {
       },
       {
         id: "explore",
-        label: "Zoom in and discover a hidden cache",
+        label: "Roam zoomed-in until a gem spawns ahead",
         done: hiddenFound >= 1,
       },
       {
@@ -131,22 +131,56 @@ export function PlayShell() {
         if (action === "claim_sector") {
           showToast("Sector claimed — house + villager ready");
         }
-        if (action === "discover_spot") {
+        if (action === "spawn_find") {
+          const gem = String(data.gem || "Gem");
           showToast(
             data.bonus
-              ? `Hidden cache found! +${data.bonus} gold`
-              : "Hidden cache found!"
+              ? `${gem[0].toUpperCase()}${gem.slice(1)} found! +${data.bonus} gold`
+              : `${gem} found ahead!`
           );
         }
         if (action === "collect_hidden") {
-          showToast(data.gained ? `Collected +${data.gained} gold` : "Collected");
+          showToast(
+            data.gained ? `Collected +${data.gained} gold` : "Collected"
+          );
         }
         if (action === "build") showToast("Building raised");
       }
     } catch {
-      setError("Network error");
+      if (action !== "spawn_find") setError("Network error");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const spawnFind = async (payload: {
+    lat: number;
+    lng: number;
+    bearing: number;
+    zoom: number;
+    roamMeters: number;
+  }) => {
+    try {
+      const res = await fetch("/api/game", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "spawn_find", ...payload }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        // Soft fail while roaming — don't spam the error panel
+        return;
+      }
+      setSnap(data as GameSnapshot);
+      if (data.me) setDisplayGold(data.me.gold);
+      const gem = String(data.gem || "gem");
+      showToast(
+        data.bonus
+          ? `${gem[0].toUpperCase()}${gem.slice(1)} sparkles ahead! +${data.bonus}g`
+          : "A gem appeared ahead!"
+      );
+    } catch {
+      /* ignore roam race */
     }
   };
 
@@ -218,7 +252,7 @@ export function PlayShell() {
           me={me}
           selectedId={selectedId}
           onSelect={setSelectedId}
-          onDiscoverSpot={(spotId) => void act("discover_spot", { spotId })}
+          onSpawnFind={(p) => spawnFind(p)}
           onCollectHidden={(spotId) => void act("collect_hidden", { spotId })}
           className="min-h-[45vh] lg:min-h-0 lg:h-full"
         />
@@ -298,8 +332,8 @@ export function PlayShell() {
                 Build
               </h2>
               <p className="text-[11px] leading-relaxed text-[var(--ink-faint)]">
-                Villagers gather on their own. Spend gold on buildings to boost
-                each trip. Zoom into {homeName} to find hidden caches.
+                Villagers gather on their own. Zoom fully into {homeName} and
+                roam — diamonds and gems spawn ahead of you as you explore.
               </p>
               {(snap?.buildingCatalog ?? []).map((b) => {
                 const owned = me?.buildings.some((x) => x.type === b.type);

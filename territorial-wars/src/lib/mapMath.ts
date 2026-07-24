@@ -1,4 +1,5 @@
-import type { LatLng, ResourceSpot, Sector } from "@/lib/gameTypes";
+import type { GemType, LatLng, ResourceSpot, Sector } from "@/lib/gameTypes";
+import { GEM_META } from "@/lib/gameTypes";
 import { pointInRing } from "@/lib/geo";
 
 function rand(min: number, max: number) {
@@ -47,6 +48,18 @@ export function offsetMeters(
   return { lat: origin.lat + dLat, lng: origin.lng + dLng };
 }
 
+/** Move `meters` along Mapbox bearing (degrees clockwise from north). */
+export function offsetBearing(
+  origin: LatLng,
+  bearingDeg: number,
+  meters: number
+): LatLng {
+  const rad = (bearingDeg * Math.PI) / 180;
+  const north = Math.cos(rad) * meters;
+  const east = Math.sin(rad) * meters;
+  return offsetMeters(origin, east, north);
+}
+
 export function distMeters(a: LatLng, b: LatLng): number {
   const x =
     (a.lng - b.lng) * 111_320 * Math.cos(((a.lat + b.lat) / 2) * (Math.PI / 180));
@@ -54,66 +67,56 @@ export function distMeters(a: LatLng, b: LatLng): number {
   return Math.hypot(x, y);
 }
 
+export function pickRoamGem(): GemType {
+  const roll = Math.random();
+  if (roll < 0.12) return "diamond";
+  if (roll < 0.3) return "ruby";
+  if (roll < 0.55) return "sapphire";
+  return "emerald";
+}
+
 /**
- * Seed easy spots near house + hidden spots deeper in the sector.
- * Called when a player claims a sector (spots are per-sector shared; discovery is per-player).
+ * Seed only nearby easy gems at the house.
+ * Rare gems spawn later when the player roams zoomed-in.
  */
 export function seedSpotsForSector(
   sector: Sector,
   house: LatLng,
   existing: ResourceSpot[]
 ): ResourceSpot[] {
-  const already = existing.filter((s) => s.sectorId === sector.id);
-  if (already.length > 0) return existing;
+  const others = existing.filter((s) => s.sectorId !== sector.id);
+  const mine = existing.filter((s) => s.sectorId === sector.id);
+  if (mine.some((s) => s.kind === "easy")) {
+    // Drop legacy pre-placed hiddens that were never roam-spawned
+    const cleaned = mine.filter(
+      (s) => s.kind === "easy" || Boolean(s.ownerId)
+    );
+    return [...others, ...cleaned];
+  }
 
-  const spots: ResourceSpot[] = [];
-  const now = Date.now();
-
-  // 2 easy nodes near the house
-  const easyOffsets: [number, number][] = [
-    [40, 25],
-    [-35, 30],
+  const easy: ResourceSpot[] = [];
+  const easyPlan: { e: number; n: number; gem: GemType }[] = [
+    { e: 38, n: 22, gem: "amber" },
+    { e: -32, n: 28, gem: "emerald" },
   ];
-  easyOffsets.forEach(([e, n], i) => {
+  easyPlan.forEach(({ e, n, gem }, i) => {
     let p = offsetMeters(house, e, n);
     if (!pointInRing(p, sector.ring)) p = house;
-    spots.push({
+    easy.push({
       id: `${sector.id}_easy_${i}`,
       sectorId: sector.id,
       kind: "easy",
+      gem,
       lat: p.lat,
       lng: p.lng,
-      yield: 2,
+      yield: GEM_META[gem].yield,
       refillMs: 0,
       availableAt: 0,
     });
   });
 
-  // 4 hidden nodes scattered in the sector
-  for (let i = 0; i < 4; i++) {
-    let p = randomPointInRing(sector.ring);
-    // Prefer not too close to house
-    for (let t = 0; t < 12; t++) {
-      const candidate = randomPointInRing(sector.ring);
-      if (candidate && distMeters(candidate, house) > 80) {
-        p = candidate;
-        break;
-      }
-    }
-    if (!p) continue;
-    spots.push({
-      id: `${sector.id}_hidden_${i}_${now.toString(36)}`,
-      sectorId: sector.id,
-      kind: "hidden",
-      lat: p.lat,
-      lng: p.lng,
-      yield: 5,
-      refillMs: 45_000,
-      availableAt: 0,
-    });
-  }
-
-  return [...existing, ...spots];
+  const keptFinds = mine.filter((s) => s.kind === "hidden" && s.ownerId);
+  return [...others, ...easy, ...keptFinds];
 }
 
 export function lerpLatLng(a: LatLng, b: LatLng, t: number): LatLng {

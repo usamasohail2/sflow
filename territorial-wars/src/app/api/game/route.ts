@@ -10,6 +10,7 @@ import {
   ensurePlayer,
   getSnapshot,
   renamePlayer,
+  spawnRoamFind,
 } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
@@ -96,6 +97,11 @@ export async function POST(req: Request) {
     buildingType?: BuildingType;
     invite?: string;
     name?: string;
+    lat?: number;
+    lng?: number;
+    bearing?: number;
+    zoom?: number;
+    roamMeters?: number;
   };
 
   await ensurePlayer(
@@ -107,7 +113,14 @@ export async function POST(req: Request) {
   );
 
   const id = identity.id;
-  let result: { ok?: true; error?: string; bonus?: number; gained?: number };
+  let result: {
+    ok?: true;
+    error?: string;
+    bonus?: number;
+    gained?: number;
+    gem?: string;
+    spotId?: string;
+  };
 
   if (body.action === "claim_sector") {
     if (!body.sectorId) {
@@ -117,6 +130,25 @@ export async function POST(req: Request) {
       );
     }
     result = await claimSector(id, body.sectorId);
+  } else if (body.action === "spawn_find") {
+    const lat = Number(body.lat);
+    const lng = Number(body.lng);
+    const bearing = Number(body.bearing ?? 0);
+    const zoom = Number(body.zoom ?? 0);
+    const roamMeters = Number(body.roamMeters ?? 0);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return withGuestCookie(
+        NextResponse.json({ error: "Bad location" }, { status: 400 }),
+        setCookie
+      );
+    }
+    result = await spawnRoamFind(id, {
+      lat,
+      lng,
+      bearing,
+      zoom,
+      roamMeters,
+    });
   } else if (body.action === "discover_spot") {
     if (!body.spotId) {
       return withGuestCookie(
@@ -164,6 +196,8 @@ export async function POST(req: Request) {
       ...snap,
       bonus: "bonus" in result ? result.bonus : undefined,
       gained: "gained" in result ? result.gained : undefined,
+      gem: "gem" in result ? result.gem : undefined,
+      spotId: "spotId" in result ? result.spotId : undefined,
     }),
     setCookie
   );

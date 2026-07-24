@@ -198,3 +198,54 @@ body {
   pointer-events: none;
 }
 
+.resource-gem {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  filter: drop-shadow(0 0 6px var(--gem-glow, rgba(180, 230, 255, 0.55)));
+  transform-origin: center bottom;
+}
+
+.resource-gem.is-pulse .gem-body {
+  animation: gem-float 1.8s ease-in-out infinite;
+}
+
+.resource-gem.is-depleted {
+  filter: grayscale(0.55) drop-shadow(0 0 2px rgba(0, 0, 0, 0.4));
+  cursor: default;
+}
+
+.resource-gem .gem-sparkles .s1 {
+  animation: gem-spark 1.4s ease-in-out infinite;
+}
+.resource-gem .gem-sparkles .s2 {
+  animation: gem-spark 1.7s ease-in-out 0.3s infinite;
+}
+.resource-gem .gem-sparkles .s3 {
+  animation: gem-spark 1.2s ease-in-out 0.55s infinite;
+}
+
+@keyframes gem-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes gem-spark {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.7);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.25);
+  }
+}
+

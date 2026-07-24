@@ -10,10 +10,14 @@ export type Sector = {
 
 export type ResourceSpotKind = "easy" | "hidden";
 
+/** Visual / rarity of a gather node */
+export type GemType = "amber" | "emerald" | "sapphire" | "ruby" | "diamond";
+
 export type ResourceSpot = {
   id: string;
   sectorId: string;
   kind: ResourceSpotKind;
+  gem: GemType;
   lat: number;
   lng: number;
   /** Gold granted each time a villager completes a trip involving this spot */
@@ -22,7 +26,29 @@ export type ResourceSpot = {
   refillMs: number;
   /** When this spot next becomes available (0 = available now) */
   availableAt: number;
+  /** Player who spawned this find (roam discovers) */
+  ownerId?: string;
 };
+
+export const GEM_META: Record<
+  GemType,
+  { label: string; yield: number; refillMs: number }
+> = {
+  amber: { label: "Amber", yield: 3, refillMs: 0 },
+  emerald: { label: "Emerald", yield: 5, refillMs: 40_000 },
+  sapphire: { label: "Sapphire", yield: 7, refillMs: 50_000 },
+  ruby: { label: "Ruby", yield: 9, refillMs: 55_000 },
+  diamond: { label: "Diamond", yield: 14, refillMs: 70_000 },
+};
+
+/** Fully zoomed-in explore threshold (Mapbox zoom) */
+export const EXPLORE_ZOOM = 15.6;
+/** How far (m) you must roam while zoomed before a gem can appear */
+export const ROAM_METERS_TO_SPAWN = 90;
+/** Min time between roam spawns */
+export const SPAWN_COOLDOWN_MS = 22_000;
+/** Cap finds spawned in a sector */
+export const MAX_ROAM_FINDS = 10;
 
 export type BuildingType = "mill" | "warehouse" | "well";
 
@@ -51,6 +77,8 @@ export type Player = {
   invitedBy: string | null;
   /** Anchor for gather accrual */
   lastGatherAt: number;
+  /** Last time a roam-find gem spawned for this player */
+  lastRoamSpawnAt: number;
   createdAt: number;
   updatedAt: number;
 };
