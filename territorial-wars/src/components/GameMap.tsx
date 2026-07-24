@@ -55,7 +55,8 @@ export function GameMap({
           properties: {
             id: s.id,
             name: s.name,
-            resources: eco?.resources ?? 0,
+            dug: eco?.dugTotal ?? 0,
+            controlled: eco?.controllerId ? 1 : 0,
           },
         };
       }),
@@ -131,8 +132,8 @@ export function GameMap({
                 "format",
                 ["get", "name"],
                 "\n",
-                ["to-string", ["get", "resources"]],
-                " res",
+                ["to-string", ["get", "dug"]],
+                " dug",
               ],
               "text-size": 11,
               "text-font": ["DIN Pro Medium", "Arial Unicode MS Regular"],

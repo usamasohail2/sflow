@@ -6,7 +6,7 @@ export default function HomePage() {
       <div className="war-scanline" aria-hidden />
       <div className="relative z-10 mx-auto flex min-h-[100dvh] w-full max-w-5xl flex-col justify-end px-5 pb-16 pt-10 sm:justify-center sm:pb-20">
         <p className="animate-war-rise font-mono text-[11px] uppercase tracking-[0.28em] text-[var(--sand)]">
-          Draw the map · dig the ground
+          Dig gold · build houses · control sectors
         </p>
         <h1 className="animate-war-rise-delay mt-4 max-w-[14ch] font-display text-[clamp(2.6rem,11vw,5.5rem)] leading-[0.92] tracking-tight text-[var(--ink)]">
           Islamabad
@@ -15,21 +15,21 @@ export default function HomePage() {
           </span>
         </h1>
         <p className="animate-war-rise-delay-2 mt-5 max-w-md text-[15px] leading-relaxed text-[var(--ink-muted)]">
-          Mark your own sectors. Sign in, station a villager where you are,
-          place a house, invite a friend — then dig resources every half-second.
+          Station villagers in a territory, dig gold every half-second, spend it
+          on houses and recruits, and hold control against rivals.
         </p>
         <div className="animate-war-rise-delay-2 mt-8 flex flex-wrap gap-3">
           <Link
-            href="/edit"
+            href="/play"
             className="inline-flex items-center justify-center rounded-sm bg-[var(--signal)] px-6 py-3 text-sm font-semibold text-white"
           >
-            Draw sectors
+            Play now
           </Link>
           <Link
-            href="/play"
+            href="/edit"
             className="inline-flex items-center justify-center rounded-sm border border-[var(--line-strong)] px-6 py-3 text-sm font-semibold text-[var(--ink)]"
           >
-            Enter play
+            Draw sectors
           </Link>
         </div>
       </div>

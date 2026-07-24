@@ -19,23 +19,26 @@ export type Player = {
   image?: string | null;
   inviteCode: string;
   invitedBy: string | null;
-  /** How many villagers this player controls */
+  /** Personal gold dug by this player's villagers */
+  gold: number;
   villagers: number;
-  /** How many houses this player may place */
   houseSlots: number;
-  /** Houses already placed (usually in active sector) */
   housesPlaced: number;
-  /** The one sector this player occupies */
   activeSectorId: string | null;
+  /** Permanent dig bonus (extra gold per tick total) */
+  digBonus: number;
+  isBot?: boolean;
   createdAt: number;
   updatedAt: number;
 };
 
+/** Soft sector vibe meter (activity), not the spendable currency */
 export type SectorEconomy = {
   sectorId: string;
-  resources: number;
-  /** ms epoch — resource accrual anchor */
+  /** Lifetime digs that happened here (flavor / strength) */
+  dugTotal: number;
   lastTickAt: number;
+  controllerId: string | null;
 };
 
 export type GameSnapshot = {
@@ -46,5 +49,19 @@ export type GameSnapshot = {
   serverNow: number;
 };
 
-/** +1 resource per villager every 500ms */
+/** +1 gold per villager every tick while stationed */
 export const RESOURCE_TICK_MS = 500;
+
+export const COSTS = {
+  house: 25,
+  villager: 40,
+  digBonus: 60,
+} as const;
+
+export const STARTING = {
+  gold: 0,
+  villagers: 1,
+  houseSlots: 3,
+  housesPlaced: 0,
+  digBonus: 0,
+} as const;

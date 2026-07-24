@@ -1,16 +1,15 @@
 import { Redis } from "@upstash/redis";
-import type {
-  Player,
-  Sector,
-  SectorEconomy,
-} from "@/lib/gameTypes";
-import { RESOURCE_TICK_MS } from "@/lib/gameTypes";
+import type { Player, Sector, SectorEconomy } from "@/lib/gameTypes";
+import { STARTING } from "@/lib/gameTypes";
 import { buildDummySectors } from "@/lib/devMode";
+import { accrueGame } from "@/lib/rules";
 
-const SECTORS_KEY = "itw:sectors";
-const PLAYERS_KEY = "itw:players";
-const ECONOMY_KEY = "itw:economies";
-const INVITE_KEY = "itw:invites";
+const SECTORS_KEY = "itw:v2:sectors";
+const PLAYERS_KEY = "itw:v2:players";
+const ECONOMY_KEY = "itw:v2:economies";
+const INVITE_KEY = "itw:v2:invites";
+
+export const RIVAL_BOT_ID = "bot-ravi";
 
 function redis(): Redis | null {
   const url = process.env.UPSTASH_REDIS_REST_URL?.trim();
@@ -19,7 +18,6 @@ function redis(): Redis | null {
   return new Redis({ url, token });
 }
 
-/** In-memory fallback for local/dev when Redis is missing */
 const memory = {
   sectors: [] as Sector[],
   players: {} as Record<string, Player>,
@@ -41,7 +39,6 @@ export async function getSectors(): Promise<Sector[]> {
     sectors = Array.isArray(data) ? data : [];
   }
 
-  // Seed two dummy territories once so game logic can be tested
   if (sectors.length === 0) {
     sectors = buildDummySectors();
     await saveSectors(sectors);
@@ -58,11 +55,28 @@ export async function saveSectors(sectors: Sector[]): Promise<void> {
   await r.set(SECTORS_KEY, sectors);
 }
 
+function normalizePlayer(raw: Player): Player {
+  return {
+    ...raw,
+    gold: typeof raw.gold === "number" ? raw.gold : 0,
+    digBonus: typeof raw.digBonus === "number" ? raw.digBonus : 0,
+    villagers: raw.villagers ?? STARTING.villagers,
+    houseSlots: raw.houseSlots ?? STARTING.houseSlots,
+    housesPlaced: raw.housesPlaced ?? 0,
+  };
+}
+
 export async function getPlayers(): Promise<Record<string, Player>> {
   const r = redis();
-  if (!r) return memory.players;
-  const data = await r.get<Record<string, Player>>(PLAYERS_KEY);
-  return data && typeof data === "object" ? data : {};
+  const data = r
+    ? await r.get<Record<string, Player>>(PLAYERS_KEY)
+    : memory.players;
+  const raw = data && typeof data === "object" ? data : {};
+  const out: Record<string, Player> = {};
+  for (const [id, p] of Object.entries(raw)) {
+    out[id] = normalizePlayer(p);
+  }
+  return out;
 }
 
 export async function savePlayers(
@@ -76,11 +90,32 @@ export async function savePlayers(
   await r.set(PLAYERS_KEY, players);
 }
 
+function normalizeEconomy(raw: SectorEconomy, sectorId: string): SectorEconomy {
+  const legacy = raw as SectorEconomy & { resources?: number };
+  return {
+    sectorId,
+    dugTotal:
+      typeof legacy.dugTotal === "number"
+        ? legacy.dugTotal
+        : typeof legacy.resources === "number"
+          ? legacy.resources
+          : 0,
+    lastTickAt: legacy.lastTickAt || Date.now(),
+    controllerId: legacy.controllerId ?? null,
+  };
+}
+
 export async function getEconomies(): Promise<Record<string, SectorEconomy>> {
   const r = redis();
-  if (!r) return memory.economies;
-  const data = await r.get<Record<string, SectorEconomy>>(ECONOMY_KEY);
-  return data && typeof data === "object" ? data : {};
+  const data = r
+    ? await r.get<Record<string, SectorEconomy>>(ECONOMY_KEY)
+    : memory.economies;
+  const raw = data && typeof data === "object" ? data : {};
+  const out: Record<string, SectorEconomy> = {};
+  for (const [id, eco] of Object.entries(raw)) {
+    out[id] = normalizeEconomy(eco, id);
+  }
+  return out;
 }
 
 export async function saveEconomies(
@@ -94,9 +129,7 @@ export async function saveEconomies(
   await r.set(ECONOMY_KEY, economies);
 }
 
-export async function getInviteOwner(
-  code: string
-): Promise<string | null> {
+export async function getInviteOwner(code: string): Promise<string | null> {
   const r = redis();
   const key = code.trim().toUpperCase();
   if (!key) return null;
@@ -124,51 +157,69 @@ export function makeInviteCode(seed: string): string {
   return `${base || "ITW"}${rand}`;
 }
 
-export function accrueResources(
-  economies: Record<string, SectorEconomy>,
+async function ensureRivalBot(
   players: Record<string, Player>,
-  now = Date.now()
-): Record<string, SectorEconomy> {
-  const villagersBySector: Record<string, number> = {};
-  for (const p of Object.values(players)) {
-    if (!p.activeSectorId || p.villagers <= 0) continue;
-    villagersBySector[p.activeSectorId] =
-      (villagersBySector[p.activeSectorId] ?? 0) + p.villagers;
-  }
+  sectors: Sector[],
+  now: number
+): Promise<Record<string, Player>> {
+  const bravo = sectors.find((s) => s.id === "sec_dummy_bravo") ?? sectors[1];
+  if (!bravo) return players;
 
-  const next = { ...economies };
-  for (const [sectorId, count] of Object.entries(villagersBySector)) {
-    const eco =
-      next[sectorId] ??
-      ({
-        sectorId,
-        resources: 0,
-        lastTickAt: now,
-      } satisfies SectorEconomy);
-    const elapsed = Math.max(0, now - eco.lastTickAt);
-    const ticks = Math.floor(elapsed / RESOURCE_TICK_MS);
-    if (ticks > 0 && count > 0) {
-      next[sectorId] = {
-        ...eco,
-        resources: eco.resources + ticks * count,
-        lastTickAt: eco.lastTickAt + ticks * RESOURCE_TICK_MS,
-      };
-    } else if (!next[sectorId]) {
-      next[sectorId] = eco;
-    }
+  let bot = players[RIVAL_BOT_ID];
+  if (!bot) {
+    bot = {
+      id: RIVAL_BOT_ID,
+      email: "ravi@rival.bot",
+      name: "Ravi the Rival",
+      image: null,
+      inviteCode: "RAVI0001",
+      invitedBy: null,
+      gold: 12,
+      villagers: 1,
+      houseSlots: 3,
+      housesPlaced: 1,
+      activeSectorId: bravo.id,
+      digBonus: 0,
+      isBot: true,
+      createdAt: now,
+      updatedAt: now,
+    };
+  } else {
+    // Keep the rival camping Bravo so the map feels alive
+    bot = {
+      ...bot,
+      isBot: true,
+      activeSectorId: bravo.id,
+      villagers: Math.max(1, bot.villagers),
+      housesPlaced: Math.max(1, bot.housesPlaced),
+    };
   }
-  return next;
+  return { ...players, [RIVAL_BOT_ID]: bot };
 }
 
 export async function loadAccruedState(now = Date.now()) {
-  const [sectors, players, economies] = await Promise.all([
-    getSectors(),
-    getPlayers(),
-    getEconomies(),
-  ]);
-  const accrued = accrueResources(economies, players, now);
-  if (JSON.stringify(accrued) !== JSON.stringify(economies)) {
-    await saveEconomies(accrued);
+  const sectors = await getSectors();
+  let players = await getPlayers();
+  const economies = await getEconomies();
+
+  players = await ensureRivalBot(players, sectors, now);
+  const accrued = accrueGame(economies, players, now);
+
+  const changed =
+    JSON.stringify(accrued.economies) !== JSON.stringify(economies) ||
+    JSON.stringify(accrued.players) !== JSON.stringify(players);
+
+  if (changed) {
+    await Promise.all([
+      saveEconomies(accrued.economies),
+      savePlayers(accrued.players),
+    ]);
   }
-  return { sectors, players, economies: accrued, serverNow: now };
+
+  return {
+    sectors,
+    players: accrued.players,
+    economies: accrued.economies,
+    serverNow: now,
+  };
 }
