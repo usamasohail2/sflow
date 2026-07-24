@@ -93,7 +93,9 @@ export function GameMap({
         onClick={(e: MapMouseEvent) => {
           const id = e.features?.[0]?.properties?.id;
           if (typeof id === "string") onSelect(id);
-          else if (onMapPlaceLocation) {
+          // Always drop the location pin on click (even inside a sector),
+          // so you can station villagers where you tap.
+          if (onMapPlaceLocation) {
             onMapPlaceLocation(e.lngLat.lat, e.lngLat.lng);
           }
         }}
