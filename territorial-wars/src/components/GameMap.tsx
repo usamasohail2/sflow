@@ -59,13 +59,13 @@ export function GameMap({
     <div className={`relative ${className}`}>
       <Map
         mapboxAccessToken={TOKEN}
-        initialViewState={{
-          longitude: 73.055,
-          latitude: 33.7,
-          zoom: 11.6,
-          pitch: 45,
-          bearing: -28,
-        }}
+          initialViewState={{
+            longitude: 73.045,
+            latitude: 33.71,
+            zoom: 12.2,
+            pitch: 45,
+            bearing: -28,
+          }}
         mapStyle="mapbox://styles/mapbox/dark-v11"
         interactiveLayerIds={["sector-fill"]}
         onClick={(e: MapMouseEvent) => {

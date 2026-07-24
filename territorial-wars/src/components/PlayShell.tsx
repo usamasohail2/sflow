@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useSession } from "next-auth/react";
+// import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { GameMap } from "@/components/GameMap";
-import { GoogleSignInButton } from "@/components/GoogleSignInButton";
+// import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 import type {
   Player,
   Sector,
@@ -28,11 +28,20 @@ type Snapshot = {
   players: PublicPlayer[];
   me: Player | null;
   serverNow: number;
-  authConfigured?: boolean;
 };
 
+function sectorCenter(sector: Sector): { lat: number; lng: number } {
+  const ring = sector.ring.slice(0, -1);
+  const lng =
+    ring.reduce((s, p) => s + p[0], 0) / Math.max(1, ring.length);
+  const lat =
+    ring.reduce((s, p) => s + p[1], 0) / Math.max(1, ring.length);
+  return { lat, lng };
+}
+
 export function PlayShell() {
-  const { data: session, status } = useSession();
+  // Google sign-in temporarily disabled
+  // const { data: session, status } = useSession();
   const [snap, setSnap] = useState<Snapshot | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(
@@ -52,8 +61,8 @@ export function PlayShell() {
     const res = await fetch(`/api/game${q}`);
     const data = (await res.json()) as Snapshot;
     setSnap(data);
-    if (!selectedId && data.me?.activeSectorId) {
-      setSelectedId(data.me.activeSectorId);
+    if (!selectedId && data.sectors[0]) {
+      setSelectedId(data.me?.activeSectorId || data.sectors[0].id);
     }
   }, [selectedId]);
 
@@ -61,9 +70,8 @@ export function PlayShell() {
     void load();
     const id = window.setInterval(() => void load(), 4000);
     return () => window.clearInterval(id);
-  }, [load, session?.user]);
+  }, [load]);
 
-  // Client-side live resource preview between server polls
   useEffect(() => {
     const id = window.setInterval(() => setTick((t) => t + 1), RESOURCE_TICK_MS);
     return () => window.clearInterval(id);
@@ -100,9 +108,7 @@ export function PlayShell() {
   const me = snap?.me ?? null;
 
   const insideSelected =
-    selected && location
-      ? pointInRing(location, selected.ring)
-      : false;
+    selected && location ? pointInRing(location, selected.ring) : false;
 
   const useGps = () => {
     if (!navigator.geolocation) {
@@ -123,7 +129,13 @@ export function PlayShell() {
     );
   };
 
-  const act = async (action: string, extra: Record<string, unknown> = {}) => {
+  const jumpIntoSector = (sector: Sector) => {
+    setSelectedId(sector.id);
+    setLocation(sectorCenter(sector));
+    setError(null);
+  };
+
+  const act = async (action: string) => {
     setBusy(true);
     setError(null);
     try {
@@ -136,7 +148,6 @@ export function PlayShell() {
           lat: location?.lat,
           lng: location?.lng,
           invite: inviteInput || undefined,
-          ...extra,
         }),
       });
       const data = await res.json();
@@ -165,7 +176,7 @@ export function PlayShell() {
             Islamabad Territorial Wars
           </Link>
           <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--ink-faint)]">
-            Villagers · houses · dig
+            Dev mode · Google auth off
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -175,21 +186,12 @@ export function PlayShell() {
           >
             Edit sectors
           </Link>
-          {status === "authenticated" ? (
-            <button
-              type="button"
-              className="rounded-sm border border-[var(--line)] px-3 py-1.5 text-xs"
-              onClick={() => {
-                void import("next-auth/react").then(({ signOut }) =>
-                  signOut({ callbackUrl: "/play" })
-                );
-              }}
-            >
-              {session?.user?.name?.split(" ")[0] || "Signed in"} · out
-            </button>
-          ) : (
-            <GoogleSignInButton callbackUrl="/play" label="Google sign-in" />
-          )}
+          {/* Google sign-in commented out for now
+          <GoogleSignInButton callbackUrl="/play" label="Google sign-in" />
+          */}
+          <span className="rounded-sm border border-[var(--sand)]/40 px-3 py-1.5 font-mono text-[10px] text-[var(--sand)]">
+            Guest Dev
+          </span>
         </div>
       </header>
 
@@ -212,12 +214,7 @@ export function PlayShell() {
             <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--ink-muted)]">
               Your post
             </h2>
-            {!me ? (
-              <p className="mt-2 text-sm text-[var(--ink-muted)]">
-                Sign in with Google to station a villager, place a house, and dig
-                resources.
-              </p>
-            ) : (
+            {me ? (
               <ul className="mt-2 space-y-1 text-sm text-[var(--ink)]">
                 <li>
                   Villagers: <strong>{me.villagers}</strong>
@@ -230,11 +227,33 @@ export function PlayShell() {
                 </li>
                 <li>
                   Stationed:{" "}
-                  <strong>{me.activeSectorId ? (snap?.sectors.find(s => s.id === me.activeSectorId)?.name || me.activeSectorId) : "none"}</strong>
+                  <strong>
+                    {me.activeSectorId
+                      ? snap?.sectors.find((s) => s.id === me.activeSectorId)
+                          ?.name || me.activeSectorId
+                      : "none"}
+                  </strong>
                 </li>
               </ul>
+            ) : (
+              <p className="mt-2 text-sm text-[var(--ink-muted)]">Loading guest…</p>
             )}
           </div>
+
+          {(snap?.sectors.length ?? 0) > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {snap!.sectors.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => jumpIntoSector(s)}
+                  className="rounded-sm border border-[var(--line)] px-2.5 py-1.5 text-[11px] text-[var(--ink-muted)] hover:border-[var(--sand)] hover:text-[var(--sand)]"
+                >
+                  Jump into {s.name}
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="flex flex-wrap gap-2">
             <button
@@ -244,8 +263,8 @@ export function PlayShell() {
             >
               Use GPS
             </button>
-            <span className="font-mono text-[10px] text-[var(--ink-faint)] self-center">
-              or click map to place pin
+            <span className="self-center font-mono text-[10px] text-[var(--ink-faint)]">
+              or click map / Jump into
             </span>
           </div>
 
@@ -257,14 +276,17 @@ export function PlayShell() {
                 <span className="text-[var(--sand)]">
                   {liveEconomies[selected.id]?.resources ?? 0}
                 </span>
-                <span className="text-[var(--ink-faint)]"> · +1 / villager / 0.5s</span>
+                <span className="text-[var(--ink-faint)]">
+                  {" "}
+                  · +1 / villager / 0.5s
+                </span>
               </p>
               <p className="text-xs text-[var(--ink-faint)]">
                 {location
                   ? insideSelected
                     ? "Your pin is inside this sector."
                     : "Your pin is outside this sector."
-                  : "Set your location first."}
+                  : "Set your location first (Jump into is easiest)."}
               </p>
               <button
                 type="button"
@@ -295,33 +317,18 @@ export function PlayShell() {
             </div>
           ) : (
             <p className="text-sm text-[var(--ink-muted)]">
-              {snap?.sectors.length
-                ? "Select a territory on the map."
-                : "No territories yet — open Edit sectors and draw them."}
+              Select a territory on the map.
             </p>
           )}
 
           {me && (
             <div className="border-t border-[var(--line)] pt-4">
               <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--ink-muted)]">
-                Invite a friend
+                Invite (dev)
               </h3>
-              <p className="mt-2 text-xs leading-relaxed text-[var(--ink-muted)]">
-                When they sign in with your link, you get <strong>+1 villager</strong> and{" "}
-                <strong>+1 house</strong>. They start digging with you.
-              </p>
               <p className="mt-2 break-all font-mono text-[10px] text-[var(--sand)]">
                 {inviteLink}
               </p>
-              <button
-                type="button"
-                className="mt-2 text-xs underline text-[var(--ink-muted)]"
-                onClick={() => {
-                  if (inviteLink) void navigator.clipboard.writeText(inviteLink);
-                }}
-              >
-                Copy invite link
-              </button>
               <label className="mt-3 block font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--ink-faint)]">
                 Have a code?
                 <input

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+// import { auth } from "@/auth";
 import type { Sector } from "@/lib/gameTypes";
 import { closeRing } from "@/lib/geo";
+import { AUTH_DISABLED } from "@/lib/devMode";
 import { getSectors, saveSectors } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
@@ -12,9 +13,16 @@ export async function GET() {
 }
 
 export async function PUT(req: Request) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+  // Google sign-in temporarily disabled for game-logic testing
+  // const session = await auth();
+  // if (!session?.user) {
+  //   return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+  // }
+  if (!AUTH_DISABLED) {
+    return NextResponse.json(
+      { error: "Auth required (re-enable Google sign-in)" },
+      { status: 401 }
+    );
   }
 
   const body = (await req.json()) as { sectors?: Sector[] };

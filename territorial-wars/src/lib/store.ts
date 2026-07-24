@@ -5,6 +5,7 @@ import type {
   SectorEconomy,
 } from "@/lib/gameTypes";
 import { RESOURCE_TICK_MS } from "@/lib/gameTypes";
+import { buildDummySectors } from "@/lib/devMode";
 
 const SECTORS_KEY = "itw:sectors";
 const PLAYERS_KEY = "itw:players";
@@ -32,9 +33,20 @@ export function isRedisConfigured(): boolean {
 
 export async function getSectors(): Promise<Sector[]> {
   const r = redis();
-  if (!r) return memory.sectors;
-  const data = await r.get<Sector[]>(SECTORS_KEY);
-  return Array.isArray(data) ? data : [];
+  let sectors: Sector[] = [];
+  if (!r) {
+    sectors = memory.sectors;
+  } else {
+    const data = await r.get<Sector[]>(SECTORS_KEY);
+    sectors = Array.isArray(data) ? data : [];
+  }
+
+  // Seed two dummy territories once so game logic can be tested
+  if (sectors.length === 0) {
+    sectors = buildDummySectors();
+    await saveSectors(sectors);
+  }
+  return sectors;
 }
 
 export async function saveSectors(sectors: Sector[]): Promise<void> {

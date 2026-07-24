@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+// import { auth } from "@/auth";
 import { pointInRing } from "@/lib/geo";
 import type { Player } from "@/lib/gameTypes";
+import { AUTH_DISABLED, GUEST_PLAYER_ID } from "@/lib/devMode";
 import {
   getInviteOwner,
   loadAccruedState,
@@ -13,40 +14,53 @@ import {
 
 export const dynamic = "force-dynamic";
 
-function playerIdFromSession(session: {
-  user?: { id?: string; email?: string | null };
-}): string | null {
-  const id = session.user?.id?.trim();
-  if (id) return id;
-  const email = session.user?.email?.trim();
-  return email || null;
+type Identity = {
+  id: string;
+  email: string;
+  name: string;
+  image?: string | null;
+};
+
+async function resolveIdentity(/* session */): Promise<Identity | null> {
+  // Google sign-in temporarily commented out
+  // const session = await auth();
+  // if (session?.user) {
+  //   const id = session.user.id?.trim() || session.user.email?.trim();
+  //   if (id) {
+  //     return {
+  //       id,
+  //       email: session.user.email || "",
+  //       name: session.user.name || "Explorer",
+  //       image: session.user.image,
+  //     };
+  //   }
+  // }
+
+  if (AUTH_DISABLED) {
+    return {
+      id: GUEST_PLAYER_ID,
+      email: "guest@local.dev",
+      name: "Guest Dev",
+      image: null,
+    };
+  }
+  return null;
 }
 
 async function ensurePlayer(
-  session: {
-    user?: {
-      id?: string;
-      email?: string | null;
-      name?: string | null;
-      image?: string | null;
-    };
-  },
+  identity: Identity,
   inviteCodeFromClient?: string | null
-): Promise<Player | null> {
-  const id = playerIdFromSession(session);
-  if (!id) return null;
-
+): Promise<Player> {
   const { players, economies } = await loadAccruedState();
-  let me = players[id];
+  let me = players[identity.id];
   const now = Date.now();
 
   if (!me) {
-    let inviteCode = makeInviteCode(session.user?.email || id);
-    // rare collision
+    let inviteCode = makeInviteCode(identity.email || identity.id);
     while (await getInviteOwner(inviteCode)) {
-      inviteCode = makeInviteCode(id + Math.random());
+      inviteCode = makeInviteCode(identity.id + Math.random());
     }
-    await setInviteCode(inviteCode, id);
+    await setInviteCode(inviteCode, identity.id);
 
     let invitedBy: string | null = null;
     const villagers = 1;
@@ -55,9 +69,8 @@ async function ensurePlayer(
     const ref = inviteCodeFromClient?.trim().toUpperCase();
     if (ref) {
       const ownerId = await getInviteOwner(ref);
-      if (ownerId && ownerId !== id && players[ownerId]) {
+      if (ownerId && ownerId !== identity.id && players[ownerId]) {
         invitedBy = ownerId;
-        // Inviter gains +1 villager and +1 house slot
         const inviter = players[ownerId]!;
         players[ownerId] = {
           ...inviter,
@@ -69,10 +82,10 @@ async function ensurePlayer(
     }
 
     me = {
-      id,
-      email: session.user?.email || "",
-      name: session.user?.name || "Explorer",
-      image: session.user?.image,
+      id: identity.id,
+      email: identity.email,
+      name: identity.name,
+      image: identity.image,
       inviteCode,
       invitedBy,
       villagers,
@@ -82,26 +95,25 @@ async function ensurePlayer(
       createdAt: now,
       updatedAt: now,
     };
-    players[id] = me;
+    players[identity.id] = me;
     await savePlayers(players);
     await saveEconomies(economies);
   }
 
-  return players[id] ?? me;
+  return players[identity.id] ?? me;
 }
 
 export async function GET(req: Request) {
-  const session = await auth();
   const url = new URL(req.url);
   const invite = url.searchParams.get("invite");
+  const identity = await resolveIdentity();
 
-  if (session?.user) {
-    await ensurePlayer(session, invite);
+  if (identity) {
+    await ensurePlayer(identity, invite);
   }
 
   const { sectors, players, economies, serverNow } = await loadAccruedState();
-  const id = session?.user ? playerIdFromSession(session) : null;
-  const me = id ? players[id] ?? null : null;
+  const me = identity ? players[identity.id] ?? null : null;
 
   return NextResponse.json({
     sectors,
@@ -117,16 +129,14 @@ export async function GET(req: Request) {
     economies,
     me,
     serverNow,
-    authConfigured: Boolean(
-      process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET
-    ),
+    authDisabled: AUTH_DISABLED,
   });
 }
 
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Sign in with Google first" }, { status: 401 });
+  const identity = await resolveIdentity();
+  if (!identity) {
+    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
   }
 
   const body = (await req.json()) as {
@@ -137,9 +147,9 @@ export async function POST(req: Request) {
     invite?: string;
   };
 
-  await ensurePlayer(session, body.invite);
+  await ensurePlayer(identity, body.invite);
   const { sectors, players, economies, serverNow } = await loadAccruedState();
-  const id = playerIdFromSession(session)!;
+  const id = identity.id;
   const me = players[id];
   if (!me) {
     return NextResponse.json({ error: "Player missing" }, { status: 500 });
@@ -170,7 +180,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Leaving previous sector is automatic — only one sector
     players[id] = {
       ...me,
       activeSectorId: sector.id,
@@ -178,7 +187,6 @@ export async function POST(req: Request) {
     };
     await savePlayers(players);
 
-    // Ensure economy row exists
     if (!economies[sector.id]) {
       economies[sector.id] = {
         sectorId: sector.id,
