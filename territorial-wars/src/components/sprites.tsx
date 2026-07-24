@@ -3,15 +3,16 @@ type SpriteProps = {
   title?: string;
 };
 
-/** Cute chibi villager with a tiny pickaxe — digs when `digging`. */
+/** Cute chibi villager — walks or digs when flagged. */
 export function VillagerSprite({
   className = "",
   digging = false,
+  walking = false,
   title = "Villager",
-}: SpriteProps & { digging?: boolean }) {
+}: SpriteProps & { digging?: boolean; walking?: boolean }) {
   return (
     <svg
-      className={`villager-sprite ${digging ? "is-digging" : ""} ${className}`}
+      className={`villager-sprite ${digging ? "is-digging" : ""} ${walking ? "is-walking" : ""} ${className}`}
       viewBox="0 0 32 32"
       width="48"
       height="48"

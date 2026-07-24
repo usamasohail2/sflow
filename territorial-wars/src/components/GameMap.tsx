@@ -1,79 +1,115 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import MapboxMap, { Layer, Marker, Source } from "react-map-gl/mapbox";
-import type { MapMouseEvent } from "react-map-gl/mapbox";
+import type { MapMouseEvent, MapRef } from "react-map-gl/mapbox";
 import type { FeatureCollection } from "geojson";
+import { useRef } from "react";
 import "mapbox-gl/dist/mapbox-gl.css";
-import type { Sector, SectorEconomy } from "@/lib/gameTypes";
+import type {
+  Building,
+  LatLng,
+  Player,
+  ResourceSpot,
+  Sector,
+} from "@/lib/gameTypes";
+import { GATHER_TRIP_MS } from "@/lib/gameTypes";
 import { ringToFeature } from "@/lib/geo";
+import { lerpLatLng } from "@/lib/mapMath";
+import { gatherPhase } from "@/lib/rules";
 import { HouseSprite, VillagerSprite } from "@/components/sprites";
 
 const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
-
-export type SectorPresence = {
-  sectorId: string;
-  villagers: number;
-  houses: number;
-};
+/** Hidden spots only appear / are clickable at this zoom+ */
+const HIDDEN_ZOOM = 14.2;
 
 type Props = {
   sectors: Sector[];
-  economies: Record<string, SectorEconomy>;
-  presence?: SectorPresence[];
+  spots: ResourceSpot[];
+  me: Player | null;
   selectedId: string | null;
-  myLocation: { lat: number; lng: number } | null;
   onSelect: (id: string) => void;
-  onMapPlaceLocation?: (lat: number, lng: number) => void;
+  onDiscoverSpot?: (spotId: string) => void;
+  onCollectHidden?: (spotId: string) => void;
   className?: string;
 };
 
-function sectorCenter(sector: Sector): { lat: number; lng: number } {
-  const ring = sector.ring.slice(0, -1);
-  const lng = ring.reduce((s, p) => s + p[0], 0) / Math.max(1, ring.length);
-  const lat = ring.reduce((s, p) => s + p[1], 0) / Math.max(1, ring.length);
-  return { lat, lng };
+function buildingLabel(type: Building["type"]): string {
+  if (type === "mill") return "Mill";
+  if (type === "warehouse") return "Store";
+  return "Well";
+}
+
+/** Outbound 0–0.45, gather pause 0.45–0.55, return 0.55–1 */
+function walkPosition(
+  house: LatLng,
+  target: LatLng,
+  phase: number
+): LatLng {
+  if (phase < 0.45) {
+    return lerpLatLng(house, target, phase / 0.45);
+  }
+  if (phase < 0.55) return target;
+  return lerpLatLng(target, house, (phase - 0.55) / 0.45);
 }
 
 export function GameMap({
   sectors,
-  economies,
-  presence = [],
+  spots,
+  me,
   selectedId,
-  myLocation,
   onSelect,
-  onMapPlaceLocation,
+  onDiscoverSpot,
+  onCollectHidden,
   className = "",
 }: Props) {
+  const mapRef = useRef<MapRef>(null);
+  const [zoom, setZoom] = useState(12.2);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 80);
+    return () => window.clearInterval(id);
+  }, []);
+
   const fc = useMemo<FeatureCollection>(
     () => ({
       type: "FeatureCollection",
-      features: sectors.map((s) => {
-        const eco = economies[s.id];
-        return {
+      features: sectors.map((s) => ({
           ...ringToFeature(s.id, s.name, s.ring),
           properties: {
             id: s.id,
             name: s.name,
-            dug: eco?.dugTotal ?? 0,
-            controlled: eco?.controllerId ? 1 : 0,
+            mine: me?.homeSectorId === s.id ? 1 : 0,
           },
-        };
-      }),
+        })),
     }),
-    [sectors, economies]
+    [sectors, me]
   );
 
-  const presenceBySector = useMemo(() => {
-    const map = new globalThis.Map<string, SectorPresence>();
-    for (const p of presence) map.set(p.sectorId, p);
-    return map;
-  }, [presence]);
+  const mySpots = useMemo(() => {
+    if (!me?.homeSectorId) return [];
+    return spots.filter((s) => s.sectorId === me.homeSectorId);
+  }, [spots, me]);
+
+  const easyTarget = useMemo(() => {
+    const easy = mySpots.find((s) => s.kind === "easy");
+    if (easy) return { lat: easy.lat, lng: easy.lng };
+    return me?.house ?? null;
+  }, [mySpots, me]);
+
+  const phase = me ? gatherPhase(me, now) : 0;
+  const villagerPos =
+    me?.house && easyTarget
+      ? walkPosition(me.house, easyTarget, phase)
+      : null;
 
   if (!TOKEN) {
     return (
       <div className={`grid place-items-center bg-[var(--wash)] ${className}`}>
-        <p className="font-mono text-xs text-[var(--ink-muted)]">No Mapbox token</p>
+        <p className="font-mono text-xs text-[var(--ink-muted)]">
+          No Mapbox token
+        </p>
       </div>
     );
   }
@@ -81,6 +117,7 @@ export function GameMap({
   return (
     <div className={`relative ${className}`}>
       <MapboxMap
+        ref={mapRef}
         mapboxAccessToken={TOKEN}
         initialViewState={{
           longitude: 73.045,
@@ -91,14 +128,10 @@ export function GameMap({
         }}
         mapStyle="mapbox://styles/mapbox/dark-v11"
         interactiveLayerIds={["sector-fill"]}
+        onMove={(e) => setZoom(e.viewState.zoom)}
         onClick={(e: MapMouseEvent) => {
           const id = e.features?.[0]?.properties?.id;
           if (typeof id === "string") onSelect(id);
-          // Always drop the location pin on click (even inside a sector),
-          // so you can station villagers where you tap.
-          if (onMapPlaceLocation) {
-            onMapPlaceLocation(e.lngLat.lat, e.lngLat.lng);
-          }
         }}
         style={{ width: "100%", height: "100%" }}
       >
@@ -109,11 +142,13 @@ export function GameMap({
             paint={{
               "fill-color": [
                 "case",
+                ["==", ["get", "mine"], 1],
+                "#3d6b45",
                 ["==", ["get", "id"], selectedId || ""],
                 "#e23b2f",
-                "#3d6b45",
+                "#2a3530",
               ] as never,
-              "fill-opacity": 0.32,
+              "fill-opacity": 0.34,
             }}
           />
           <Layer
@@ -128,78 +163,140 @@ export function GameMap({
             id="sector-label"
             type="symbol"
             layout={{
-              "text-field": [
-                "format",
-                ["get", "name"],
-                "\n",
-                ["to-string", ["get", "dug"]],
-                " dug",
-              ],
-              "text-size": 11,
+              "text-field": ["get", "name"],
+              "text-size": 13,
               "text-font": ["DIN Pro Medium", "Arial Unicode MS Regular"],
-              "text-offset": [0, -1.8],
             }}
             paint={{
               "text-color": "#e8ebe4",
               "text-halo-color": "#0c100e",
-              "text-halo-width": 1,
+              "text-halo-width": 1.2,
             }}
           />
         </Source>
 
-        {sectors.map((sector) => {
-          const pop = presenceBySector.get(sector.id);
-          if (!pop || (pop.villagers <= 0 && pop.houses <= 0)) return null;
-          const { lat, lng } = sectorCenter(sector);
-          const villagerCount = Math.min(pop.villagers, 3);
-          return (
-            <Marker
-              key={`sprites-${sector.id}`}
-              longitude={lng}
-              latitude={lat}
-              anchor="bottom"
-              offset={[0, -4]}
-            >
-              <div className="sprite-stack">
-                {pop.houses > 0 && (
-                  <div className="relative">
-                    <HouseSprite />
-                    {pop.houses > 1 && (
-                      <span className="absolute -right-1 -top-1 rounded-full bg-[var(--surface)] px-1 font-mono text-[9px] text-[var(--sand)]">
-                        ×{pop.houses}
-                      </span>
-                    )}
-                  </div>
-                )}
-                {Array.from({ length: villagerCount }).map((_, i) => (
-                  <VillagerSprite
-                    key={i}
-                    digging
-                    className={i > 0 ? "-ml-3" : ""}
-                  />
-                ))}
-                {pop.villagers > 3 && (
-                  <span className="mb-1 rounded-full bg-[var(--surface)]/90 px-1.5 font-mono text-[9px] text-[var(--field-bright)]">
-                    +{pop.villagers - 3}
-                  </span>
-                )}
-              </div>
-            </Marker>
-          );
-        })}
-
-        {myLocation && (
+        {/* House */}
+        {me?.house && (
           <Marker
-            longitude={myLocation.lng}
-            latitude={myLocation.lat}
-            anchor="center"
+            longitude={me.house.lng}
+            latitude={me.house.lat}
+            anchor="bottom"
           >
-            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[var(--sand)] ring-2 ring-[var(--surface)]">
-              <span className="h-1.5 w-1.5 rounded-full bg-[var(--surface)]" />
-            </span>
+            <HouseSprite className="h-10 w-11 drop-shadow-md" />
+          </Marker>
+        )}
+
+        {/* Buildings */}
+        {me?.buildings.map((b) => (
+          <Marker
+            key={b.id}
+            longitude={b.lng}
+            latitude={b.lat}
+            anchor="bottom"
+          >
+            <div className="rounded-sm bg-[var(--surface)]/85 px-1.5 py-0.5 font-mono text-[9px] text-[var(--sand)]">
+              {buildingLabel(b.type)}
+            </div>
+          </Marker>
+        ))}
+
+        {/* Easy resource nodes */}
+        {mySpots
+          .filter((s) => s.kind === "easy")
+          .map((s) => (
+            <Marker
+              key={s.id}
+              longitude={s.lng}
+              latitude={s.lat}
+              anchor="center"
+            >
+              <span
+                className="block h-2.5 w-2.5 rounded-full bg-[var(--sand)] ring-2 ring-[var(--surface)]"
+                title="Nearby resource"
+              />
+            </Marker>
+          ))}
+
+        {/* Hidden: only when zoomed in */}
+        {zoom >= HIDDEN_ZOOM &&
+          mySpots
+            .filter((s) => s.kind === "hidden")
+            .map((s) => {
+              const found = me?.discoveredSpotIds.includes(s.id);
+              const ready = s.availableAt <= now;
+              if (!found) {
+                return (
+                  <Marker
+                    key={s.id}
+                    longitude={s.lng}
+                    latitude={s.lat}
+                    anchor="center"
+                    onClick={(e) => {
+                      e.originalEvent.stopPropagation();
+                      onDiscoverSpot?.(s.id);
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className="h-3 w-3 rounded-full bg-[var(--signal-bright)]/70 ring-2 ring-[var(--signal)] animate-pulse"
+                      title="Hidden cache — tap to discover"
+                    />
+                  </Marker>
+                );
+              }
+              return (
+                <Marker
+                  key={s.id}
+                  longitude={s.lng}
+                  latitude={s.lat}
+                  anchor="center"
+                  onClick={(e) => {
+                    e.originalEvent.stopPropagation();
+                    if (ready) onCollectHidden?.(s.id);
+                  }}
+                >
+                  <button
+                    type="button"
+                    className={`h-3.5 w-3.5 rounded-full ring-2 ring-[var(--surface)] ${
+                      ready
+                        ? "bg-[var(--field-bright)]"
+                        : "bg-[var(--ink-faint)] opacity-50"
+                    }`}
+                    title={
+                      ready
+                        ? "Cache ready — tap to collect"
+                        : "Refilling…"
+                    }
+                  />
+                </Marker>
+              );
+            })}
+
+        {/* Walking villager */}
+        {villagerPos && me && me.villagers > 0 && (
+          <Marker
+            longitude={villagerPos.lng}
+            latitude={villagerPos.lat}
+            anchor="bottom"
+          >
+            <div className="relative">
+              <VillagerSprite walking className="h-9 w-9" />
+              {me.villagers > 1 && (
+                <span className="absolute -right-1 -top-1 rounded-full bg-[var(--surface)] px-1 font-mono text-[9px] text-[var(--field-bright)]">
+                  ×{me.villagers}
+                </span>
+              )}
+            </div>
           </Marker>
         )}
       </MapboxMap>
+
+      {me?.homeSectorId && zoom < HIDDEN_ZOOM && (
+        <p className="pointer-events-none absolute bottom-3 left-3 right-3 rounded-sm bg-[var(--surface)]/85 px-3 py-2 text-center font-mono text-[10px] text-[var(--ink-muted)]">
+          Zoom into your sector to hunt hidden caches · trip{" "}
+          {Math.round(GATHER_TRIP_MS / 1000)}s
+        </p>
+      )}
     </div>
   );
 }

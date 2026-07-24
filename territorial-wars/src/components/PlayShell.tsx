@@ -4,56 +4,16 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { GameMap } from "@/components/GameMap";
 import { HouseSprite, VillagerSprite } from "@/components/sprites";
-import type { Player, Sector, SectorEconomy } from "@/lib/gameTypes";
-import { COSTS, RESOURCE_TICK_MS } from "@/lib/gameTypes";
-import { pointInRing } from "@/lib/geo";
-
-type PublicPlayer = {
-  id: string;
-  name: string;
-  villagers: number;
-  housesPlaced: number;
-  houseSlots: number;
-  gold: number;
-  digBonus: number;
-  activeSectorId: string | null;
-  isBot?: boolean;
-};
-
-type Snapshot = {
-  sectors: Sector[];
-  economies: Record<string, SectorEconomy>;
-  players: PublicPlayer[];
-  me: Player | null;
-  serverNow: number;
-  costs?: typeof COSTS;
-};
-
-function sectorCenter(sector: Sector): { lat: number; lng: number } {
-  const ring = sector.ring.slice(0, -1);
-  const lng = ring.reduce((s, p) => s + p[0], 0) / Math.max(1, ring.length);
-  const lat = ring.reduce((s, p) => s + p[1], 0) / Math.max(1, ring.length);
-  return { lat, lng };
-}
-
-function goldPerTick(me: Player | null, controlling: boolean): number {
-  if (!me?.activeSectorId) return 0;
-  return me.villagers + me.digBonus + (controlling ? 1 : 0);
-}
+import type { GameSnapshot, BuildingType } from "@/lib/gameTypes";
+import { buildingBonus } from "@/lib/gameTypes";
 
 export function PlayShell() {
-  const [snap, setSnap] = useState<Snapshot | null>(null);
+  const [snap, setSnap] = useState<GameSnapshot | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(
-    null
-  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  const [tick, setTick] = useState(0);
   const [displayGold, setDisplayGold] = useState(0);
-
-  const costs = snap?.costs ?? COSTS;
 
   const load = useCallback(async () => {
     const invite =
@@ -62,140 +22,126 @@ export function PlayShell() {
         : null;
     const q = invite ? `?invite=${encodeURIComponent(invite)}` : "";
     const res = await fetch(`/api/game${q}`);
-    const data = (await res.json()) as Snapshot;
+    const data = (await res.json()) as GameSnapshot;
     setSnap(data);
     if (data.me) setDisplayGold(data.me.gold);
-    if (!selectedId && data.sectors[0]) {
-      setSelectedId(data.me?.activeSectorId || data.sectors[0].id);
+    if (!selectedId) {
+      setSelectedId(
+        data.me?.homeSectorId || data.sectors[0]?.id || null
+      );
     }
   }, [selectedId]);
 
   useEffect(() => {
     void load();
-    const id = window.setInterval(() => void load(), 3000);
+    const id = window.setInterval(() => void load(), 4000);
     return () => window.clearInterval(id);
   }, [load]);
 
+  // Smooth gold preview between syncs
   useEffect(() => {
-    const id = window.setInterval(() => setTick((t) => t + 1), RESOURCE_TICK_MS);
+    if (!snap?.me?.homeSectorId) {
+      if (snap?.me) setDisplayGold(snap.me.gold);
+      return;
+    }
+    const me = snap.me;
+    const tripMs = snap.gatherTripMs;
+    const easyYield = snap.spots
+      .filter((s) => s.sectorId === me.homeSectorId && s.kind === "easy")
+      .reduce((n, s) => n + s.yield, 0);
+    const perTrip =
+      me.villagers * (Math.max(1, easyYield) + buildingBonus(me.buildings));
+
+    const tick = () => {
+      const elapsed = Math.max(0, Date.now() - me.lastGatherAt);
+      const trips = Math.floor(elapsed / tripMs);
+      setDisplayGold(me.gold + trips * perTrip);
+    };
+    tick();
+    const id = window.setInterval(tick, 250);
     return () => window.clearInterval(id);
-  }, []);
+  }, [snap]);
 
   const me = snap?.me ?? null;
   const selected = snap?.sectors.find((s) => s.id === selectedId) ?? null;
+  const claimed = Boolean(me?.homeSectorId);
+  const homeName =
+    snap?.sectors.find((s) => s.id === me?.homeSectorId)?.name ?? null;
 
-  const controllingSelected =
-    Boolean(me && selected && snap?.economies[selected.id]?.controllerId === me.id);
-
-  // Live gold preview while digging
-  useEffect(() => {
-    if (!me?.activeSectorId) {
-      if (me) setDisplayGold(me.gold);
-      return;
+  const sectorOwner = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of snap?.players ?? []) {
+      if (p.homeSectorId) map.set(p.homeSectorId, p.name);
     }
-    const rate = goldPerTick(me, snap?.economies[me.activeSectorId]?.controllerId === me.id);
-    setDisplayGold(me.gold);
-    // tick bumps preview between server syncs
-    void tick;
-    const elapsed = Math.max(0, Date.now() - (snap?.serverNow ?? Date.now()));
-    const ticks = Math.floor(elapsed / RESOURCE_TICK_MS);
-    setDisplayGold(me.gold + ticks * rate);
-  }, [me, snap, tick]);
-
-  const presence = useMemo(() => {
-    if (!snap) return [];
-    const bySector: Record<string, { villagers: number; houses: number }> = {};
-    for (const p of snap.players) {
-      if (!p.activeSectorId) continue;
-      const cur = bySector[p.activeSectorId] ?? { villagers: 0, houses: 0 };
-      cur.villagers += p.villagers;
-      cur.houses += p.housesPlaced;
-      bySector[p.activeSectorId] = cur;
-    }
-    return Object.entries(bySector).map(([sectorId, v]) => ({
-      sectorId,
-      villagers: v.villagers,
-      houses: v.houses,
-    }));
+    return map;
   }, [snap]);
 
-  const leaderboard = useMemo(() => {
-    if (!snap) return [];
-    return [...snap.players]
-      .filter((p) => !p.isBot || p.gold > 0)
-      .sort((a, b) => b.gold - a.gold)
-      .slice(0, 6);
-  }, [snap]);
-
-  const missions = useMemo(() => {
+  const missionList = useMemo(() => {
     if (!me) return [];
+    const hiddenFound = me.discoveredSpotIds.filter((id) =>
+      snap?.spots.some((s) => s.id === id && s.kind === "hidden")
+    ).length;
     return [
       {
-        id: "station",
-        label: "Station a villager in a sector",
-        done: Boolean(me.activeSectorId),
+        id: "claim",
+        label: "Claim one sector forever",
+        done: Boolean(me.homeSectorId),
       },
       {
-        id: "house",
-        label: `Build a house (${costs.house} gold)`,
-        done: me.housesPlaced >= 1,
+        id: "watch",
+        label: "Earn gold from automatic gathering",
+        done: me.gold > 0,
       },
       {
-        id: "recruit",
-        label: `Recruit a 2nd villager (${costs.villager} gold)`,
-        done: me.villagers >= 2,
+        id: "explore",
+        label: "Zoom in and discover a hidden cache",
+        done: hiddenFound >= 1,
       },
       {
-        id: "control",
-        label: "Control a sector (most villagers there)",
-        done: Object.values(snap?.economies ?? {}).some(
-          (e) => e.controllerId === me.id
-        ),
-      },
-      {
-        id: "rich",
-        label: "Bank 100 gold",
-        done: me.gold >= 100,
+        id: "build",
+        label: "Build your first structure",
+        done: me.buildings.length >= 1,
       },
     ];
-  }, [me, snap, costs]);
-
-  const insideSelected =
-    selected && location ? pointInRing(location, selected.ring) : false;
-
-  const digRate = goldPerTick(
-    me,
-    Boolean(me?.activeSectorId && snap?.economies[me.activeSectorId]?.controllerId === me.id)
-  );
+  }, [me, snap]);
 
   const showToast = (msg: string) => {
     setToast(msg);
     window.setTimeout(() => setToast(null), 2800);
   };
 
-  const act = async (action: string) => {
+  const act = async (
+    action: string,
+    extra: Record<string, unknown> = {}
+  ) => {
     setBusy(true);
     setError(null);
     try {
       const res = await fetch("/api/game", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action,
-          sectorId: selectedId,
-          lat: location?.lat,
-          lng: location?.lng,
-        }),
+        body: JSON.stringify({ action, sectorId: selectedId, ...extra }),
       });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Action failed");
       } else {
-        await load();
-        if (action === "join_sector") showToast("Villagers stationed — they dig!");
-        if (action === "build_house") showToast("House built — can shelter more villagers");
-        if (action === "recruit_villager") showToast("New villager joined the dig");
-        if (action === "upgrade_dig") showToast("Better tools — +1 gold per tick");
+        setSnap(data as GameSnapshot);
+        if (data.me) setDisplayGold(data.me.gold);
+        if (action === "claim_sector") {
+          showToast("Sector claimed — house + villager ready");
+        }
+        if (action === "discover_spot") {
+          showToast(
+            data.bonus
+              ? `Hidden cache found! +${data.bonus} gold`
+              : "Hidden cache found!"
+          );
+        }
+        if (action === "collect_hidden") {
+          showToast(data.gained ? `Collected +${data.gained} gold` : "Collected");
+        }
+        if (action === "build") showToast("Building raised");
       }
     } catch {
       setError("Network error");
@@ -204,46 +150,54 @@ export function PlayShell() {
     }
   };
 
-  const jumpIntoSector = (sector: Sector) => {
-    setSelectedId(sector.id);
-    setLocation(sectorCenter(sector));
-    setError(null);
-  };
-
   const inviteLink =
     typeof window !== "undefined" && me?.inviteCode
       ? `${window.location.origin}/play?invite=${me.inviteCode}`
       : "";
 
-  const controllerName = (sectorId: string) => {
-    const cid = snap?.economies[sectorId]?.controllerId;
-    if (!cid) return "Contested / empty";
-    return snap?.players.find((p) => p.id === cid)?.name ?? "Unknown";
-  };
+  const perTrip =
+    me?.homeSectorId && snap
+      ? me.villagers *
+        (Math.max(
+          1,
+          snap.spots
+            .filter(
+              (s) => s.sectorId === me.homeSectorId && s.kind === "easy"
+            )
+            .reduce((n, s) => n + s.yield, 0)
+        ) +
+          buildingBonus(me.buildings))
+      : 0;
 
   return (
     <main className="flex min-h-[100dvh] flex-col bg-[var(--surface)]">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] px-4 py-3 sm:px-6">
         <div>
-          <Link href="/" className="font-display text-sm text-[var(--ink)] sm:text-base">
+          <Link
+            href="/"
+            className="font-display text-sm text-[var(--ink)] sm:text-base"
+          >
             Islamabad Territorial Wars
           </Link>
           <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--ink-faint)]">
-            Dig · build · control
+            Claim · gather · build
           </p>
         </div>
         <div className="flex items-center gap-2">
           <div className="rounded-sm border border-[var(--sand)]/50 bg-[var(--wash)] px-3 py-1.5 font-mono text-xs text-[var(--sand)]">
             {Math.floor(displayGold)} gold
-            {me?.activeSectorId ? (
-              <span className="text-[var(--ink-faint)]"> · +{digRate}/tick</span>
+            {claimed ? (
+              <span className="text-[var(--ink-faint)]">
+                {" "}
+                · +{perTrip}/trip
+              </span>
             ) : null}
           </div>
           <Link
             href="/edit"
             className="rounded-sm border border-[var(--line)] px-3 py-1.5 text-xs text-[var(--ink-muted)]"
           >
-            Edit map
+            Draw sectors
           </Link>
           <span className="hidden rounded-sm border border-[var(--line)] px-3 py-1.5 font-mono text-[10px] text-[var(--ink-faint)] sm:inline">
             {me?.name ?? "…"}
@@ -260,188 +214,139 @@ export function PlayShell() {
       <div className="grid min-h-0 flex-1 lg:grid-cols-[1fr_24rem]">
         <GameMap
           sectors={snap?.sectors ?? []}
-          economies={snap?.economies ?? {}}
-          presence={presence}
+          spots={snap?.spots ?? []}
+          me={me}
           selectedId={selectedId}
-          myLocation={location}
           onSelect={setSelectedId}
-          onMapPlaceLocation={(lat, lng) => {
-            setLocation({ lat, lng });
-            setError(null);
-          }}
+          onDiscoverSpot={(spotId) => void act("discover_spot", { spotId })}
+          onCollectHidden={(spotId) => void act("collect_hidden", { spotId })}
           className="min-h-[45vh] lg:min-h-0 lg:h-full"
         />
 
         <aside className="max-h-[55vh] space-y-4 overflow-y-auto border-t border-[var(--line)] bg-[var(--surface-raised)] p-4 lg:max-h-none lg:border-l lg:border-t-0 lg:p-5">
-          {/* Missions */}
           <section>
             <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--ink-muted)]">
               Missions
             </h2>
             <ul className="mt-2 space-y-1.5">
-              {missions.map((m) => (
+              {missionList.map((m) => (
                 <li
                   key={m.id}
                   className={`flex items-start gap-2 text-xs ${
-                    m.done ? "text-[var(--field-bright)]" : "text-[var(--ink-muted)]"
+                    m.done
+                      ? "text-[var(--field-bright)]"
+                      : "text-[var(--ink-muted)]"
                   }`}
                 >
-                  <span className="mt-0.5 font-mono">{m.done ? "[x]" : "[ ]"}</span>
+                  <span className="mt-0.5 font-mono">
+                    {m.done ? "[x]" : "[ ]"}
+                  </span>
                   <span>{m.label}</span>
                 </li>
               ))}
             </ul>
           </section>
 
-          {/* Camp */}
           <section className="border-t border-[var(--line)] pt-4">
             <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--ink-muted)]">
-              Your camp
+              Your village
             </h2>
             <div className="mt-2 flex items-end gap-2">
-              <VillagerSprite digging={Boolean(me?.activeSectorId)} className="h-12 w-12" />
+              <VillagerSprite walking={claimed} className="h-12 w-12" />
               <HouseSprite className="h-11 w-12" />
             </div>
             {me && (
               <ul className="mt-2 space-y-1 text-sm text-[var(--ink)]">
                 <li>
+                  Home{" "}
+                  <strong>{homeName ?? "— pick a sector"}</strong>
+                </li>
+                <li>
                   Villagers <strong>{me.villagers}</strong>
-                  <span className="text-[var(--ink-faint)]">
-                    {" "}
-                    / {me.housesPlaced + 1} beds
-                  </span>
                 </li>
                 <li>
-                  Houses{" "}
-                  <strong>
-                    {me.housesPlaced}/{me.houseSlots}
-                  </strong>
-                </li>
-                <li>
-                  Tools <strong>+{me.digBonus}</strong>
+                  Buildings <strong>{me.buildings.length}</strong>
                 </li>
               </ul>
             )}
           </section>
 
-          {/* Quick jump */}
+          {!claimed && selected && (
+            <section className="space-y-2 border-t border-[var(--line)] pt-4">
+              <p className="font-display text-2xl text-[var(--ink)]">
+                {selected.name}
+              </p>
+              <p className="text-xs text-[var(--ink-muted)]">
+                {sectorOwner.has(selected.id)
+                  ? `Claimed by ${sectorOwner.get(selected.id)}`
+                  : "Open — claim it forever. You start with one house and one villager."}
+              </p>
+              <button
+                type="button"
+                disabled={busy || !me || sectorOwner.has(selected.id)}
+                onClick={() => void act("claim_sector")}
+                className="w-full rounded-sm bg-[var(--signal)] px-3 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
+              >
+                Claim {selected.name}
+              </button>
+            </section>
+          )}
+
+          {claimed && (
+            <section className="space-y-2 border-t border-[var(--line)] pt-4">
+              <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--ink-muted)]">
+                Build
+              </h2>
+              <p className="text-[11px] leading-relaxed text-[var(--ink-faint)]">
+                Villagers gather on their own. Spend gold on buildings to boost
+                each trip. Zoom into {homeName} to find hidden caches.
+              </p>
+              {(snap?.buildingCatalog ?? []).map((b) => {
+                const owned = me?.buildings.some((x) => x.type === b.type);
+                return (
+                  <button
+                    key={b.type}
+                    type="button"
+                    disabled={busy || !me || owned}
+                    onClick={() =>
+                      void act("build", {
+                        buildingType: b.type as BuildingType,
+                      })
+                    }
+                    className="flex w-full items-center justify-between rounded-sm border border-[var(--sand)]/50 px-3 py-2 text-left text-sm text-[var(--sand)] disabled:opacity-40"
+                  >
+                    <span>
+                      {b.name}
+                      <span className="mt-0.5 block text-[10px] text-[var(--ink-faint)]">
+                        {owned ? "Built" : b.blurb}
+                      </span>
+                    </span>
+                    <span className="font-mono text-xs">{b.cost}g</span>
+                  </button>
+                );
+              })}
+            </section>
+          )}
+
           {(snap?.sectors.length ?? 0) > 0 && (
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 border-t border-[var(--line)] pt-4">
               {snap!.sectors.map((s) => (
                 <button
                   key={s.id}
                   type="button"
-                  onClick={() => jumpIntoSector(s)}
-                  className="rounded-sm border border-[var(--line)] px-2.5 py-1.5 text-[11px] text-[var(--ink-muted)] hover:border-[var(--sand)] hover:text-[var(--sand)]"
+                  onClick={() => setSelectedId(s.id)}
+                  className={`rounded-sm border px-2.5 py-1.5 text-[11px] ${
+                    s.id === selectedId
+                      ? "border-[var(--sand)] text-[var(--sand)]"
+                      : "border-[var(--line)] text-[var(--ink-muted)]"
+                  }`}
                 >
-                  Go to {s.name}
+                  {s.name}
+                  {s.id === me?.homeSectorId ? " ★" : ""}
                 </button>
               ))}
             </div>
           )}
-
-          {/* Selected sector */}
-          {selected ? (
-            <section className="space-y-2 border-t border-[var(--line)] pt-4">
-              <p className="font-display text-2xl text-[var(--ink)]">{selected.name}</p>
-              <p className="text-xs text-[var(--ink-muted)]">
-                Controlled by{" "}
-                <span className="text-[var(--sand)]">{controllerName(selected.id)}</span>
-                {controllingSelected ? " (you)" : ""}
-              </p>
-              <p className="text-xs text-[var(--ink-faint)]">
-                Dig strength here: {snap?.economies[selected.id]?.dugTotal ?? 0}
-              </p>
-              <p className="text-xs text-[var(--ink-faint)]">
-                {location
-                  ? insideSelected
-                    ? "Pin is inside — you can station here."
-                    : "Pin is outside — tap inside the sector."
-                  : "Tap the map inside a sector to drop your pin."}
-              </p>
-              <button
-                type="button"
-                disabled={busy || !me}
-                onClick={() => void act("join_sector")}
-                className="w-full rounded-sm bg-[var(--signal)] px-3 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
-              >
-                {me?.activeSectorId === selected.id
-                  ? "Already stationed here"
-                  : "Station villagers"}
-              </button>
-              {me?.activeSectorId === selected.id && (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void act("leave_sector")}
-                  className="w-full rounded-sm border border-[var(--line)] px-3 py-2 text-xs text-[var(--ink-muted)]"
-                >
-                  Leave sector
-                </button>
-              )}
-            </section>
-          ) : null}
-
-          {/* Shop */}
-          <section className="space-y-2 border-t border-[var(--line)] pt-4">
-            <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--ink-muted)]">
-              Spend gold
-            </h2>
-            <p className="text-[11px] leading-relaxed text-[var(--ink-faint)]">
-              Dig while stationed. Control a sector (most villagers) for +1 gold
-              per tick. Houses shelter extra villagers.
-            </p>
-            <button
-              type="button"
-              disabled={busy || !me}
-              onClick={() => void act("build_house")}
-              className="flex w-full items-center justify-between rounded-sm border border-[var(--sand)]/60 px-3 py-2 text-left text-sm text-[var(--sand)] disabled:opacity-40"
-            >
-              <span>Build house</span>
-              <span className="font-mono text-xs">{costs.house}g</span>
-            </button>
-            <button
-              type="button"
-              disabled={busy || !me}
-              onClick={() => void act("recruit_villager")}
-              className="flex w-full items-center justify-between rounded-sm border border-[var(--field-bright)]/50 px-3 py-2 text-left text-sm text-[var(--field-bright)] disabled:opacity-40"
-            >
-              <span>Recruit villager</span>
-              <span className="font-mono text-xs">{costs.villager}g</span>
-            </button>
-            <button
-              type="button"
-              disabled={busy || !me}
-              onClick={() => void act("upgrade_dig")}
-              className="flex w-full items-center justify-between rounded-sm border border-[var(--line)] px-3 py-2 text-left text-sm text-[var(--ink-muted)] disabled:opacity-40"
-            >
-              <span>Upgrade tools (+1/tick)</span>
-              <span className="font-mono text-xs">{costs.digBonus}g</span>
-            </button>
-          </section>
-
-          {/* Leaderboard */}
-          <section className="border-t border-[var(--line)] pt-4">
-            <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--ink-muted)]">
-              Strongest settlers
-            </h2>
-            <ol className="mt-2 space-y-1">
-              {leaderboard.map((p, i) => (
-                <li
-                  key={p.id}
-                  className={`flex justify-between text-xs ${
-                    p.id === me?.id ? "text-[var(--sand)]" : "text-[var(--ink-muted)]"
-                  }`}
-                >
-                  <span>
-                    {i + 1}. {p.name}
-                    {p.isBot ? " (rival)" : ""}
-                  </span>
-                  <span className="font-mono">{p.gold}g</span>
-                </li>
-              ))}
-            </ol>
-          </section>
 
           {me && (
             <section className="border-t border-[var(--line)] pt-4">
@@ -449,7 +354,7 @@ export function PlayShell() {
                 Invite friend
               </h3>
               <p className="mt-1 text-[11px] text-[var(--ink-faint)]">
-                They join → you get +1 villager, +1 house plot, +15 gold.
+                When they join with your link, you get +1 villager.
               </p>
               <button
                 type="button"
