@@ -18,6 +18,7 @@ import {
   GEM_META,
   ROAM_METERS_TO_SPAWN,
   ROAM_MIN_EXPLORE_MS,
+  SPAWN_COOLDOWN_MS,
 } from "@/lib/gameTypes";
 import { pointInRing } from "@/lib/geo";
 import { distMeters, lerpLatLng } from "@/lib/mapMath";
@@ -168,7 +169,7 @@ export function GameMap({
         setExploreMs(0);
         lastExploreTick.current = Date.now();
         // Match server cooldown so the next find takes real roaming again
-        localCooldownUntil.current = Date.now() + 120_000;
+        localCooldownUntil.current = Date.now() + SPAWN_COOLDOWN_MS;
       } finally {
         spawning.current = false;
       }
