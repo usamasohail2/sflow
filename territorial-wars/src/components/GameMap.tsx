@@ -414,12 +414,12 @@ export function GameMap({
           {zoom < EXPLORE_ZOOM ? (
             <p className="rounded-sm bg-[var(--surface)]/90 px-3 py-2 text-center font-mono text-[10px] text-[var(--ink-muted)]">
               Zoom fully into {homeSector?.name ?? "your sector"} and roam to
-              uncover diamonds & gems · trip {Math.round(GATHER_TRIP_MS / 1000)}s
+              uncover gems · trip {Math.round(GATHER_TRIP_MS / 1000)}s
             </p>
           ) : exploring ? (
             <div className="rounded-sm bg-[var(--surface)]/90 px-3 py-2">
               <p className="text-center font-mono text-[10px] text-[var(--sand)]">
-                Exploring · keep roaming for a while — gems take time to appear
+                Exploring · pan around your sector to uncover gems
               </p>
               <div className="mx-auto mt-1.5 h-1.5 max-w-xs overflow-hidden rounded-full bg-[var(--wash)]">
                 <div
@@ -428,7 +428,7 @@ export function GameMap({
                 />
               </div>
               <p className="mt-1 text-center font-mono text-[9px] text-[var(--ink-faint)]">
-                Needs distance + ~1 min of roaming
+                Keep moving — finds need a short roam
               </p>
             </div>
           ) : (

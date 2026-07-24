@@ -55,17 +55,18 @@ function emptyState(): GameState {
 }
 
 function normalizeSpot(s: ResourceSpot): ResourceSpot {
+  // Easy house nodes are always amber ore — never fancy starter gems
   const gem: GemType =
-    s.gem && s.gem in GEM_META
-      ? s.gem
-      : s.kind === "easy"
-        ? "amber"
+    s.kind === "easy"
+      ? "amber"
+      : s.gem && s.gem in GEM_META
+        ? s.gem
         : "emerald";
   return {
     ...s,
     gem,
-    yield: s.yield || GEM_META[gem].yield,
-    refillMs: s.refillMs ?? GEM_META[gem].refillMs,
+    yield: s.kind === "easy" ? GEM_META.amber.yield : s.yield || GEM_META[gem].yield,
+    refillMs: s.kind === "easy" ? 0 : (s.refillMs ?? GEM_META[gem].refillMs),
   };
 }
 
