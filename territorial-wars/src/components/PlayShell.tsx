@@ -2,37 +2,26 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { SectorMap } from "@/components/SectorMap";
+import { islamabadSectors } from "@/lib/sectors";
 
-const SECTORS = [
-  "F-6",
-  "F-7",
-  "F-8",
-  "F-10",
-  "G-6",
-  "G-9",
-  "Blue Area",
-  "E-11",
-  "I-8",
-  "Bahria",
-] as const;
+type Owner = "you" | "rival" | "neutral";
 
 type Claim = {
-  sector: (typeof SECTORS)[number];
-  owner: "you" | "rival" | "neutral";
+  sector: string;
+  owner: Owner;
 };
 
 function initialClaims(): Claim[] {
-  return SECTORS.map((sector, i) => ({
-    sector,
-    owner: i % 5 === 0 ? "rival" : i % 3 === 0 ? "you" : "neutral",
+  return islamabadSectors.features.map((f, i) => ({
+    sector: f.properties.id,
+    owner: (i % 7 === 0 ? "rival" : i % 5 === 0 ? "you" : "neutral") as Owner,
   }));
 }
 
 export function PlayShell() {
   const [claims, setClaims] = useState<Claim[]>(initialClaims);
-  const [selected, setSelected] = useState<(typeof SECTORS)[number] | null>(
-    null
-  );
+  const [selected, setSelected] = useState<string | null>(null);
 
   const selectedClaim = useMemo(
     () => claims.find((c) => c.sector === selected) ?? null,
@@ -51,8 +40,8 @@ export function PlayShell() {
   };
 
   return (
-    <main className="war-grid relative min-h-[100dvh]">
-      <header className="relative z-10 flex items-center justify-between border-b border-[var(--line)] px-4 py-3 sm:px-6">
+    <main className="flex min-h-[100dvh] flex-col bg-[var(--surface)]">
+      <header className="relative z-20 flex items-center justify-between border-b border-[var(--line)] bg-[var(--surface-raised)]/90 px-4 py-3 backdrop-blur-sm sm:px-6">
         <div>
           <Link
             href="/"
@@ -61,51 +50,23 @@ export function PlayShell() {
             Islamabad Territorial Wars
           </Link>
           <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--ink-faint)]">
-            Live board · prototype
+            Sector walls · E–I grid
           </p>
         </div>
         <p className="font-mono text-[11px] text-[var(--sand)]">
-          Held <span className="text-[var(--ink)]">{yourCount}</span>/{SECTORS.length}
+          Held <span className="text-[var(--ink)]">{yourCount}</span>/
+          {claims.length}
         </p>
       </header>
 
-      <div className="relative z-10 mx-auto grid max-w-5xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[1.4fr_0.9fr]">
-        <section>
-          <h2 className="font-mono text-[11px] uppercase tracking-[0.24em] text-[var(--ink-muted)]">
-            Sectors
-          </h2>
-          <ul className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {claims.map((claim) => {
-              const active = selected === claim.sector;
-              const tone =
-                claim.owner === "you"
-                  ? "border-[var(--field-bright)] bg-[var(--field)]/25 text-[var(--field-bright)]"
-                  : claim.owner === "rival"
-                    ? "border-[var(--signal)]/60 bg-[var(--signal)]/15 text-[var(--signal-bright)]"
-                    : "border-[var(--line-strong)] bg-[var(--wash)]/40 text-[var(--ink-muted)]";
-              return (
-                <li key={claim.sector}>
-                  <button
-                    type="button"
-                    onClick={() => setSelected(claim.sector)}
-                    className={`w-full rounded-sm border px-3 py-4 text-left transition ${tone} ${
-                      active ? "ring-2 ring-[var(--sand)]" : "hover:brightness-110"
-                    }`}
-                  >
-                    <span className="block font-display text-lg tracking-tight">
-                      {claim.sector}
-                    </span>
-                    <span className="mt-1 block font-mono text-[10px] uppercase tracking-[0.18em]">
-                      {claim.owner}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
+      <div className="relative grid min-h-0 flex-1 lg:grid-cols-[1fr_20rem]">
+        <SectorMap
+          selectedId={selected}
+          onSelect={setSelected}
+          className="min-h-[55vh] w-full lg:min-h-0 lg:h-full"
+        />
 
-        <aside className="rounded-sm border border-[var(--line)] bg-[var(--surface-raised)]/80 p-5 backdrop-blur-sm">
+        <aside className="border-t border-[var(--line)] bg-[var(--surface-raised)] p-5 lg:border-l lg:border-t-0">
           <h2 className="font-mono text-[11px] uppercase tracking-[0.24em] text-[var(--ink-muted)]">
             Command
           </h2>
@@ -118,6 +79,10 @@ export function PlayShell() {
                 Status:{" "}
                 <span className="text-[var(--ink)]">{selectedClaim.owner}</span>
               </p>
+              <p className="mt-3 text-sm leading-relaxed text-[var(--ink-muted)]">
+                Each sector is walled on all four edges. Tap another sector on
+                the map to inspect its boundary.
+              </p>
               <button
                 type="button"
                 onClick={claimSelected}
@@ -128,10 +93,28 @@ export function PlayShell() {
             </>
           ) : (
             <p className="mt-4 text-sm leading-relaxed text-[var(--ink-muted)]">
-              Select a sector on the board to contest it. Map mode and multiplayer
-              come next.
+              Tap any walled sector on the Islamabad grid. Walls mark every
+              sector boundary individually (E–I × 5–12).
             </p>
           )}
+
+          <ul className="mt-8 space-y-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--ink-faint)]">
+            <li>
+              <span className="inline-block h-2 w-2 bg-[#c4b089]" /> F row
+            </li>
+            <li>
+              <span className="inline-block h-2 w-2 bg-[#e23b2f]" /> G row
+            </li>
+            <li>
+              <span className="inline-block h-2 w-2 bg-[#5a9a63]" /> E row
+            </li>
+            <li>
+              <span className="inline-block h-2 w-2 bg-[#6a8caf]" /> H row
+            </li>
+            <li>
+              <span className="inline-block h-2 w-2 bg-[#b07d4f]" /> I row
+            </li>
+          </ul>
         </aside>
       </div>
     </main>
