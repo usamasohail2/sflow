@@ -44,9 +44,11 @@ export const GEM_META: Record<
 /** Fully zoomed-in explore threshold (Mapbox zoom) */
 export const EXPLORE_ZOOM = 15.6;
 /** How far (m) you must roam while zoomed before a gem can appear */
-export const ROAM_METERS_TO_SPAWN = 90;
+export const ROAM_METERS_TO_SPAWN = 480;
+/** Must stay exploring (zoomed in, in sector) this long before a find */
+export const ROAM_MIN_EXPLORE_MS = 60_000;
 /** Min time between roam spawns */
-export const SPAWN_COOLDOWN_MS = 22_000;
+export const SPAWN_COOLDOWN_MS = 120_000;
 /** Cap finds spawned in a sector */
 export const MAX_ROAM_FINDS = 10;
 

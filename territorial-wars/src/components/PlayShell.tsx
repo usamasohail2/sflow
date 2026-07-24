@@ -159,7 +159,8 @@ export function PlayShell() {
     bearing: number;
     zoom: number;
     roamMeters: number;
-  }) => {
+    exploreMs: number;
+  }): Promise<boolean> => {
     try {
       const res = await fetch("/api/game", {
         method: "POST",
@@ -169,7 +170,7 @@ export function PlayShell() {
       const data = await res.json();
       if (!res.ok) {
         // Soft fail while roaming — don't spam the error panel
-        return;
+        return false;
       }
       setSnap(data as GameSnapshot);
       if (data.me) setDisplayGold(data.me.gold);
@@ -179,8 +180,9 @@ export function PlayShell() {
           ? `${gem[0].toUpperCase()}${gem.slice(1)} sparkles ahead! +${data.bonus}g`
           : "A gem appeared ahead!"
       );
+      return true;
     } catch {
-      /* ignore roam race */
+      return false;
     }
   };
 
@@ -252,7 +254,7 @@ export function PlayShell() {
           me={me}
           selectedId={selectedId}
           onSelect={setSelectedId}
-          onSpawnFind={(p) => spawnFind(p)}
+          onSpawnFind={(p) => spawnFind(p)} // returns success boolean
           onCollectHidden={(spotId) => void act("collect_hidden", { spotId })}
           className="min-h-[45vh] lg:min-h-0 lg:h-full"
         />

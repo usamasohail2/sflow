@@ -17,6 +17,7 @@ import {
   GATHER_TRIP_MS,
   GEM_META,
   ROAM_METERS_TO_SPAWN,
+  ROAM_MIN_EXPLORE_MS,
 } from "@/lib/gameTypes";
 import { pointInRing } from "@/lib/geo";
 import { distMeters, lerpLatLng } from "@/lib/mapMath";
@@ -38,7 +39,8 @@ type Props = {
     bearing: number;
     zoom: number;
     roamMeters: number;
-  }) => void | Promise<void>;
+    exploreMs: number;
+  }) => boolean | Promise<boolean>;
   onCollectHidden?: (spotId: string) => void;
   className?: string;
 };
@@ -70,11 +72,15 @@ export function GameMap({
   const [zoom, setZoom] = useState(12.2);
   const [now, setNow] = useState(() => Date.now());
   const [roamMeters, setRoamMeters] = useState(0);
+  const [exploreMs, setExploreMs] = useState(0);
   const [exploring, setExploring] = useState(false);
   const [spawnFlash, setSpawnFlash] = useState<string | null>(null);
   const lastCenter = useRef<LatLng | null>(null);
   const spawning = useRef(false);
   const roamAcc = useRef(0);
+  const exploreAcc = useRef(0);
+  const lastExploreTick = useRef<number | null>(null);
+  const localCooldownUntil = useRef(0);
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 80);
@@ -126,24 +132,43 @@ export function GameMap({
       : null;
 
   const trySpawn = useCallback(
-    async (center: LatLng, z: number, b: number, meters: number) => {
+    async (
+      center: LatLng,
+      z: number,
+      b: number,
+      meters: number,
+      explored: number
+    ) => {
       if (!onSpawnFind || !homeSector || spawning.current) return;
+      if (Date.now() < localCooldownUntil.current) return;
       if (z < EXPLORE_ZOOM) return;
       if (!pointInRing(center, homeSector.ring)) return;
       if (meters < ROAM_METERS_TO_SPAWN) return;
+      if (explored < ROAM_MIN_EXPLORE_MS) return;
       spawning.current = true;
       try {
-        await onSpawnFind({
+        const ok = await onSpawnFind({
           lat: center.lat,
           lng: center.lng,
           bearing: b,
           zoom: z,
           roamMeters: meters,
+          exploreMs: explored,
         });
+        if (!ok) {
+          // Brief pause so we don't hammer the API every pan frame
+          localCooldownUntil.current = Date.now() + 4000;
+          return;
+        }
         setSpawnFlash("A gem appeared ahead!");
         window.setTimeout(() => setSpawnFlash(null), 2600);
         roamAcc.current = 0;
+        exploreAcc.current = 0;
         setRoamMeters(0);
+        setExploreMs(0);
+        lastExploreTick.current = Date.now();
+        // Match server cooldown so the next find takes real roaming again
+        localCooldownUntil.current = Date.now() + 120_000;
       } finally {
         spawning.current = false;
       }
@@ -174,22 +199,39 @@ export function GameMap({
       setExploring(deep);
 
       if (!deep || !me?.homeSectorId) {
-        lastCenter.current = deep ? center : null;
+        lastCenter.current = null;
+        lastExploreTick.current = null;
         return;
       }
 
-      if (lastCenter.current) {
-        const d = distMeters(lastCenter.current, center);
-        // Ignore tiny jitter / huge jumps (teleport)
-        if (d > 0.8 && d < 120) {
-          roamAcc.current += d;
-          setRoamMeters(roamAcc.current);
+      const t = Date.now();
+      if (lastExploreTick.current != null) {
+        const dt = Math.min(2000, t - lastExploreTick.current);
+        // Only count time while actually moving the map a bit
+        if (lastCenter.current) {
+          const step = distMeters(lastCenter.current, center);
+          if (step > 2.5 && step < 90) {
+            exploreAcc.current += dt;
+            roamAcc.current += step;
+            setExploreMs(exploreAcc.current);
+            setRoamMeters(roamAcc.current);
+          }
         }
       }
+      lastExploreTick.current = t;
       lastCenter.current = center;
 
-      if (roamAcc.current >= ROAM_METERS_TO_SPAWN) {
-        void trySpawn(center, z, b, roamAcc.current);
+      if (
+        roamAcc.current >= ROAM_METERS_TO_SPAWN &&
+        exploreAcc.current >= ROAM_MIN_EXPLORE_MS
+      ) {
+        void trySpawn(
+          center,
+          z,
+          b,
+          roamAcc.current,
+          exploreAcc.current
+        );
       }
     },
     [homeSector, me, trySpawn]
@@ -206,6 +248,8 @@ export function GameMap({
   }
 
   const roamPct = Math.min(100, (roamMeters / ROAM_METERS_TO_SPAWN) * 100);
+  const timePct = Math.min(100, (exploreMs / ROAM_MIN_EXPLORE_MS) * 100);
+  const huntPct = Math.min(roamPct, timePct);
 
   return (
     <div className={`relative ${className}`}>
@@ -374,14 +418,17 @@ export function GameMap({
           ) : exploring ? (
             <div className="rounded-sm bg-[var(--surface)]/90 px-3 py-2">
               <p className="text-center font-mono text-[10px] text-[var(--sand)]">
-                Exploring · pan around — gems appear ahead of you
+                Exploring · keep roaming for a while — gems take time to appear
               </p>
               <div className="mx-auto mt-1.5 h-1.5 max-w-xs overflow-hidden rounded-full bg-[var(--wash)]">
                 <div
                   className="h-full bg-[var(--sand)] transition-[width] duration-150"
-                  style={{ width: `${roamPct}%` }}
+                  style={{ width: `${huntPct}%` }}
                 />
               </div>
+              <p className="mt-1 text-center font-mono text-[9px] text-[var(--ink-faint)]">
+                Needs distance + ~1 min of roaming
+              </p>
             </div>
           ) : (
             <p className="rounded-sm bg-[var(--surface)]/90 px-3 py-2 text-center font-mono text-[10px] text-[var(--ink-muted)]">

@@ -7,6 +7,7 @@ import {
   INVITE_VILLAGER_BONUS,
   MAX_ROAM_FINDS,
   ROAM_METERS_TO_SPAWN,
+  ROAM_MIN_EXPLORE_MS,
   SPAWN_COOLDOWN_MS,
   STARTING,
   buildingBonus,
@@ -343,6 +344,7 @@ export async function spawnRoamFind(
     bearing: number;
     zoom: number;
     roamMeters: number;
+    exploreMs: number;
   }
 ): Promise<
   | { ok: true; gem: GemType; bonus: number; spotId: string }
@@ -354,8 +356,11 @@ export async function spawnRoamFind(
   if (opts.zoom < EXPLORE_ZOOM) {
     return { error: "Zoom all the way in to explore" };
   }
-  if ((opts.roamMeters || 0) < ROAM_METERS_TO_SPAWN * 0.85) {
+  if ((opts.roamMeters || 0) < ROAM_METERS_TO_SPAWN) {
     return { error: "Keep roaming…" };
+  }
+  if ((opts.exploreMs || 0) < ROAM_MIN_EXPLORE_MS) {
+    return { error: "Explore a bit longer…" };
   }
 
   const sector = state.sectors.find((s) => s.id === me.homeSectorId);

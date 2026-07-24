@@ -102,6 +102,7 @@ export async function POST(req: Request) {
     bearing?: number;
     zoom?: number;
     roamMeters?: number;
+    exploreMs?: number;
   };
 
   await ensurePlayer(
@@ -136,6 +137,7 @@ export async function POST(req: Request) {
     const bearing = Number(body.bearing ?? 0);
     const zoom = Number(body.zoom ?? 0);
     const roamMeters = Number(body.roamMeters ?? 0);
+    const exploreMs = Number(body.exploreMs ?? 0);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
       return withGuestCookie(
         NextResponse.json({ error: "Bad location" }, { status: 400 }),
@@ -148,6 +150,7 @@ export async function POST(req: Request) {
       bearing,
       zoom,
       roamMeters,
+      exploreMs,
     });
   } else if (body.action === "discover_spot") {
     if (!body.spotId) {
