@@ -4,6 +4,7 @@ import Link from "next/link";
 // import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { GameMap } from "@/components/GameMap";
+import { HouseSprite, VillagerSprite } from "@/components/sprites";
 // import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 import type {
   Player,
@@ -104,6 +105,23 @@ export function PlayShell() {
     return out;
   }, [snap, tick]);
 
+  const presence = useMemo(() => {
+    if (!snap) return [];
+    const bySector: Record<string, { villagers: number; houses: number }> = {};
+    for (const p of snap.players) {
+      if (!p.activeSectorId) continue;
+      const cur = bySector[p.activeSectorId] ?? { villagers: 0, houses: 0 };
+      cur.villagers += p.villagers;
+      cur.houses += p.housesPlaced;
+      bySector[p.activeSectorId] = cur;
+    }
+    return Object.entries(bySector).map(([sectorId, v]) => ({
+      sectorId,
+      villagers: v.villagers,
+      houses: v.houses,
+    }));
+  }, [snap]);
+
   const selected = snap?.sectors.find((s) => s.id === selectedId) ?? null;
   const me = snap?.me ?? null;
 
@@ -199,6 +217,7 @@ export function PlayShell() {
         <GameMap
           sectors={snap?.sectors ?? []}
           economies={liveEconomies}
+          presence={presence}
           selectedId={selectedId}
           myLocation={location}
           onSelect={setSelectedId}
@@ -214,6 +233,10 @@ export function PlayShell() {
             <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--ink-muted)]">
               Your post
             </h2>
+            <div className="mt-3 flex items-end gap-2">
+              <VillagerSprite digging className="h-12 w-12" />
+              <HouseSprite className="h-11 w-12" />
+            </div>
             {me ? (
               <ul className="mt-2 space-y-1 text-sm text-[var(--ink)]">
                 <li>

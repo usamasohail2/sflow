@@ -120,3 +120,67 @@ body {
   );
   animation: war-scan 7s linear infinite;
 }
+
+/* —— Sprites —— */
+@keyframes villager-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes villager-dig {
+  0%,
+  100% {
+    transform: rotate(-18deg);
+  }
+  50% {
+    transform: rotate(28deg);
+  }
+}
+
+@keyframes house-smoke {
+  0% {
+    transform: translateY(0);
+    opacity: 0.55;
+  }
+  100% {
+    transform: translateY(-6px);
+    opacity: 0;
+  }
+}
+
+.villager-sprite {
+  display: block;
+  overflow: visible;
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.45));
+  animation: villager-bob 1.4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.villager-sprite.is-digging .villager-tool {
+  transform-origin: 0px 2px;
+  animation: villager-dig 0.5s ease-in-out infinite;
+}
+
+.house-sprite {
+  display: block;
+  overflow: visible;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.5));
+  pointer-events: none;
+}
+
+.house-sprite .house-smoke {
+  animation: house-smoke 2.4s ease-out infinite;
+}
+
+.sprite-stack {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  pointer-events: none;
+}
+
