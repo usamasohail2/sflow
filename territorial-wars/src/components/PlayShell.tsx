@@ -1,120 +1,342 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import { SectorMap } from "@/components/SectorMap";
-import { islamabadSectors } from "@/lib/sectors";
+import { useSession } from "next-auth/react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { GameMap } from "@/components/GameMap";
+import { GoogleSignInButton } from "@/components/GoogleSignInButton";
+import type {
+  Player,
+  Sector,
+  SectorEconomy,
+} from "@/lib/gameTypes";
+import { RESOURCE_TICK_MS } from "@/lib/gameTypes";
+import { pointInRing } from "@/lib/geo";
 
-type Owner = "you" | "rival" | "neutral";
-
-type Claim = {
-  sector: string;
-  owner: Owner;
+type PublicPlayer = {
+  id: string;
+  name: string;
+  villagers: number;
+  housesPlaced: number;
+  houseSlots: number;
+  activeSectorId: string | null;
 };
 
-function initialClaims(): Claim[] {
-  return islamabadSectors.features.map((f, i) => ({
-    sector: f.properties.id,
-    owner: (i % 7 === 0 ? "rival" : i % 5 === 0 ? "you" : "neutral") as Owner,
-  }));
-}
+type Snapshot = {
+  sectors: Sector[];
+  economies: Record<string, SectorEconomy>;
+  players: PublicPlayer[];
+  me: Player | null;
+  serverNow: number;
+  authConfigured?: boolean;
+};
 
 export function PlayShell() {
-  const [claims, setClaims] = useState<Claim[]>(initialClaims);
-  const [selected, setSelected] = useState<string | null>(null);
-
-  const selectedClaim = useMemo(
-    () => claims.find((c) => c.sector === selected) ?? null,
-    [claims, selected]
+  const { data: session, status } = useSession();
+  const [snap, setSnap] = useState<Snapshot | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(
+    null
   );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [inviteInput, setInviteInput] = useState("");
+  const [tick, setTick] = useState(0);
 
-  const yourCount = claims.filter((c) => c.owner === "you").length;
+  const load = useCallback(async () => {
+    const invite =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("invite")
+        : null;
+    const q = invite ? `?invite=${encodeURIComponent(invite)}` : "";
+    const res = await fetch(`/api/game${q}`);
+    const data = (await res.json()) as Snapshot;
+    setSnap(data);
+    if (!selectedId && data.me?.activeSectorId) {
+      setSelectedId(data.me.activeSectorId);
+    }
+  }, [selectedId]);
 
-  const claimSelected = () => {
-    if (!selected) return;
-    setClaims((prev) =>
-      prev.map((c) =>
-        c.sector === selected ? { ...c, owner: "you" as const } : c
-      )
+  useEffect(() => {
+    void load();
+    const id = window.setInterval(() => void load(), 4000);
+    return () => window.clearInterval(id);
+  }, [load, session?.user]);
+
+  // Client-side live resource preview between server polls
+  useEffect(() => {
+    const id = window.setInterval(() => setTick((t) => t + 1), RESOURCE_TICK_MS);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const liveEconomies = useMemo(() => {
+    if (!snap) return {};
+    const villagersBySector: Record<string, number> = {};
+    for (const p of snap.players) {
+      if (!p.activeSectorId) continue;
+      villagersBySector[p.activeSectorId] =
+        (villagersBySector[p.activeSectorId] ?? 0) + p.villagers;
+    }
+    const out: Record<string, SectorEconomy> = { ...snap.economies };
+    const now = Date.now();
+    for (const [sectorId, eco] of Object.entries(snap.economies)) {
+      const count = villagersBySector[sectorId] ?? 0;
+      if (count <= 0) {
+        out[sectorId] = eco;
+        continue;
+      }
+      const elapsed = Math.max(0, now - eco.lastTickAt);
+      const ticks = Math.floor(elapsed / RESOURCE_TICK_MS);
+      out[sectorId] = {
+        ...eco,
+        resources: eco.resources + ticks * count,
+      };
+    }
+    void tick;
+    return out;
+  }, [snap, tick]);
+
+  const selected = snap?.sectors.find((s) => s.id === selectedId) ?? null;
+  const me = snap?.me ?? null;
+
+  const insideSelected =
+    selected && location
+      ? pointInRing(location, selected.ring)
+      : false;
+
+  const useGps = () => {
+    if (!navigator.geolocation) {
+      setError("Geolocation not available — click the map to drop your pin.");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocation({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+        });
+        setError(null);
+      },
+      () =>
+        setError("GPS failed — click the map to place yourself for testing."),
+      { enableHighAccuracy: true, timeout: 12000 }
     );
   };
 
+  const act = async (action: string, extra: Record<string, unknown> = {}) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/game", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          sectorId: selectedId,
+          lat: location?.lat,
+          lng: location?.lng,
+          invite: inviteInput || undefined,
+          ...extra,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Action failed");
+      } else {
+        await load();
+      }
+    } catch {
+      setError("Network error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const inviteLink =
+    typeof window !== "undefined" && me?.inviteCode
+      ? `${window.location.origin}/play?invite=${me.inviteCode}`
+      : "";
+
   return (
     <main className="flex min-h-[100dvh] flex-col bg-[var(--surface)]">
-      <header className="relative z-20 flex items-center justify-between border-b border-[var(--line)] bg-[var(--surface-raised)]/90 px-4 py-3 backdrop-blur-sm sm:px-6">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] px-4 py-3 sm:px-6">
         <div>
-          <Link
-            href="/"
-            className="font-display text-sm tracking-tight text-[var(--ink)] sm:text-base"
-          >
+          <Link href="/" className="font-display text-sm text-[var(--ink)] sm:text-base">
             Islamabad Territorial Wars
           </Link>
-          <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--ink-faint)]">
-            Sector walls · E–I grid
+          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--ink-faint)]">
+            Villagers · houses · dig
           </p>
         </div>
-        <p className="font-mono text-[11px] text-[var(--sand)]">
-          Held <span className="text-[var(--ink)]">{yourCount}</span>/
-          {claims.length}
-        </p>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/edit"
+            className="rounded-sm border border-[var(--line)] px-3 py-1.5 text-xs text-[var(--ink-muted)]"
+          >
+            Edit sectors
+          </Link>
+          {status === "authenticated" ? (
+            <button
+              type="button"
+              className="rounded-sm border border-[var(--line)] px-3 py-1.5 text-xs"
+              onClick={() => {
+                void import("next-auth/react").then(({ signOut }) =>
+                  signOut({ callbackUrl: "/play" })
+                );
+              }}
+            >
+              {session?.user?.name?.split(" ")[0] || "Signed in"} · out
+            </button>
+          ) : (
+            <GoogleSignInButton callbackUrl="/play" label="Google sign-in" />
+          )}
+        </div>
       </header>
 
-      <div className="relative grid min-h-0 flex-1 lg:grid-cols-[1fr_20rem]">
-        <SectorMap
-          selectedId={selected}
-          onSelect={setSelected}
-          className="min-h-[55vh] w-full lg:min-h-0 lg:h-full"
+      <div className="grid min-h-0 flex-1 lg:grid-cols-[1fr_22rem]">
+        <GameMap
+          sectors={snap?.sectors ?? []}
+          economies={liveEconomies}
+          selectedId={selectedId}
+          myLocation={location}
+          onSelect={setSelectedId}
+          onMapPlaceLocation={(lat, lng) => {
+            setLocation({ lat, lng });
+            setError(null);
+          }}
+          className="min-h-[50vh] lg:min-h-0 lg:h-full"
         />
 
-        <aside className="border-t border-[var(--line)] bg-[var(--surface-raised)] p-5 lg:border-l lg:border-t-0">
-          <h2 className="font-mono text-[11px] uppercase tracking-[0.24em] text-[var(--ink-muted)]">
-            Command
-          </h2>
-          {selectedClaim ? (
-            <>
-              <p className="mt-4 font-display text-3xl text-[var(--ink)]">
-                {selectedClaim.sector}
-              </p>
+        <aside className="space-y-4 border-t border-[var(--line)] bg-[var(--surface-raised)] p-5 lg:border-l lg:border-t-0">
+          <div>
+            <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--ink-muted)]">
+              Your post
+            </h2>
+            {!me ? (
               <p className="mt-2 text-sm text-[var(--ink-muted)]">
-                Status:{" "}
-                <span className="text-[var(--ink)]">{selectedClaim.owner}</span>
+                Sign in with Google to station a villager, place a house, and dig
+                resources.
               </p>
-              <p className="mt-3 text-sm leading-relaxed text-[var(--ink-muted)]">
-                Each sector is walled on all four edges. Tap another sector on
-                the map to inspect its boundary.
+            ) : (
+              <ul className="mt-2 space-y-1 text-sm text-[var(--ink)]">
+                <li>
+                  Villagers: <strong>{me.villagers}</strong>
+                </li>
+                <li>
+                  Houses:{" "}
+                  <strong>
+                    {me.housesPlaced}/{me.houseSlots}
+                  </strong>
+                </li>
+                <li>
+                  Stationed:{" "}
+                  <strong>{me.activeSectorId ? (snap?.sectors.find(s => s.id === me.activeSectorId)?.name || me.activeSectorId) : "none"}</strong>
+                </li>
+              </ul>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={useGps}
+              className="rounded-sm border border-[var(--line)] px-3 py-1.5 text-xs"
+            >
+              Use GPS
+            </button>
+            <span className="font-mono text-[10px] text-[var(--ink-faint)] self-center">
+              or click map to place pin
+            </span>
+          </div>
+
+          {selected ? (
+            <div className="space-y-2">
+              <p className="font-display text-2xl text-[var(--ink)]">{selected.name}</p>
+              <p className="text-sm text-[var(--ink-muted)]">
+                Resources:{" "}
+                <span className="text-[var(--sand)]">
+                  {liveEconomies[selected.id]?.resources ?? 0}
+                </span>
+                <span className="text-[var(--ink-faint)]"> · +1 / villager / 0.5s</span>
+              </p>
+              <p className="text-xs text-[var(--ink-faint)]">
+                {location
+                  ? insideSelected
+                    ? "Your pin is inside this sector."
+                    : "Your pin is outside this sector."
+                  : "Set your location first."}
               </p>
               <button
                 type="button"
-                onClick={claimSelected}
-                className="mt-6 inline-flex w-full items-center justify-center rounded-sm bg-[var(--signal)] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[var(--signal-bright)]"
+                disabled={busy || !me}
+                onClick={() => void act("join_sector")}
+                className="w-full rounded-sm bg-[var(--signal)] px-3 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
               >
-                Claim sector
+                Station villagers here
               </button>
-            </>
+              <button
+                type="button"
+                disabled={busy || !me}
+                onClick={() => void act("place_house")}
+                className="w-full rounded-sm border border-[var(--sand)] px-3 py-2 text-sm text-[var(--sand)] disabled:opacity-40"
+              >
+                Place a house
+              </button>
+              {me?.activeSectorId === selected.id && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void act("leave_sector")}
+                  className="w-full rounded-sm border border-[var(--line)] px-3 py-2 text-xs text-[var(--ink-muted)]"
+                >
+                  Leave sector
+                </button>
+              )}
+            </div>
           ) : (
-            <p className="mt-4 text-sm leading-relaxed text-[var(--ink-muted)]">
-              Tap any walled sector on the Islamabad grid. Walls mark every
-              sector boundary individually (E–I × 5–12).
+            <p className="text-sm text-[var(--ink-muted)]">
+              {snap?.sectors.length
+                ? "Select a territory on the map."
+                : "No territories yet — open Edit sectors and draw them."}
             </p>
           )}
 
-          <ul className="mt-8 space-y-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--ink-faint)]">
-            <li>
-              <span className="inline-block h-2 w-2 bg-[#c4b089]" /> F row
-            </li>
-            <li>
-              <span className="inline-block h-2 w-2 bg-[#e23b2f]" /> G row
-            </li>
-            <li>
-              <span className="inline-block h-2 w-2 bg-[#5a9a63]" /> E row
-            </li>
-            <li>
-              <span className="inline-block h-2 w-2 bg-[#6a8caf]" /> H row
-            </li>
-            <li>
-              <span className="inline-block h-2 w-2 bg-[#b07d4f]" /> I row
-            </li>
-          </ul>
+          {me && (
+            <div className="border-t border-[var(--line)] pt-4">
+              <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--ink-muted)]">
+                Invite a friend
+              </h3>
+              <p className="mt-2 text-xs leading-relaxed text-[var(--ink-muted)]">
+                When they sign in with your link, you get <strong>+1 villager</strong> and{" "}
+                <strong>+1 house</strong>. They start digging with you.
+              </p>
+              <p className="mt-2 break-all font-mono text-[10px] text-[var(--sand)]">
+                {inviteLink}
+              </p>
+              <button
+                type="button"
+                className="mt-2 text-xs underline text-[var(--ink-muted)]"
+                onClick={() => {
+                  if (inviteLink) void navigator.clipboard.writeText(inviteLink);
+                }}
+              >
+                Copy invite link
+              </button>
+              <label className="mt-3 block font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--ink-faint)]">
+                Have a code?
+                <input
+                  value={inviteInput}
+                  onChange={(e) => setInviteInput(e.target.value.toUpperCase())}
+                  placeholder="CODE"
+                  className="mt-1 w-full rounded-sm border border-[var(--line)] bg-[var(--surface)] px-2 py-1.5 text-sm"
+                />
+              </label>
+            </div>
+          )}
+
+          {error && (
+            <p className="text-xs text-[var(--signal-bright)]">{error}</p>
+          )}
         </aside>
       </div>
     </main>
