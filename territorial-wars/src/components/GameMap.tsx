@@ -1491,8 +1491,12 @@ export function GameMap({
                   }`}
                   title={
                     v.digging
-                      ? `${v.name}'s villager farming`
-                      : `${v.name}'s villager`
+                      ? v.relation === "self"
+                        ? "Villager farming"
+                        : `${v.name}'s villager farming`
+                      : v.relation === "self"
+                        ? "Villager"
+                        : `${v.name}'s villager`
                   }
                 >
                   <span
@@ -1505,7 +1509,7 @@ export function GameMap({
                     }`}
                   >
                     {topPlayerId === v.id ? "👑 " : ""}
-                    {v.relation === "self" ? "You" : v.name}
+                    Villager
                   </span>
                   <VillagerSprite
                     walking={v.walking}
