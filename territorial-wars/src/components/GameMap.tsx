@@ -199,6 +199,8 @@ type Props = {
   onMovePin?: (lat: number, lng: number) => void;
   /** Increment to re-fly to the selected sector (e.g. leaderboard re-tap) */
   sectorFocus?: number;
+  /** Increment to fly the camera back to the player's house / home sector */
+  homeFocus?: number;
   march: MarchAnim | null;
   impact: ImpactAnim | null;
   onSelect: (id: string) => void;
@@ -338,6 +340,7 @@ export function GameMap({
   pinDraggable = false,
   onMovePin,
   sectorFocus = 0,
+  homeFocus = 0,
   march,
   impact,
   onSelect,
@@ -741,6 +744,27 @@ export function GameMap({
       duration: 800,
     });
   }, [userLocationFocus, userLocation, introActive]);
+
+  // Fly back to house / home sector when parent bumps homeFocus
+  const lastHomeFocusFlown = useRef(homeFocus);
+  useEffect(() => {
+    if (introActive) return;
+    if (!homeFocus || homeFocus === lastHomeFocusFlown.current) return;
+    lastHomeFocusFlown.current = homeFocus;
+    const focus = introFocusRef.current;
+    if (!focus) return;
+    const map = mapRef.current;
+    if (!map) return;
+    map.flyTo({
+      center: [focus.lng, focus.lat],
+      zoom: Math.min(PLAY_MAX_ZOOM, Math.max(map.getZoom(), PLAY_ZOOM)),
+      pitch: map.getPitch() || PLAY_PITCH,
+      bearing:
+        Math.abs(map.getBearing()) > 0.5 ? map.getBearing() : PLAY_BEARING,
+      duration: 1000,
+      essential: true,
+    });
+  }, [homeFocus, introActive]);
 
   /** Sector economy = total resources farmed by settlers there */
   const sectorEconomy = useMemo(() => {

@@ -612,6 +612,8 @@ export function PlayShell() {
   const [locationFocus, setLocationFocus] = useState(0);
   /** Bump to re-fly the map when the same sector is picked again */
   const [sectorFocus, setSectorFocus] = useState(0);
+  /** Bump to fly the camera back to the player's house */
+  const [homeFocus, setHomeFocus] = useState(0);
   const [reviewBiz, setReviewBiz] = useState<MapBusiness | null>(null);
   const [reviewOpenedAt, setReviewOpenedAt] = useState<number | null>(null);
   const [reviewReady, setReviewReady] = useState(false);
@@ -2181,6 +2183,7 @@ export function PlayShell() {
           userLocation={!claimed ? liveLocation : null}
           userLocationFocus={locationFocus}
           sectorFocus={sectorFocus}
+          homeFocus={homeFocus}
           march={march}
           impact={impact}
           onSelect={(id) => {
@@ -2271,18 +2274,31 @@ export function PlayShell() {
       {/* ---- Top bar (safe-area + wrap so chips aren't clipped) ---- */}
       <div className="pointer-events-none absolute left-0 right-0 top-0 z-20 flex flex-wrap items-start justify-between gap-2 px-2 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] sm:px-3 sm:pt-[max(0.75rem,env(safe-area-inset-top))]">
         <div className="pointer-events-auto flex flex-col items-start gap-1.5">
-          <Link
-            href="/"
-            className="hud-chip px-2.5 py-1.5 sm:px-3"
-            title="Islamabad Territorial Wars"
-          >
-            <span className="font-display text-xs text-[var(--ink)] sm:text-sm">
-              ITW
-            </span>
-            <span className="ml-1.5 font-mono text-[8px] uppercase tracking-[0.18em] text-[var(--ink-faint)]">
-              {claimed ? homeName : "settle"}
-            </span>
-          </Link>
+          <div className="flex items-center gap-1.5">
+            <Link
+              href="/"
+              className="hud-chip px-2.5 py-1.5 sm:px-3"
+              title="Islamabad Territorial Wars"
+            >
+              <span className="font-display text-xs text-[var(--ink)] sm:text-sm">
+                ITW
+              </span>
+              <span className="ml-1.5 font-mono text-[8px] uppercase tracking-[0.18em] text-[var(--ink-faint)]">
+                {claimed ? homeName : "settle"}
+              </span>
+            </Link>
+            {claimed && (
+              <button
+                type="button"
+                onClick={() => setHomeFocus((n) => n + 1)}
+                className="hud-chip flex h-[31px] w-[31px] items-center justify-center p-0"
+                title="Back to home"
+                aria-label="Back to home"
+              >
+                <HouseSprite className="h-4 w-5" />
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="pointer-events-auto flex flex-col items-end gap-1.5">
