@@ -2278,6 +2278,17 @@ export function PlayShell() {
                 Invite
               </button>
             )}
+            {me && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void resetMyProgress()}
+                className="hud-chip px-2.5 py-1.5 font-mono text-[11px] text-[var(--signal-bright)] hover:text-white disabled:opacity-40 sm:px-3"
+                title="Wipe your village and retest location setup"
+              >
+                Retest GPS
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -2429,9 +2440,9 @@ export function PlayShell() {
               onClick={() => void resetMyProgress()}
               className="flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-[12px] text-[var(--signal-bright)] hover:bg-[var(--wash)] disabled:opacity-40"
             >
-              <span>Remove my progress</span>
+              <span>Retest GPS</span>
               <span className="font-mono text-[9px] text-[var(--ink-faint)]">
-                retest GPS
+                wipe progress
               </span>
             </button>
           )}
