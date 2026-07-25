@@ -406,3 +406,11 @@ export function readWalkthroughDone(): boolean {
     return false;
   }
 }
+
+export function clearWalkthroughDone(): void {
+  try {
+    window.localStorage.removeItem(WALKTHROUGH_KEY);
+  } catch {
+    /* ignore */
+  }
+}

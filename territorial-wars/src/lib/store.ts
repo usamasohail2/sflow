@@ -65,6 +65,8 @@ const K_PIDS = `${P}:pids`;
 const K_INVITES = `${P}:invites`;
 const K_EVENTS = `${P}:events`;
 const K_MIGRATED = `${P}:migrated`;
+/** HASH playerId -> JSON Player backup while testing new-account tutorial */
+const K_TUTORIAL_BACKUP = `${P}:tutorial_backup`;
 const kPlayer = (id: string) => `${P}:p:${id}`;
 const kOwner = (sid: string) => `${P}:owner:${sid}`;
 
@@ -481,6 +483,23 @@ async function hSet(key: string, field: string, value: string): Promise<void> {
   const h = mem().hashes.get(key) ?? new Map<string, string>();
   h.set(field, value);
   mem().hashes.set(key, h);
+  markDirty();
+}
+
+async function hDel(key: string, field: string): Promise<void> {
+  if (supabaseConfigured()) {
+    const h = (await sbGet<Record<string, string>>(key)) ?? {};
+    if (!(field in h)) return;
+    delete h[field];
+    await sbSet(key, h);
+    return;
+  }
+  const r = redis();
+  if (r) {
+    await r.hdel(key, field);
+    return;
+  }
+  mem().hashes.get(key)?.delete(field);
   markDirty();
 }
 
@@ -1095,6 +1114,10 @@ export async function getSnapshot(meId?: string | null): Promise<GameSnapshot> {
     ? playersAll.filter((p) => p.invitedBy === meId).length
     : 0;
 
+  const tutorialTestActive = meId
+    ? Boolean(await hGet(K_TUTORIAL_BACKUP, meId))
+    : false;
+
   return {
     sectors,
     spots,
@@ -1107,7 +1130,73 @@ export async function getSnapshot(meId?: string | null): Promise<GameSnapshot> {
     authDisabled: AUTH_DISABLED,
     storageBackend: storageBackend(),
     inviteCount,
+    tutorialTestActive,
   };
+}
+
+/**
+ * Back up the current player and reset them to a fresh unsettled account
+ * so the settle / villager tutorial can be tested end-to-end.
+ */
+export async function beginTutorialTest(
+  playerId: string
+): Promise<{ ok: true } | { error: string }> {
+  await bootstrap();
+  const me = await getPlayer(playerId);
+  if (!me) return { error: "Player missing" };
+
+  // Keep the first backup if already testing (re-run fresh settle)
+  const existing = await hGet(K_TUTORIAL_BACKUP, playerId);
+  if (!existing) {
+    await hSet(K_TUTORIAL_BACKUP, playerId, JSON.stringify(me));
+  }
+
+  const now = Date.now();
+  await setPlayer({
+    ...me,
+    homeSectorId: null,
+    house: null,
+    houseHp: 0,
+    villagerPost: null,
+    villagers: 0,
+    rockets: 0,
+    peakRockets: 0,
+    gold: STARTING.gold,
+    totalFarmed: 0,
+    buildings: [],
+    discoveredSpotIds: [],
+    lastGatherAt: now,
+    lastRoamSpawnAt: 0,
+    lastAttackAt: 0,
+    updatedAt: now,
+  });
+  await flushStore();
+  return { ok: true };
+}
+
+/** Restore the player saved by beginTutorialTest. */
+export async function endTutorialTest(
+  playerId: string
+): Promise<{ ok: true } | { error: string }> {
+  await bootstrap();
+  const raw = await hGet(K_TUTORIAL_BACKUP, playerId);
+  if (!raw) return { error: "No tutorial test in progress" };
+
+  let backup: Player;
+  try {
+    backup = JSON.parse(raw) as Player;
+  } catch {
+    await hDel(K_TUTORIAL_BACKUP, playerId);
+    return { error: "Tutorial backup was corrupt — cleared" };
+  }
+
+  await setPlayer({
+    ...backup,
+    updatedAt: Date.now(),
+  });
+  await hDel(K_TUTORIAL_BACKUP, playerId);
+  await flushStore();
+  return { ok: true };
 }
 
 async function assertClearGround(
@@ -1565,7 +1654,7 @@ export async function buyRocket(
   const spots = await getSpots();
   const { player: fresh } = await accruePlayer(me, spots, true);
   if (fresh.gold < ROCKET_COST) {
-    return { error: `Need ${ROCKET_COST} gold to buy a rocket` };
+    return { error: `Need 🪙${ROCKET_COST} to buy a rocket` };
   }
   const rockets = (fresh.rockets || 0) + 1;
   await setPlayer({

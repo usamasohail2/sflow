@@ -12,6 +12,7 @@ import {
 import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 import {
   Walkthrough,
+  clearWalkthroughDone,
   readWalkthroughDone,
 } from "@/components/Walkthrough";
 import type { LatLng } from "@/lib/gameTypes";
@@ -1084,6 +1085,49 @@ export function PlayShell() {
     setShowWalkthrough(true);
   };
 
+  const startTutorialTest = async () => {
+    setShowMenu(false);
+    clearWalkthroughDone();
+    walkthroughArmed.current = false;
+    setShowWalkthrough(false);
+    setPlacing(null);
+    setPendingHouse(null);
+    setGpsFix(null);
+    lastGoodMe.current = null;
+    settleGuardUntil.current = 0;
+    const data = await act(
+      "begin_tutorial_test",
+      {},
+      "Starting tutorial test…"
+    );
+    if (!data) return;
+    // Brief close so Walkthrough remounts at welcome
+    window.setTimeout(() => {
+      walkthroughArmed.current = true;
+      setShowWalkthrough(true);
+    }, 80);
+    showToast("Tutorial test — settle like a new account");
+  };
+
+  const stopTutorialTest = async () => {
+    setShowWalkthrough(false);
+    setPlacing(null);
+    setPendingHouse(null);
+    setGpsFix(null);
+    const data = await act(
+      "end_tutorial_test",
+      {},
+      "Restoring your account…"
+    );
+    if (!data) return;
+    lastGoodMe.current = (data as GameSnapshot).me;
+    const nextMe = (data as GameSnapshot).me;
+    setSelectedId(
+      nextMe?.homeSectorId || (data as GameSnapshot).sectors[0]?.id || null
+    );
+    showToast("Tutorial test ended — account restored");
+  };
+
   return (
     <main className="relative h-[100dvh] w-full overflow-hidden bg-[var(--surface)]">
       {/* Full-bleed map (clips here so HUD never gets cut) */}
@@ -1316,6 +1360,26 @@ export function PlayShell() {
           >
             <span>? How to play</span>
           </button>
+          {me && !snap?.tutorialTestActive && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void startTutorialTest()}
+              className="flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-[12px] text-[var(--ink-muted)] hover:bg-[var(--wash)] hover:text-[var(--sand)] disabled:opacity-40"
+            >
+              <span>🧪 Test new account</span>
+            </button>
+          )}
+          {me && snap?.tutorialTestActive && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void stopTutorialTest()}
+              className="flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-[12px] text-[var(--signal-bright)] hover:bg-[var(--wash)] disabled:opacity-40"
+            >
+              <span>⏹ End tutorial test</span>
+            </button>
+          )}
           {snap?.authDisabled && (
             <button
               type="button"
@@ -1679,6 +1743,25 @@ export function PlayShell() {
               : null),
         }}
       />
+
+      {/* Always-visible exit while testing the new-account tutorial */}
+      {snap?.tutorialTestActive && (
+        <div className="pointer-events-none absolute left-1/2 top-[max(3.75rem,calc(env(safe-area-inset-top)+3.25rem))] z-[45] w-[calc(100%-1.5rem)] max-w-sm -translate-x-1/2">
+          <div className="pointer-events-auto flex items-center justify-between gap-2 rounded-sm border border-[var(--sand)]/50 bg-[rgba(12,16,14,0.92)] px-3 py-2 shadow-lg">
+            <p className="min-w-0 font-mono text-[10px] text-[var(--sand)]">
+              Tutorial test · dummy new account
+            </p>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void stopTutorialTest()}
+              className="shrink-0 rounded-sm bg-[var(--signal)] px-2.5 py-1 text-[11px] font-bold text-white disabled:opacity-40"
+            >
+              End test
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Graphical battle report — blocks until dismissed */}
       {battleSummary && (

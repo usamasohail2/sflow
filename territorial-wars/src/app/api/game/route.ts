@@ -5,11 +5,13 @@ import type { BuildingType } from "@/lib/gameTypes";
 import { AUTH_DISABLED } from "@/lib/devMode";
 import {
   attackSector,
+  beginTutorialTest,
   buildBuilding,
   buyRocket,
   claimSector,
   collectHidden,
   discoverSpot,
+  endTutorialTest,
   ensurePlayer,
   getSnapshot,
   placeHouse,
@@ -297,6 +299,10 @@ export async function POST(req: Request) {
     result = await attackSector(id, targetPlayerId, rocketsToFire);
   } else if (body.action === "rename") {
     result = await renamePlayer(id, String(body.name || ""));
+  } else if (body.action === "begin_tutorial_test") {
+    result = await beginTutorialTest(id);
+  } else if (body.action === "end_tutorial_test") {
+    result = await endTutorialTest(id);
   } else {
     return withGuestCookie(
       NextResponse.json({ error: "Unknown action" }, { status: 400 }),

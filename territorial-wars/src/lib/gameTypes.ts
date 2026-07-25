@@ -230,6 +230,8 @@ export type GameSnapshot = {
   storageBackend: "supabase" | "redis" | "blob" | "memory";
   /** How many players joined with my invite code */
   inviteCount: number;
+  /** True while a tutorial-test backup is held for this player */
+  tutorialTestActive: boolean;
 };
 
 /** One gather trip duration — villager walk loop matches this */
