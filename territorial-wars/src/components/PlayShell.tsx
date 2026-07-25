@@ -3080,6 +3080,15 @@ export function PlayShell() {
                   <RocketSprite className="h-5 w-5" />
                   <span>×{me.rockets || 0}</span>
                 </div>
+                {gemsFound > 0 && (
+                  <div
+                    className="hud-status-chip"
+                    title={`${gemsFound} resource site(s) found`}
+                  >
+                    <ResourceGem gem="diamond" size={16} pulse />
+                    <span>×{gemsFound}</span>
+                  </div>
+                )}
               </div>
 
               <div className="pointer-events-auto w-full min-w-0">
@@ -3127,17 +3136,6 @@ export function PlayShell() {
                       </span>
                       <span className="cameo-label">Buy +1</span>
                     </button>
-
-                    {gemsFound > 0 && (
-                      <div
-                        className="cameo"
-                        title={`${gemsFound} resource site(s) found`}
-                      >
-                        <ResourceGem gem="diamond" size={24} pulse />
-                        <span className="cameo-badge">×{gemsFound}</span>
-                        <span className="cameo-label">Finds</span>
-                      </div>
-                    )}
 
                     <button
                       type="button"
