@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   GameMap,
   type MarchAnim,
@@ -53,6 +53,27 @@ export function PlayShell() {
   const [placing, setPlacing] = useState<Placing | null>(null);
   const [pendingHouse, setPendingHouse] = useState<LatLng | null>(null);
   const [march, setMarch] = useState<MarchAnim | null>(null);
+  const identityChecked = useRef(false);
+
+  const IDENT_KEY = "itw_player_id";
+
+  const applySnap = useCallback((data: GameSnapshot) => {
+    setSnap(data);
+    if (data.me) setDisplayGold(data.me.gold);
+    setSelectedId(
+      (cur) => cur ?? data.me?.homeSectorId ?? data.sectors[0]?.id ?? null
+    );
+  }, []);
+
+  const rememberIdentity = (id?: string | null) => {
+    if (id && id.startsWith("guest_")) {
+      try {
+        window.localStorage.setItem(IDENT_KEY, id);
+      } catch {
+        /* storage unavailable */
+      }
+    }
+  };
 
   const load = useCallback(async () => {
     const invite =
@@ -62,12 +83,46 @@ export function PlayShell() {
     const q = invite ? `?invite=${encodeURIComponent(invite)}` : "";
     const res = await fetch(`/api/game${q}`);
     const data = (await res.json()) as GameSnapshot;
-    setSnap(data);
-    if (data.me) setDisplayGold(data.me.gold);
-    if (!selectedId) {
-      setSelectedId(data.me?.homeSectorId || data.sectors[0]?.id || null);
+
+    // First load: if the cookie identity doesn't match the account this
+    // browser last used, restore the remembered account automatically.
+    if (!identityChecked.current && typeof window !== "undefined") {
+      identityChecked.current = true;
+      let stored: string | null = null;
+      try {
+        stored = window.localStorage.getItem(IDENT_KEY);
+      } catch {
+        stored = null;
+      }
+      if (
+        stored &&
+        stored.startsWith("guest_") &&
+        data.me &&
+        data.me.id !== stored
+      ) {
+        try {
+          const r2 = await fetch("/api/game", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "switch_player",
+              targetId: stored,
+            }),
+          });
+          if (r2.ok) {
+            const restored = (await r2.json()) as GameSnapshot;
+            applySnap(restored);
+            return;
+          }
+        } catch {
+          /* fall through to the fresh identity */
+        }
+      }
+      rememberIdentity(data.me?.id);
     }
-  }, [selectedId]);
+
+    applySnap(data);
+  }, [applySnap]);
 
   useEffect(() => {
     void load();
@@ -287,6 +342,7 @@ export function PlayShell() {
       setPendingHouse(null);
       setMarch(null);
       const nextMe = (data as GameSnapshot).me;
+      rememberIdentity(nextMe?.id);
       setSelectedId(
         nextMe?.homeSectorId || (data as GameSnapshot).sectors[0]?.id || null
       );
