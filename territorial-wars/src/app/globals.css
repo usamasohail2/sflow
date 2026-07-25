@@ -418,7 +418,12 @@ body {
   align-items: center;
   gap: 0.25rem;
   padding: 1px 2px;
+  border: 0;
   border-radius: 2px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 9px;
   line-height: 1.25;
@@ -476,6 +481,11 @@ body {
 .sector-board-row.is-mine:not(.medal-gold):not(.medal-silver):not(.medal-bronze)
   .sector-board-score {
   color: rgba(232, 207, 138, 0.75);
+}
+
+.sector-board-row:hover,
+.sector-board-row.is-selected {
+  background: rgba(232, 235, 228, 0.08);
 }
 
 .hud-chip {

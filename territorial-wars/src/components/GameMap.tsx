@@ -170,6 +170,8 @@ type Props = {
   userLocation?: LatLng | null;
   /** Increment to re-center the map on the GPS pin */
   userLocationFocus?: number;
+  /** Increment to re-fly to the selected sector (e.g. leaderboard re-tap) */
+  sectorFocus?: number;
   march: MarchAnim | null;
   impact: ImpactAnim | null;
   onSelect: (id: string) => void;
@@ -282,6 +284,7 @@ export function GameMap({
   previewHouse,
   userLocation = null,
   userLocationFocus = 0,
+  sectorFocus = 0,
   march,
   impact,
   onSelect,
@@ -510,10 +513,34 @@ export function GameMap({
     });
   }, [userLocation, introActive]);
 
-  // Re-center when picking a sector, or when parent requests focus (GPS confirm)
+  // Fly the camera to a selected sector (leaderboard / settle picker)
   useEffect(() => {
     if (introActive) return;
-    if (!userLocation) return;
+    if (!selectedId) return;
+    const sector = sectors.find((s) => s.id === selectedId);
+    if (!sector) return;
+    const map = mapRef.current;
+    if (!map) return;
+    const center = ringCentroid(sector.ring);
+    map.flyTo({
+      center: [center.lng, center.lat],
+      zoom: Math.min(
+        PLAY_MAX_ZOOM,
+        Math.max(map.getZoom(), PLAY_ZOOM)
+      ),
+      pitch: map.getPitch() || PLAY_PITCH,
+      bearing:
+        Math.abs(map.getBearing()) > 0.5 ? map.getBearing() : PLAY_BEARING,
+      duration: 1100,
+      essential: true,
+    });
+    // sectorFocus lets the parent re-fly when the same sector is tapped again
+  }, [selectedId, sectorFocus, introActive]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Re-center on GPS when parent bumps userLocationFocus
+  useEffect(() => {
+    if (introActive) return;
+    if (!userLocation || !userLocationFocus) return;
     const map = mapRef.current;
     if (!map) return;
     map.easeTo({
@@ -527,7 +554,7 @@ export function GameMap({
         Math.abs(map.getBearing()) > 0.5 ? map.getBearing() : PLAY_BEARING,
       duration: 800,
     });
-  }, [selectedId, userLocationFocus, introActive]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [userLocationFocus, userLocation, introActive]);
 
   /** Sector economy = total resources farmed by settlers there */
   const sectorEconomy = useMemo(() => {

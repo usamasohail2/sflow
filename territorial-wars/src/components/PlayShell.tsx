@@ -316,6 +316,8 @@ export function PlayShell() {
   } | null>(null);
   const [gpsBusy, setGpsBusy] = useState(false);
   const [locationFocus, setLocationFocus] = useState(0);
+  /** Bump to re-fly the map when the same sector is picked again */
+  const [sectorFocus, setSectorFocus] = useState(0);
   const [musicOn, setMusicOn] = useState(false);
   const gpsWatchStarted = useRef(false);
   const identityChecked = useRef(false);
@@ -1391,6 +1393,7 @@ export function PlayShell() {
           previewHouse={pendingHouse}
           userLocation={!claimed ? liveLocation : null}
           userLocationFocus={locationFocus}
+          sectorFocus={sectorFocus}
           march={march}
           impact={impact}
           onSelect={(id) => {
@@ -1574,25 +1577,27 @@ export function PlayShell() {
             </button>
           </div>
 
-          {/* Minimal top-sectors board — tap for full list */}
-          <button
-            type="button"
-            onClick={() => {
-              setShowRanks(true);
-              setShowMenu(false);
-              setShowBattles(false);
-              setShowMissions(false);
-              setShowInvite(false);
-              setShowPlayers(false);
-            }}
-            className="sector-board w-[8.75rem] px-1.5 py-1.5 text-left sm:w-40"
-            title="Open full sector leaderboard"
-          >
+          {/* Minimal top-sectors board — row taps fly the camera */}
+          <div className="sector-board pointer-events-auto w-[8.75rem] px-1.5 py-1.5 text-left sm:w-40">
             <div className="mb-0.5 flex items-center justify-between gap-1">
               <span className="font-mono text-[7px] uppercase tracking-[0.18em] text-white/55">
                 Top sectors
               </span>
-              <span className="font-mono text-[7px] text-white/45">all</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowRanks(true);
+                  setShowMenu(false);
+                  setShowBattles(false);
+                  setShowMissions(false);
+                  setShowInvite(false);
+                  setShowPlayers(false);
+                }}
+                className="font-mono text-[7px] text-white/45 underline decoration-dotted underline-offset-2 hover:text-white/80"
+                title="Open full sector leaderboard"
+              >
+                all
+              </button>
             </div>
             {sectorBoard.length === 0 ? (
               <p className="text-[9px] text-white/45">No farms yet</p>
@@ -1608,28 +1613,38 @@ export function PlayShell() {
                           ? "medal-bronze"
                           : "";
                   return (
-                    <li
-                      key={`${r.id}-${r.rank}`}
-                      className={`sector-board-row ${medal} ${
-                        r.mine ? "is-mine" : ""
-                      }`}
-                    >
-                      <span
-                        className="sector-board-rank"
-                        title={r.rank === 1 ? "Top sector" : undefined}
+                    <li key={`${r.id}-${r.rank}`}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedId(r.id);
+                          setSectorFocus((n) => n + 1);
+                          setSelectedPlayerId(null);
+                          setRazeTarget(null);
+                          setShowRanks(false);
+                        }}
+                        className={`sector-board-row w-full ${medal} ${
+                          r.mine ? "is-mine" : ""
+                        } ${selectedId === r.id ? "is-selected" : ""}`}
+                        title={`Fly to ${r.name}`}
                       >
-                        {r.rank === 1 ? "👑" : r.rank}
-                      </span>
-                      <span className="sector-board-name">{r.name}</span>
-                      <span className="sector-board-score">
-                        {GOLD_COIN} {r.farmed}
-                      </span>
+                        <span
+                          className="sector-board-rank"
+                          title={r.rank === 1 ? "Top sector" : undefined}
+                        >
+                          {r.rank === 1 ? "👑" : r.rank}
+                        </span>
+                        <span className="sector-board-name">{r.name}</span>
+                        <span className="sector-board-score">
+                          {GOLD_COIN} {r.farmed}
+                        </span>
+                      </button>
                     </li>
                   );
                 })}
               </ol>
             )}
-          </button>
+          </div>
         </div>
       </div>
 
@@ -1901,32 +1916,42 @@ export function PlayShell() {
               {sectorRanking.map((r, i) => {
                 const mine = me?.homeSectorId === r.id;
                 return (
-                  <li
-                    key={r.id}
-                    className={`flex items-center justify-between rounded-sm border px-2.5 py-2 text-[12px] ${
-                      mine
-                        ? "border-[var(--sand)] bg-[var(--wash)] text-[var(--sand)]"
-                        : "border-[var(--line)] text-[var(--ink-muted)]"
-                    }`}
-                  >
-                    <span className="min-w-0">
-                      <span className="font-mono text-[var(--ink-faint)]">
-                        {i === 0
-                          ? "👑"
-                          : i === 1
-                            ? "🥈"
-                            : i === 2
-                              ? "🥉"
-                              : `${i + 1}.`}
-                      </span>{" "}
-                      <strong className="text-[var(--ink)]">{r.name}</strong>
-                      <span className="ml-1.5 font-mono text-[9px] text-[var(--ink-faint)]">
-                        {r.settlers} settler{r.settlers === 1 ? "" : "s"}
+                  <li key={r.id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedId(r.id);
+                        setSectorFocus((n) => n + 1);
+                        setSelectedPlayerId(null);
+                        setRazeTarget(null);
+                        setShowRanks(false);
+                      }}
+                      className={`flex w-full items-center justify-between rounded-sm border px-2.5 py-2 text-left text-[12px] transition hover:border-[var(--sand)] hover:bg-[var(--wash)] ${
+                        mine
+                          ? "border-[var(--sand)] bg-[var(--wash)] text-[var(--sand)]"
+                          : "border-[var(--line)] text-[var(--ink-muted)]"
+                      }`}
+                      title={`Fly to ${r.name}`}
+                    >
+                      <span className="min-w-0">
+                        <span className="font-mono text-[var(--ink-faint)]">
+                          {i === 0
+                            ? "👑"
+                            : i === 1
+                              ? "🥈"
+                              : i === 2
+                                ? "🥉"
+                                : `${i + 1}.`}
+                        </span>{" "}
+                        <strong className="text-[var(--ink)]">{r.name}</strong>
+                        <span className="ml-1.5 font-mono text-[9px] text-[var(--ink-faint)]">
+                          {r.settlers} settler{r.settlers === 1 ? "" : "s"}
+                        </span>
                       </span>
-                    </span>
-                    <span className="shrink-0 font-mono font-semibold text-[#e8cf8a]">
-                      {GOLD_COIN} {r.farmed}
-                    </span>
+                      <span className="shrink-0 font-mono font-semibold text-[#e8cf8a]">
+                        {GOLD_COIN} {r.farmed}
+                      </span>
+                    </button>
                   </li>
                 );
               })}
