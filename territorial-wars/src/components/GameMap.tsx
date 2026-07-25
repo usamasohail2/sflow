@@ -90,6 +90,8 @@ import {
   WellSprite,
 } from "@/components/sprites";
 import { ResourceNode } from "@/components/ResourceNode";
+import { ViewerMarkers } from "@/components/ViewerMarkers";
+import type { PresencePeer } from "@/lib/presenceTypes";
 
 const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
 
@@ -178,6 +180,17 @@ type Props = {
   onSelectRaze?: (
     target: { playerId: string; buildingId: string } | null
   ) => void;
+  /** Live camera peers floating above the map */
+  presencePeers?: PresencePeer[];
+  presenceSelf?: {
+    id: string;
+    name: string;
+    lat: number;
+    lng: number;
+    bubble?: string | null;
+    bubbleAt?: number | null;
+  } | null;
+  onCameraReport?: (camera: { lat: number; lng: number }) => void;
   selectedRazeBuildingId?: string | null;
   onPlace?: (lat: number, lng: number) => void;
   onSpawnFind?: (payload: {
@@ -282,6 +295,9 @@ export function GameMap({
   onIntroComplete,
   guidePulse = false,
   syncingBuildingIds = [],
+  presencePeers = [],
+  presenceSelf = null,
+  onCameraReport,
   className = "",
 }: Props) {
   const syncingSet = useMemo(
@@ -290,6 +306,8 @@ export function GameMap({
   );
   const onIntroCompleteRef = useRef(onIntroComplete);
   onIntroCompleteRef.current = onIntroComplete;
+  const onCameraReportRef = useRef(onCameraReport);
+  onCameraReportRef.current = onCameraReport;
   const mapRef = useRef<MapRef>(null);
   const [zoom, setZoom] = useState(INTRO_CITY_ZOOM);
   const showDetail = zoom >= DETAIL_ZOOM;
@@ -865,6 +883,7 @@ export function GameMap({
         lng: e.viewState.longitude,
       };
       setZoom(z);
+      onCameraReportRef.current?.(center);
       // Country / city / road names only when fully zoomed into street detail
       applyBasemapLabels(z >= DETAIL_ZOOM);
 
@@ -1555,6 +1574,8 @@ export function GameMap({
             </div>
           </Marker>
         )}
+
+        <ViewerMarkers peers={presencePeers} self={presenceSelf} />
       </MapboxMap>
 
       {/* Guided placement beacon — blinks in the sector while planting */}

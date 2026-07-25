@@ -10,11 +10,13 @@ import {
   type Placing,
 } from "@/components/GameMap";
 import { GoogleSignInButton } from "@/components/GoogleSignInButton";
+import { PublicChat } from "@/components/PublicChat";
 import {
   Walkthrough,
   clearWalkthroughDone,
   readWalkthroughDone,
 } from "@/components/Walkthrough";
+import { useMapPresence } from "@/hooks/useMapPresence";
 import type { LatLng } from "@/lib/gameTypes";
 import { INVITE_VILLAGER_BONUS } from "@/lib/gameTypes";
 import {
@@ -317,6 +319,17 @@ export function PlayShell() {
 
   const IDENT_KEY = "itw_player_id";
 
+  const {
+    visitorId,
+    displayName,
+    peers: presencePeers,
+    selfCamera,
+    selfBubble,
+    reportCamera,
+    noteLocalMessage,
+    rename: renamePresence,
+  } = useMapPresence(true);
+
   useEffect(() => {
     captureInviteFromUrl();
   }, []);
@@ -566,6 +579,15 @@ export function PlayShell() {
 
   const me = snap?.me ?? null;
   const selected = snap?.sectors.find((s) => s.id === selectedId) ?? null;
+
+  // Prefer in-game settler name for chat / floating label
+  useEffect(() => {
+    const name = me?.name?.trim();
+    if (!name || name.length < 2) return;
+    if (name === displayName) return;
+    renamePresence(name);
+  }, [me?.name, displayName, renamePresence]);
+
   const claimed = Boolean(me?.homeSectorId);
   const needsHouseRebuild = Boolean(claimed && me && !me.house);
   const homeName =
@@ -1388,9 +1410,33 @@ export function PlayShell() {
             (placing?.kind === "house" || placing?.kind === "villager")
           }
           syncingBuildingIds={syncingBuildIds}
+          presencePeers={presencePeers}
+          presenceSelf={
+            selfCamera && visitorId
+              ? {
+                  id: visitorId,
+                  name: displayName || me?.name || "You",
+                  lat: selfCamera.lat,
+                  lng: selfCamera.lng,
+                  bubble: selfBubble?.text ?? null,
+                  bubbleAt: selfBubble?.at ?? null,
+                }
+              : null
+          }
+          onCameraReport={reportCamera}
           className="h-full w-full"
         />
       </div>
+
+      {visitorId && (
+        <PublicChat
+          visitorId={visitorId}
+          displayName={displayName || me?.name || "Scout"}
+          onSent={noteLocalMessage}
+          onRename={renamePresence}
+          className="absolute bottom-[max(5.75rem,calc(env(safe-area-inset-bottom)+4.75rem))] right-2 z-30 sm:bottom-[max(6.5rem,calc(env(safe-area-inset-bottom)+5.5rem))] sm:right-3"
+        />
+      )}
 
       {/* ---- Top bar (safe-area + wrap so chips aren't clipped) ---- */}
       <div className="pointer-events-none absolute left-0 right-0 top-0 z-20 flex flex-wrap items-start justify-between gap-2 px-2 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] sm:px-3 sm:pt-[max(0.75rem,env(safe-area-inset-top))]">

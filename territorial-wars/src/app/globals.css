@@ -1229,3 +1229,84 @@ button.cameo:not(:disabled):hover {
   }
 }
 
+/* ---- Live map presence (floating players + speech) ---- */
+.viewer-map-marker {
+  animation: viewer-map-bob 2.4s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+.viewer-map-marker--self {
+  filter: drop-shadow(
+    0 0 0.5px color-mix(in srgb, var(--field-bright) 55%, transparent)
+  );
+}
+
+.viewer-name-tag {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  border: 1px solid var(--line);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.viewer-speech-bubble {
+  position: relative;
+  border-radius: 12px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  padding: 4px 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  animation: viewer-bubble-in 0.25s ease-out both;
+}
+
+.viewer-speech-bubble::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: 8px;
+  height: 8px;
+  transform: translateX(-50%) rotate(45deg);
+  background: var(--surface-raised);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.public-chat-panel {
+  border-radius: 4px;
+  border: 1px solid var(--line-strong);
+  background: color-mix(in srgb, var(--surface-raised) 94%, transparent);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(10px);
+}
+
+@keyframes viewer-map-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes viewer-bubble-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .viewer-map-marker {
+    animation: none;
+  }
+
+  .viewer-speech-bubble {
+    animation: none;
+  }
+}
+
