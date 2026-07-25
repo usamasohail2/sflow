@@ -96,6 +96,7 @@ const g = globalThis as unknown as {
   __itwMem?: MemStore;
   __itwBlobHydratedAt?: number;
   __itwBlobDirty?: boolean;
+  __itwFlushPromise?: Promise<void> | null;
 };
 function mem(): MemStore {
   if (!g.__itwMem) {
@@ -109,7 +110,7 @@ function mem(): MemStore {
   return g.__itwMem;
 }
 
-const BLOB_HYDRATE_TTL_MS = 1_500;
+const BLOB_HYDRATE_TTL_MS = 800;
 
 function blobToken(): string | null {
   return process.env.BLOB_READ_WRITE_TOKEN || null;
@@ -130,48 +131,16 @@ function markDirty(): void {
 }
 
 type SerializedState = {
+  rev?: number;
   json: Record<string, unknown>;
   sets: Record<string, string[]>;
   hashes: Record<string, Record<string, string>>;
   lists: Record<string, string[]>;
 };
 
-/** Pull the state document into memory (TTL-cached per lambda) */
-async function hydrateFromBlob(): Promise<void> {
-  if (!blobActive()) return;
-  const now = Date.now();
-  if (now - (g.__itwBlobHydratedAt ?? 0) < BLOB_HYDRATE_TTL_MS) return;
-  g.__itwBlobHydratedAt = now;
-  try {
-    const info = await head(blobStatePath(), { token: blobToken()! });
-    // Unique query param defeats CDN caching of overwritten blobs
-    const res = await fetch(`${info.url}?ts=${now}`, { cache: "no-store" });
-    if (!res.ok) return;
-    const data = (await res.json()) as SerializedState;
-    const m = mem();
-    m.json = new Map(Object.entries(data.json ?? {}));
-    m.sets = new Map(
-      Object.entries(data.sets ?? {}).map(([k, v]) => [k, new Set(v)])
-    );
-    m.hashes = new Map(
-      Object.entries(data.hashes ?? {}).map(([k, v]) => [
-        k,
-        new Map(Object.entries(v)),
-      ])
-    );
-    m.lists = new Map(Object.entries(data.lists ?? {}));
-    g.__itwBlobDirty = false;
-  } catch {
-    // Missing blob = first boot; keep the (possibly seeded) memory state
-  }
-}
-
-/** Persist memory state to Blob if anything changed this request */
-export async function flushStore(): Promise<void> {
-  if (!blobActive() || !g.__itwBlobDirty) return;
-  g.__itwBlobDirty = false;
+function serializeMem(): SerializedState {
   const m = mem();
-  const data: SerializedState = {
+  return {
     json: Object.fromEntries(m.json),
     sets: Object.fromEntries(
       Array.from(m.sets.entries()).map(([k, v]) => [k, Array.from(v)])
@@ -184,20 +153,192 @@ export async function flushStore(): Promise<void> {
     ),
     lists: Object.fromEntries(m.lists),
   };
+}
+
+function applySerialized(data: SerializedState): void {
+  const m = mem();
+  m.json = new Map(Object.entries(data.json ?? {}));
+  m.sets = new Map(
+    Object.entries(data.sets ?? {}).map(([k, v]) => [k, new Set(v)])
+  );
+  m.hashes = new Map(
+    Object.entries(data.hashes ?? {}).map(([k, v]) => [
+      k,
+      new Map(Object.entries(v)),
+    ])
+  );
+  m.lists = new Map(Object.entries(data.lists ?? {}));
+}
+
+async function fetchRemoteState(): Promise<SerializedState | null> {
   try {
-    await put(blobStatePath(), JSON.stringify(data), {
-      access: "public",
-      token: blobToken()!,
-      allowOverwrite: true,
-      addRandomSuffix: false,
-      cacheControlMaxAge: 0,
-      contentType: "application/json",
+    const info = await head(blobStatePath(), { token: blobToken()! });
+    const res = await fetch(`${info.url}?ts=${Date.now()}`, {
+      cache: "no-store",
     });
-    g.__itwBlobHydratedAt = Date.now();
-  } catch (err) {
-    g.__itwBlobDirty = true;
-    console.error("Blob state flush failed:", err);
+    if (!res.ok) return null;
+    return (await res.json()) as SerializedState;
+  } catch {
+    return null;
   }
+}
+
+function mergeByIdUpdatedAt<T extends { id: string; updatedAt?: number }>(
+  a: T[],
+  b: T[]
+): T[] {
+  const map = new Map<string, T>();
+  for (const item of a) map.set(item.id, item);
+  for (const item of b) {
+    const prev = map.get(item.id);
+    if (!prev || (item.updatedAt ?? 0) >= (prev.updatedAt ?? 0)) {
+      map.set(item.id, item);
+    }
+  }
+  return Array.from(map.values());
+}
+
+/**
+ * Merge remote + local so a slow poll can't wipe a concurrent settle.
+ * Players: keep higher updatedAt. Sectors/spots: union by id.
+ */
+function mergeStates(
+  remote: SerializedState | null,
+  local: SerializedState
+): SerializedState {
+  if (!remote) return { ...local, rev: (local.rev ?? 0) + 1 };
+
+  const json: Record<string, unknown> = { ...remote.json };
+  for (const [k, lv] of Object.entries(local.json)) {
+    const rv = remote.json[k];
+    if (rv === undefined) {
+      json[k] = lv;
+      continue;
+    }
+    if (k.includes(":p:") && lv && rv && typeof lv === "object") {
+      const lp = lv as Player;
+      const rp = rv as Player;
+      json[k] =
+        (lp.updatedAt ?? 0) >= (rp.updatedAt ?? 0) ? lv : rv;
+      continue;
+    }
+    if (k.endsWith(":sectors") && Array.isArray(lv) && Array.isArray(rv)) {
+      json[k] = mergeByIdUpdatedAt(rv as Sector[], lv as Sector[]);
+      continue;
+    }
+    if (k.endsWith(":spots") && Array.isArray(lv) && Array.isArray(rv)) {
+      const map = new Map<string, ResourceSpot>();
+      for (const s of rv as ResourceSpot[]) map.set(s.id, s);
+      for (const s of lv as ResourceSpot[]) map.set(s.id, s);
+      json[k] = Array.from(map.values());
+      continue;
+    }
+    if (typeof lv === "number" && typeof rv === "number") {
+      json[k] = Math.max(lv, rv);
+      continue;
+    }
+    // Local write wins for other keys (owner locks, flags, etc.)
+    json[k] = lv;
+  }
+
+  const sets: Record<string, string[]> = { ...remote.sets };
+  for (const [k, lv] of Object.entries(local.sets)) {
+    sets[k] = Array.from(new Set([...(remote.sets[k] ?? []), ...lv]));
+  }
+
+  const hashes: Record<string, Record<string, string>> = {
+    ...remote.hashes,
+  };
+  for (const [k, lv] of Object.entries(local.hashes)) {
+    hashes[k] = { ...(remote.hashes[k] ?? {}), ...lv };
+  }
+
+  const lists: Record<string, string[]> = {};
+  const listKeys = Array.from(
+    new Set([
+      ...Object.keys(remote.lists ?? {}),
+      ...Object.keys(local.lists ?? {}),
+    ])
+  );
+  for (const k of listKeys) {
+    const merged = [...(local.lists[k] ?? []), ...(remote.lists[k] ?? [])];
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const row of merged) {
+      try {
+        const id = (JSON.parse(row) as { id?: string }).id ?? row;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        out.push(row);
+      } catch {
+        if (!seen.has(row)) {
+          seen.add(row);
+          out.push(row);
+        }
+      }
+    }
+    lists[k] = out.slice(0, 80);
+  }
+
+  return {
+    rev: Math.max(remote.rev ?? 0, local.rev ?? 0) + 1,
+    json,
+    sets,
+    hashes,
+    lists,
+  };
+}
+
+/** Pull the state document into memory (TTL-cached per lambda) */
+async function hydrateFromBlob(): Promise<void> {
+  if (!blobActive()) return;
+  // Never clobber unflushed local writes (settle race)
+  if (g.__itwBlobDirty) return;
+  const now = Date.now();
+  if (now - (g.__itwBlobHydratedAt ?? 0) < BLOB_HYDRATE_TTL_MS) return;
+  g.__itwBlobHydratedAt = now;
+  const data = await fetchRemoteState();
+  if (!data) return;
+  applySerialized(data);
+  g.__itwBlobDirty = false;
+}
+
+/** Persist memory state to Blob if anything changed this request */
+export async function flushStore(): Promise<void> {
+  if (!blobActive() || !g.__itwBlobDirty) return;
+  // Serialize concurrent flushes on the same isolate
+  if (g.__itwFlushPromise) {
+    await g.__itwFlushPromise;
+    if (!g.__itwBlobDirty) return;
+  }
+
+  const run = async () => {
+    const local = serializeMem();
+    // Re-read remote and merge so a stale poll can't wipe a settle
+    const remote = await fetchRemoteState();
+    const merged = mergeStates(remote, local);
+    try {
+      await put(blobStatePath(), JSON.stringify(merged), {
+        access: "public",
+        token: blobToken()!,
+        allowOverwrite: true,
+        addRandomSuffix: false,
+        cacheControlMaxAge: 0,
+        contentType: "application/json",
+      });
+      applySerialized(merged);
+      g.__itwBlobDirty = false;
+      g.__itwBlobHydratedAt = Date.now();
+    } catch (err) {
+      g.__itwBlobDirty = true;
+      console.error("Blob state flush failed:", err);
+    }
+  };
+
+  g.__itwFlushPromise = run().finally(() => {
+    g.__itwFlushPromise = null;
+  });
+  await g.__itwFlushPromise;
 }
 
 /* ------------------------------------------------------------------ */
@@ -919,6 +1060,8 @@ export async function claimSector(
     updatedAt: now,
   });
 
+  // Write through immediately so a concurrent poll can't lose the settle
+  await flushStore();
   return { ok: true };
 }
 
@@ -976,6 +1119,7 @@ export async function placeHouse(
     lastGatherAt: now,
     updatedAt: now,
   });
+  await flushStore();
   return { ok: true };
 }
 

@@ -27,6 +27,7 @@ import type {
   BuildingType,
   GameEvent,
   GameSnapshot,
+  Player,
 } from "@/lib/gameTypes";
 import {
   HOUSE_MAX_HP,
@@ -210,6 +211,8 @@ export function PlayShell() {
     null
   );
   const [busy, setBusy] = useState(false);
+  /** Shown while a settle/rebuild/build write is in flight */
+  const [savingLabel, setSavingLabel] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [displayGold, setDisplayGold] = useState(0);
@@ -243,17 +246,66 @@ export function PlayShell() {
   const seenEvents = useRef<Set<string>>(new Set());
   const eventsPrimed = useRef(false);
   const meIdRef = useRef<string | null>(null);
+  const busyRef = useRef(false);
+  const settleGuardUntil = useRef(0);
+  const lastGoodMe = useRef<Player | null>(null);
 
   const IDENT_KEY = "itw_player_id";
 
   const applySnap = useCallback((data: GameSnapshot) => {
-    setSnap(data);
-    if (data.me) setDisplayGold(data.me.gold);
+    let next = data;
+    const prevMe = lastGoodMe.current;
+    const incoming = data.me;
+    // Guard against a stale poll wiping a just-saved settlement (~3s race)
+    if (
+      prevMe?.homeSectorId &&
+      prevMe.house &&
+      Date.now() < settleGuardUntil.current
+    ) {
+      if (
+        !incoming ||
+        !incoming.homeSectorId ||
+        !incoming.house ||
+        (incoming.updatedAt ?? 0) < (prevMe.updatedAt ?? 0)
+      ) {
+        next = {
+          ...data,
+          me: prevMe,
+          players: data.players.map((p) =>
+            p.id === prevMe.id
+              ? {
+                  ...p,
+                  homeSectorId: prevMe.homeSectorId,
+                  house: prevMe.house,
+                  houseHp: prevMe.houseHp,
+                  villagerPost: prevMe.villagerPost,
+                  villagers: prevMe.villagers,
+                  gold: prevMe.gold,
+                  buildings: prevMe.buildings,
+                }
+              : p
+          ),
+        };
+      }
+    }
+
+    if (next.me?.homeSectorId && next.me.house) {
+      lastGoodMe.current = next.me;
+    } else if (next.me && !next.me.homeSectorId) {
+      // Only clear the guard cache once the server agrees we're unsettled
+      // after the guard window
+      if (Date.now() >= settleGuardUntil.current) {
+        lastGoodMe.current = next.me;
+      }
+    }
+
+    setSnap(next);
+    if (next.me) setDisplayGold(next.me.gold);
     setSelectedId(
-      (cur) => cur ?? data.me?.homeSectorId ?? data.sectors[0]?.id ?? null
+      (cur) => cur ?? next.me?.homeSectorId ?? next.sectors[0]?.id ?? null
     );
 
-    const nextId = data.me?.id ?? null;
+    const nextId = next.me?.id ?? null;
     if (nextId !== meIdRef.current) {
       // New identity (first load or player switch) — don't replay history
       meIdRef.current = nextId;
@@ -261,7 +313,7 @@ export function PlayShell() {
       eventsPrimed.current = false;
     }
 
-    const events = data.events ?? [];
+    const events = next.events ?? [];
     if (!eventsPrimed.current) {
       for (const e of events) seenEvents.current.add(e.id);
       eventsPrimed.current = true;
@@ -270,7 +322,7 @@ export function PlayShell() {
       const pendingHit = [...events]
         .reverse()
         .find(
-          (e) => data.me && e.defenderId === data.me.id && e.ts > ack
+          (e) => next.me && e.defenderId === next.me.id && e.ts > ack
         );
       if (pendingHit) {
         setBattleSummary(summaryFromEvent(pendingHit));
@@ -280,11 +332,11 @@ export function PlayShell() {
     for (const e of events) {
       if (seenEvents.current.has(e.id)) continue;
       seenEvents.current.add(e.id);
-      if (data.me && e.defenderId === data.me.id) {
+      if (next.me && e.defenderId === next.me.id) {
         const summary = summaryFromEvent(e);
         playUnderAttackSound();
-        if (data.me.house) {
-          setImpact({ at: data.me.house, startedAt: Date.now() });
+        if (next.me.house) {
+          setImpact({ at: next.me.house, startedAt: Date.now() });
           window.setTimeout(() => setImpact(null), 1600);
         }
         // Show after the hit lands — stays until they close it
@@ -362,7 +414,11 @@ export function PlayShell() {
 
   useEffect(() => {
     void load();
-    const id = window.setInterval(() => void load(), 4000);
+    const id = window.setInterval(() => {
+      // Don't poll-overwrite while a settle/build write is in flight
+      if (busyRef.current) return;
+      void load();
+    }, 4000);
     return () => window.clearInterval(id);
   }, [load]);
 
@@ -488,8 +544,14 @@ export function PlayShell() {
     window.setTimeout(() => setToast(null), 3400);
   };
 
-  const act = async (action: string, extra: Record<string, unknown> = {}) => {
+  const act = async (
+    action: string,
+    extra: Record<string, unknown> = {},
+    label?: string
+  ) => {
     setBusy(true);
+    busyRef.current = true;
+    if (label) setSavingLabel(label);
     setError(null);
     try {
       const res = await fetch("/api/game", {
@@ -503,14 +565,23 @@ export function PlayShell() {
         window.setTimeout(() => setError(null), 3200);
         return null;
       }
+      if (
+        action === "claim_sector" ||
+        action === "place_house" ||
+        action === "build"
+      ) {
+        settleGuardUntil.current = Date.now() + 20_000;
+      }
       applySnap(data as GameSnapshot);
       return data;
     } catch {
-      setError("Network error");
+      setError("Network error — try again");
       window.setTimeout(() => setError(null), 3200);
       return null;
     } finally {
       setBusy(false);
+      busyRef.current = false;
+      setSavingLabel(null);
     }
   };
 
@@ -661,7 +732,7 @@ export function PlayShell() {
   }, [claimed, me]);
 
   const handlePlace = async (lat: number, lng: number) => {
-    if (!placing) return;
+    if (!placing || busyRef.current) return;
 
     if (placing.kind === "house") {
       // Stash the house, then ask for the villager
@@ -679,12 +750,16 @@ export function PlayShell() {
 
       // Rebuild after house was destroyed (already own the sector)
       if (me?.homeSectorId === placing.sector.id) {
-        const data = await act("place_house", {
-          lat: pendingHouse.lat,
-          lng: pendingHouse.lng,
-          villagerLat: lat,
-          villagerLng: lng,
-        });
+        const data = await act(
+          "place_house",
+          {
+            lat: pendingHouse.lat,
+            lng: pendingHouse.lng,
+            villagerLat: lat,
+            villagerLng: lng,
+          },
+          "Saving house…"
+        );
         if (data) {
           playBuildSound();
           showToast("House rebuilt — villagers are gathering again");
@@ -702,15 +777,19 @@ export function PlayShell() {
         return;
       }
 
-      const data = await act("claim_sector", {
-        sectorId: placing.sector.id,
-        lat: pendingHouse.lat,
-        lng: pendingHouse.lng,
-        villagerLat: lat,
-        villagerLng: lng,
-        gpsLat: gpsFix.lat,
-        gpsLng: gpsFix.lng,
-      });
+      const data = await act(
+        "claim_sector",
+        {
+          sectorId: placing.sector.id,
+          lat: pendingHouse.lat,
+          lng: pendingHouse.lng,
+          villagerLat: lat,
+          villagerLng: lng,
+          gpsLat: gpsFix.lat,
+          gpsLng: gpsFix.lng,
+        },
+        "Saving your settlement…"
+      );
       if (data) {
         playBuildSound();
         showToast(`Settled in ${placing.sector.name} — your village is live!`);
@@ -723,11 +802,15 @@ export function PlayShell() {
     }
 
     // Building placement
-    const data = await act("build", {
-      buildingType: placing.kind,
-      lat,
-      lng,
-    });
+    const data = await act(
+      "build",
+      {
+        buildingType: placing.kind,
+        lat,
+        lng,
+      },
+      "Saving building…"
+    );
     if (data) {
       playBuildSound();
       showToast("Building placed");
@@ -1322,8 +1405,23 @@ export function PlayShell() {
         </div>
       )}
 
+      {/* Saving settlement / build — blocks accidental taps while write is in flight */}
+      {savingLabel && (
+        <div className="absolute inset-0 z-50 flex items-end justify-center bg-black/35 px-4 pb-28 sm:items-center sm:pb-0">
+          <div className="hud-panel w-full max-w-xs p-4 text-center">
+            <p className="font-display text-lg text-[var(--sand)]">{savingLabel}</p>
+            <p className="mt-1 text-[11px] text-[var(--ink-muted)]">
+              Hold on — writing your village to the server…
+            </p>
+            <div className="mx-auto mt-3 h-1 w-32 overflow-hidden rounded-full bg-[var(--wash)]">
+              <div className="h-full w-1/2 animate-pulse bg-[var(--sand)]" />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Toast / error */}
-      {(toast || error) && !battleSummary && (
+      {(toast || error) && !battleSummary && !savingLabel && (
         <div className="pointer-events-none absolute left-1/2 top-14 z-40 -translate-x-1/2">
           <p
             className={`hud-chip px-4 py-2 text-xs font-semibold ${
@@ -1336,12 +1434,13 @@ export function PlayShell() {
       )}
 
       {/* Placement cancel */}
-      {placing && (
+      {placing && !savingLabel && (
         <div className="absolute bottom-36 left-1/2 z-30 -translate-x-1/2 sm:bottom-8">
           <button
             type="button"
             onClick={cancelPlacement}
-            className="hud-chip px-4 py-2 text-xs font-semibold text-[var(--signal-bright)]"
+            disabled={busy}
+            className="hud-chip px-4 py-2 text-xs font-semibold text-[var(--signal-bright)] disabled:opacity-40"
           >
             ✕ Cancel placement
           </button>
