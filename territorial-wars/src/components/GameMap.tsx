@@ -23,6 +23,7 @@ import {
   HOUSE_MAX_HP,
   INTRO_FLY_MS,
   INTRO_GLOBE_ZOOM,
+  INTRO_TITLE_HOLD_MS,
   PLAY_MAX_ZOOM,
   PLAY_MIN_ZOOM,
   PLAY_ZOOM,
@@ -246,6 +247,8 @@ export function GameMap({
   const [mapReady, setMapReady] = useState(false);
   /** While true, minZoom is open so the globe intro can run */
   const [introActive, setIntroActive] = useState(true);
+  /** Title over the globe: in → fading → gone */
+  const [introTitle, setIntroTitle] = useState<"in" | "out" | "gone">("in");
   const lastCenter = useRef<LatLng | null>(null);
   const lastFlownGps = useRef<string | null>(null);
   const introStarted = useRef(false);
@@ -296,6 +299,7 @@ export function GameMap({
     if (introFinished.current) return;
     introFinished.current = true;
     setIntroActive(false);
+    setIntroTitle("gone");
     const map = mapRef.current;
     if (!map) return;
     const z = map.getZoom();
@@ -323,6 +327,7 @@ export function GameMap({
       bearing: 0,
     });
     setZoom(INTRO_GLOBE_ZOOM);
+    setIntroTitle("in");
     applyBasemapLabels(false);
 
     let flying = false;
@@ -331,6 +336,11 @@ export function GameMap({
       finishIntro();
     };
     map.on("moveend", onEnd);
+
+    // Hold on the globe with the title, then fade title and fly in
+    const fadeTitle = window.setTimeout(() => {
+      setIntroTitle("out");
+    }, Math.max(400, INTRO_TITLE_HOLD_MS - 200));
 
     const startFly = window.setTimeout(() => {
       flying = true;
@@ -343,12 +353,16 @@ export function GameMap({
         curve: 1.35,
         essential: true,
       });
-    }, 120);
+    }, INTRO_TITLE_HOLD_MS);
 
     // Always unlock even if moveend is missed or this effect is cleaned up
-    const failsafe = window.setTimeout(finishIntro, INTRO_FLY_MS + 800);
+    const failsafe = window.setTimeout(
+      finishIntro,
+      INTRO_TITLE_HOLD_MS + INTRO_FLY_MS + 800
+    );
 
     return () => {
+      window.clearTimeout(fadeTitle);
       window.clearTimeout(startFly);
       window.clearTimeout(failsafe);
       map.off("moveend", onEnd);
@@ -757,6 +771,18 @@ export function GameMap({
 
   return (
     <div className={`relative ${className}`}>
+      {introTitle !== "gone" && (
+        <div
+          className={`intro-title ${introTitle === "out" ? "is-fading" : ""}`}
+          aria-hidden={introTitle === "out"}
+        >
+          <p className="intro-title-kicker">Settle · Gather · Raid</p>
+          <h1 className="intro-title-name">
+            Islamabad
+            <span>Territorial Wars</span>
+          </h1>
+        </div>
+      )}
       <MapboxMap
         ref={mapRef}
         mapboxAccessToken={TOKEN}

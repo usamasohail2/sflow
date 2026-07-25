@@ -58,14 +58,16 @@ export const PLAY_ZOOM = 14.4;
 export const PLAY_MIN_ZOOM = 13.2;
 /** Intro opens on the globe, then flies into the home sector */
 export const INTRO_GLOBE_ZOOM = 1.15;
+/** Hold on the globe so the title can read, then start the fly-in */
+export const INTRO_TITLE_HOLD_MS = 1200;
 export const INTRO_FLY_MS = 2400;
 /**
  * At/above this zoom Mapbox 3D buildings read clearly — show houses,
  * villagers, and settlement detail. Below it: dots + sector economy only.
  */
 export const DETAIL_ZOOM = 15.0;
-/** Street-close ceiling (keeps explore zoom reachable) */
-export const PLAY_MAX_ZOOM = 16.2;
+/** Street-close ceiling — tight enough for house/villager detail */
+export const PLAY_MAX_ZOOM = 18.5;
 /** How far (m) you must roam while zoomed before a gem can appear */
 export const ROAM_METERS_TO_SPAWN = 240;
 /** Must stay exploring (zoomed in, in sector) this long before a find */
