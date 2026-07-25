@@ -331,6 +331,15 @@ export function PlayShell() {
       (cur) => cur ?? next.me?.homeSectorId ?? next.sectors[0]?.id ?? null
     );
 
+    const nextId = next.me?.id ?? null;
+    if (nextId !== meIdRef.current) {
+      // New identity (first load or player switch) — don't replay history
+      meIdRef.current = nextId;
+      seenEvents.current = new Set();
+      eventsPrimed.current = false;
+      lastInviteCount.current = null;
+    }
+
     // Toast when a referral lands (+1 villager)
     const ic = next.inviteCount ?? 0;
     if (lastInviteCount.current !== null && ic > lastInviteCount.current) {
@@ -343,15 +352,6 @@ export function PlayShell() {
       window.setTimeout(() => setToast(null), 4200);
     }
     if (next.me) lastInviteCount.current = ic;
-
-    const nextId = next.me?.id ?? null;
-    if (nextId !== meIdRef.current) {
-      // New identity (first load or player switch) — don't replay history
-      meIdRef.current = nextId;
-      seenEvents.current = new Set();
-      eventsPrimed.current = false;
-      lastInviteCount.current = null;
-    }
 
     const events = next.events ?? [];
     if (!eventsPrimed.current) {
