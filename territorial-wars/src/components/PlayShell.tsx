@@ -1648,6 +1648,7 @@ export function PlayShell() {
       setShowPlayers(false);
       setPlacing(null);
       setPendingHouse(null);
+      setSettleSector(null);
       setMarch(null);
       const nextMe = (data as GameSnapshot).me;
       rememberIdentity(nextMe?.id);
@@ -3169,12 +3170,12 @@ export function PlayShell() {
             className="hud-panel pointer-events-auto w-full max-w-sm p-4"
             onClick={(e) => e.stopPropagation()}
             role="dialog"
-            aria-label="Local place reward"
+            aria-label="You found a local business"
           >
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-[var(--sand)]">
-                  Local place
+                  You found a spot!
                 </p>
                 <h2 className="mt-1 font-display text-2xl leading-tight text-[var(--ink)]">
                   {reviewBiz.name}
@@ -3199,36 +3200,33 @@ export function PlayShell() {
               </button>
             </div>
 
-            <div className="mt-3 rounded-sm border border-[var(--line)] bg-[var(--wash)] px-3 py-2.5">
-              <p className="font-mono text-[8px] uppercase tracking-[0.18em] text-[var(--ink-faint)]">
-                What you get
-              </p>
-              <p className="mt-1 text-sm text-[var(--ink)]">
-                <strong className="text-[var(--sand)]">
-                  +{REVIEW_VILLAGER_BONUS} villager
-                </strong>{" "}
-                permanently — more gold every gather trip.
-              </p>
-            </div>
+            <p className="mt-3 text-sm leading-relaxed text-[var(--ink)]">
+              You discovered a local business. Support it — leave a nice review
+              and earn a{" "}
+              <strong className="text-[var(--sand)]">
+                bonus villager
+              </strong>
+              !
+            </p>
 
             <ol className="mt-3 space-y-2 text-left text-[12px] text-[var(--ink-muted)]">
               <li className="flex gap-2">
                 <span className="font-mono text-[var(--sand)]">1.</span>
-                <span>Open this place in Google Maps.</span>
+                <span>Open it in Google Maps.</span>
               </li>
               <li className="flex gap-2">
                 <span className="font-mono text-[var(--sand)]">2.</span>
-                <span>Leave an honest review (stars + a short note).</span>
+                <span>Leave a review (stars + a short note).</span>
               </li>
               <li className="flex gap-2">
                 <span className="font-mono text-[var(--sand)]">3.</span>
-                <span>Come back here and claim your villager.</span>
+                <span>Come back and claim your villager!</span>
               </li>
             </ol>
 
             {me?.reviewedPlaceIds?.includes(reviewBiz.placeKey) ? (
               <p className="mt-4 rounded-sm border border-[var(--field)] bg-[var(--wash)] px-2.5 py-2 text-center text-[12px] text-[var(--field-bright)]">
-                Already claimed — thanks for supporting local
+                You already helped this place — nice!
               </p>
             ) : (
               <div className="mt-4 flex flex-col gap-1.5">
@@ -3259,7 +3257,7 @@ export function PlayShell() {
                       if (!d) return;
                       playRecruitSound();
                       showToast(
-                        `Review claimed — +${REVIEW_VILLAGER_BONUS} villager!`
+                        `Yay! +${REVIEW_VILLAGER_BONUS} bonus villager!`
                       );
                       setReviewBiz(null);
                       setReviewOpenedAt(null);
@@ -3269,17 +3267,17 @@ export function PlayShell() {
                   className="w-full rounded-sm border border-[var(--line-strong)] bg-[var(--wash)] px-3 py-2 text-xs font-semibold text-[var(--sand)] disabled:opacity-40"
                   title={
                     reviewOpenedAt == null
-                      ? "Open Google Maps and leave a review first"
+                      ? "Leave a review first, then claim"
                       : reviewReady
-                        ? "Claim your villager"
-                        : "Finish your review, then claim"
+                        ? "Claim your bonus villager"
+                        : "Finish your review, then come back"
                   }
                 >
                   {reviewOpenedAt == null
-                    ? "I left a review — claim villager"
+                    ? "I left a review — give me my villager!"
                     : reviewReady
-                      ? `Claim +${REVIEW_VILLAGER_BONUS} villager`
-                      : "Leave your review… (~15s)"}
+                      ? `Claim my +${REVIEW_VILLAGER_BONUS} villager`
+                      : "Write your review… (~15s)"}
                 </button>
               </div>
             )}
