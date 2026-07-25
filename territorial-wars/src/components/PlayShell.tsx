@@ -1430,33 +1430,34 @@ export function PlayShell() {
         />
       </div>
 
-      {visitorId && (
-        <PublicChat
-          visitorId={visitorId}
-          displayName={displayName || me?.name || "Scout"}
-          onSent={noteLocalMessage}
-          onRename={renamePresence}
-          className="absolute bottom-[max(5.75rem,calc(env(safe-area-inset-bottom)+4.75rem))] right-2 z-30 sm:bottom-[max(6.5rem,calc(env(safe-area-inset-bottom)+5.5rem))] sm:right-3"
-        />
-      )}
-
       {/* ---- Top bar (safe-area + wrap so chips aren't clipped) ---- */}
       <div className="pointer-events-none absolute left-0 right-0 top-0 z-20 flex flex-wrap items-start justify-between gap-2 px-2 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] sm:px-3 sm:pt-[max(0.75rem,env(safe-area-inset-top))]">
-        <Link
-          href="/"
-          className="pointer-events-auto hud-chip px-2.5 py-1.5 sm:px-3"
-          title="Islamabad Territorial Wars"
-        >
-          <span className="font-display text-xs text-[var(--ink)] sm:text-sm">
-            ITW
-          </span>
-          <span className="ml-1.5 font-mono text-[8px] uppercase tracking-[0.18em] text-[var(--ink-faint)]">
-            {claimed ? homeName : "settle"}
-          </span>
-        </Link>
+        <div className="pointer-events-auto flex flex-col items-start gap-1.5">
+          <Link
+            href="/"
+            className="hud-chip px-2.5 py-1.5 sm:px-3"
+            title="Islamabad Territorial Wars"
+          >
+            <span className="font-display text-xs text-[var(--ink)] sm:text-sm">
+              ITW
+            </span>
+            <span className="ml-1.5 font-mono text-[8px] uppercase tracking-[0.18em] text-[var(--ink-faint)]">
+              {claimed ? homeName : "settle"}
+            </span>
+          </Link>
+          {visitorId && (
+            <PublicChat
+              visitorId={visitorId}
+              displayName={displayName || me?.name || "Scout"}
+              onSent={noteLocalMessage}
+              onRename={renamePresence}
+              placement="top"
+            />
+          )}
+        </div>
 
         <div className="pointer-events-auto flex flex-col items-end gap-1.5">
-          <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="flex max-w-[calc(100vw-5.5rem)] flex-wrap items-center justify-end gap-1.5 sm:max-w-none sm:gap-2">
             <div
               className="flex h-[31px] items-center gap-1 px-0.5 font-mono text-[11px] font-bold text-[#e8cf8a]"
               title={claimed ? `${Math.floor(displayGold)} gold · +${perTrip}/trip` : `${Math.floor(displayGold)} gold`}
@@ -2633,184 +2634,186 @@ export function PlayShell() {
 
       {/* ---- Bottom dock: Arsenal (owned) + Build (place structures) ---- */}
       {claimed && me && (
-        <div className="pointer-events-none absolute inset-x-2 bottom-2 z-20 flex flex-col items-stretch gap-2 sm:inset-x-3 sm:bottom-3 sm:flex-row sm:items-end sm:justify-between">
-          {/* Build tray — structures only */}
-          <div
-            className={`pointer-events-auto order-1 self-end sm:order-2 sm:self-auto ${
-              buildOpen ? "block" : "hidden sm:block"
-            }`}
-          >
-            <div className="hud-panel p-1.5 sm:p-2">
-              <div className="flex items-center justify-between gap-2 px-1 pb-1">
-                <div>
-                  <p className="font-mono text-[8px] uppercase tracking-[0.24em] text-[var(--sand)]">
-                    Build
-                  </p>
-                  <p className="font-mono text-[8px] text-[var(--ink-faint)]">
-                    Tap a structure, then place it on the map
-                  </p>
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 sm:inset-x-0 sm:px-3 sm:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <div className="flex flex-col items-stretch gap-1.5 sm:flex-row sm:items-end sm:justify-between sm:gap-3">
+            {/* Build tray — structures only */}
+            <div
+              className={`pointer-events-auto order-1 w-full sm:order-2 sm:w-auto sm:max-w-[17rem] ${
+                buildOpen ? "block" : "hidden sm:block"
+              }`}
+            >
+              <div className="hud-panel p-1.5 sm:p-2">
+                <div className="flex items-center justify-between gap-2 px-1 pb-1">
+                  <div className="min-w-0">
+                    <p className="font-mono text-[8px] uppercase tracking-[0.24em] text-[var(--sand)]">
+                      Build
+                    </p>
+                    <p className="hidden font-mono text-[8px] text-[var(--ink-faint)] sm:block">
+                      Tap a structure, then place it on the map
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="font-mono text-[9px] text-[var(--ink-faint)] underline decoration-dotted sm:hidden"
+                    onClick={() => {
+                      setBuildOpen(false);
+                      setPlacing((cur) =>
+                        cur && cur.kind !== "house" && cur.kind !== "villager"
+                          ? null
+                          : cur
+                      );
+                    }}
+                  >
+                    Close
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  className="font-mono text-[9px] text-[var(--ink-faint)] underline decoration-dotted sm:hidden"
-                  onClick={() => {
-                    setBuildOpen(false);
-                    setPlacing((cur) =>
-                      cur && cur.kind !== "house" && cur.kind !== "villager"
-                        ? null
-                        : cur
+                <div className="grid grid-cols-4 gap-1 sm:grid-cols-2 sm:gap-1.5">
+                  {(snap?.buildingCatalog ?? []).map((b) => {
+                    const affordable = displayGold >= b.cost;
+                    const active = placing?.kind === b.type;
+                    const homeSector = snap?.sectors.find(
+                      (s) => s.id === me.homeSectorId
                     );
-                  }}
-                >
-                  Close
-                </button>
-              </div>
-              <div className="grid grid-cols-2 gap-1.5">
-                {(snap?.buildingCatalog ?? []).map((b) => {
-                  const affordable = displayGold >= b.cost;
-                  const active = placing?.kind === b.type;
-                  const homeSector = snap?.sectors.find(
-                    (s) => s.id === me.homeSectorId
-                  );
-                  return (
-                    <button
-                      key={b.type}
-                      type="button"
-                      className={`cameo ${active ? "cameo-active" : ""} ${
-                        affordable && !active ? "cameo-blink" : ""
-                      }`}
-                      disabled={
-                        busy || !affordable || !homeSector || !me.house
-                      }
-                      title={
-                        !me.house
-                          ? "Rebuild your house first"
-                          : `${b.name} — ${b.blurb} · ${b.footprintM}m ground`
-                      }
-                      onClick={() =>
-                        setPlacing((cur) =>
-                          cur?.kind === b.type || !homeSector || !me.house
-                            ? null
-                            : { kind: b.type, sector: homeSector }
-                        )
-                      }
-                    >
-                      <BuildingThumb type={b.type} className="h-9 w-10" />
-                      <span className="cameo-cost">
-                        {GOLD_COIN}
-                        {b.cost}
-                      </span>
-                      <span className="cameo-label">{b.name}</span>
-                    </button>
-                  );
-                })}
+                    return (
+                      <button
+                        key={b.type}
+                        type="button"
+                        className={`cameo ${active ? "cameo-active" : ""} ${
+                          affordable && !active ? "cameo-blink" : ""
+                        }`}
+                        disabled={
+                          busy || !affordable || !homeSector || !me.house
+                        }
+                        title={
+                          !me.house
+                            ? "Rebuild your house first"
+                            : `${b.name} — ${b.blurb} · ${b.footprintM}m ground`
+                        }
+                        onClick={() =>
+                          setPlacing((cur) =>
+                            cur?.kind === b.type || !homeSector || !me.house
+                              ? null
+                              : { kind: b.type, sector: homeSector }
+                          )
+                        }
+                      >
+                        <BuildingThumb type={b.type} className="h-8 w-9 sm:h-9 sm:w-10" />
+                        <span className="cameo-cost">
+                          {GOLD_COIN}
+                          {b.cost}
+                        </span>
+                        <span className="cameo-label">{b.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Arsenal — what you own + buy rockets */}
-          <div className="pointer-events-auto order-2 max-w-full overflow-x-auto sm:order-1">
-            <div className="hud-panel p-1.5 sm:p-2">
-              <div className="flex items-end justify-between gap-2 px-1 pb-1">
-                <div>
-                  <p className="font-mono text-[8px] uppercase tracking-[0.24em] text-[var(--sand)]">
-                    Arsenal
+            {/* Arsenal — what you own + buy rockets */}
+            <div className="pointer-events-auto order-2 min-w-0 max-w-full sm:order-1 sm:max-w-[min(100%,36rem)]">
+              <div className="hud-panel p-1.5 sm:p-2">
+                <div className="flex items-end justify-between gap-2 px-1 pb-1">
+                  <div className="min-w-0">
+                    <p className="font-mono text-[8px] uppercase tracking-[0.24em] text-[var(--sand)]">
+                      Arsenal
+                    </p>
+                    <p className="hidden font-mono text-[8px] text-[var(--ink-faint)] sm:block">
+                      What you own · rockets spent on attacks
+                    </p>
+                  </div>
+                  <p className="shrink-0 font-mono text-[9px] text-[var(--ink-muted)]">
+                    Atk {myAttack} · Def {myDefense}
                   </p>
-                  <p className="font-mono text-[8px] text-[var(--ink-faint)]">
-                    What you own · rockets spent on attacks
-                  </p>
                 </div>
-                <p className="font-mono text-[9px] text-[var(--ink-muted)]">
-                  Atk {myAttack} · Def {myDefense}
-                </p>
-              </div>
-              <div className="inline-flex items-end gap-1.5 sm:gap-2">
-                <div
-                  className="cameo"
-                  title={`${me.villagers} villager(s) gathering`}
-                >
-                  <VillagerSprite walking className="h-9 w-9" />
-                  <span className="cameo-badge">×{me.villagers}</span>
-                  <span className="cameo-label">Villager</span>
-                </div>
-                <div
-                  className="cameo"
-                  title={
-                    me.house
-                      ? `House ${me.houseHp}/${HOUSE_MAX_HP} hp · defense ${myDefense}`
-                      : "House destroyed — rebuild to gather"
-                  }
-                >
-                  <HouseSprite className="h-9 w-10" />
-                  {me.house ? (
-                    <span className="cameo-badge">
-                      {me.houseHp}/{HOUSE_MAX_HP}
-                    </span>
-                  ) : (
-                    <span className="cameo-badge">✕</span>
-                  )}
-                  <span className="cameo-label">House</span>
-                </div>
-                <div
-                  className="cameo"
-                  title={`Arsenal: ${me.rockets || 0} rocket(s) · ${myAttack} attack power`}
-                >
-                  <RocketSprite className="h-9 w-9" />
-                  <span className="cameo-badge">×{me.rockets || 0}</span>
-                  <span className="cameo-label">Rockets</span>
-                </div>
-
-                <div className="mx-0.5 h-10 w-px self-center bg-[var(--line)]" />
-
-                <button
-                  type="button"
-                  className={`cameo ${
-                    displayGold >= ROCKET_COST && me.house ? "cameo-blink" : ""
-                  }`}
-                  disabled={busy || displayGold < ROCKET_COST || !me.house}
-                  title={
-                    !me.house
-                      ? "Rebuild your house first"
-                      : `Buy rocket — ${GOLD_COIN}${ROCKET_COST} · +1 attack (expended when you fire)`
-                  }
-                  onClick={() =>
-                    void act("buy_rocket").then((d) => {
-                      if (d) {
-                        playRecruitSound();
-                        showToast("Rocket stocked · +1 attack");
-                      }
-                    })
-                  }
-                >
-                  <RocketSprite className="h-9 w-9" />
-                  <span className="cameo-cost">
-                    {GOLD_COIN}
-                    {ROCKET_COST}
-                  </span>
-                  <span className="cameo-label">Buy +1</span>
-                </button>
-
-                {gemsFound > 0 && (
+                <div className="flex items-end gap-1 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] sm:gap-1.5 [&::-webkit-scrollbar]:hidden">
                   <div
                     className="cameo"
-                    title={`${gemsFound} resource site(s) found`}
+                    title={`${me.villagers} villager(s) gathering`}
                   >
-                    <ResourceGem gem="diamond" size={26} pulse />
-                    <span className="cameo-badge">×{gemsFound}</span>
-                    <span className="cameo-label">Finds</span>
+                    <VillagerSprite walking className="h-8 w-8 sm:h-9 sm:w-9" />
+                    <span className="cameo-badge">×{me.villagers}</span>
+                    <span className="cameo-label">Villager</span>
                   </div>
-                )}
-                <button
-                  type="button"
-                  className={`cameo sm:hidden ${buildOpen ? "cameo-active" : ""}`}
-                  title="Open build menu — place structures"
-                  onClick={() => setBuildOpen((o) => !o)}
-                >
-                  <MillSprite className="h-8 w-9" />
-                  <span className="cameo-label">
-                    {buildOpen ? "Close" : "Build"}
-                  </span>
-                </button>
+                  <div
+                    className="cameo"
+                    title={
+                      me.house
+                        ? `House ${me.houseHp}/${HOUSE_MAX_HP} hp · defense ${myDefense}`
+                        : "House destroyed — rebuild to gather"
+                    }
+                  >
+                    <HouseSprite className="h-8 w-9 sm:h-9 sm:w-10" />
+                    {me.house ? (
+                      <span className="cameo-badge">
+                        {me.houseHp}/{HOUSE_MAX_HP}
+                      </span>
+                    ) : (
+                      <span className="cameo-badge">✕</span>
+                    )}
+                    <span className="cameo-label">House</span>
+                  </div>
+                  <div
+                    className="cameo"
+                    title={`Arsenal: ${me.rockets || 0} rocket(s) · ${myAttack} attack power`}
+                  >
+                    <RocketSprite className="h-8 w-8 sm:h-9 sm:w-9" />
+                    <span className="cameo-badge">×{me.rockets || 0}</span>
+                    <span className="cameo-label">Rockets</span>
+                  </div>
+
+                  <div className="mx-0.5 h-9 w-px shrink-0 self-center bg-[var(--line)] sm:h-10" />
+
+                  <button
+                    type="button"
+                    className={`cameo ${
+                      displayGold >= ROCKET_COST && me.house ? "cameo-blink" : ""
+                    }`}
+                    disabled={busy || displayGold < ROCKET_COST || !me.house}
+                    title={
+                      !me.house
+                        ? "Rebuild your house first"
+                        : `Buy rocket — ${GOLD_COIN}${ROCKET_COST} · +1 attack (expended when you fire)`
+                    }
+                    onClick={() =>
+                      void act("buy_rocket").then((d) => {
+                        if (d) {
+                          playRecruitSound();
+                          showToast("Rocket stocked · +1 attack");
+                        }
+                      })
+                    }
+                  >
+                    <RocketSprite className="h-8 w-8 sm:h-9 sm:w-9" />
+                    <span className="cameo-cost">
+                      {GOLD_COIN}
+                      {ROCKET_COST}
+                    </span>
+                    <span className="cameo-label">Buy +1</span>
+                  </button>
+
+                  {gemsFound > 0 && (
+                    <div
+                      className="cameo"
+                      title={`${gemsFound} resource site(s) found`}
+                    >
+                      <ResourceGem gem="diamond" size={24} pulse />
+                      <span className="cameo-badge">×{gemsFound}</span>
+                      <span className="cameo-label">Finds</span>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className={`cameo sm:hidden ${buildOpen ? "cameo-active" : ""}`}
+                    title="Open build menu — place structures"
+                    onClick={() => setBuildOpen((o) => !o)}
+                  >
+                    <MillSprite className="h-7 w-8" />
+                    <span className="cameo-label">
+                      {buildOpen ? "Close" : "Build"}
+                    </span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>

@@ -508,8 +508,13 @@ body {
 
 @media (max-width: 640px) {
   .cameo {
-    width: 58px;
-    height: 52px;
+    width: 52px;
+    height: 48px;
+  }
+
+  .cameo-label {
+    font-size: 7px;
+    letter-spacing: 0.04em;
   }
 }
 

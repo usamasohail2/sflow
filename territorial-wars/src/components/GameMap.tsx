@@ -1613,27 +1613,26 @@ export function GameMap({
       )}
 
       {me?.homeSectorId && !placing && (
-        <div className="pointer-events-none absolute bottom-24 left-1/2 z-10 w-[min(22rem,calc(100%-1rem))] -translate-x-1/2 space-y-2 sm:bottom-4">
+        <div className="pointer-events-none absolute bottom-[7.75rem] left-1/2 z-10 w-[min(16.5rem,calc(100%-7rem))] -translate-x-1/2 space-y-1.5 sm:bottom-[8.75rem] sm:w-[min(18rem,calc(100%-20rem))]">
           {spawnFlash && (
-            <p className="hud-chip px-3 py-2 text-center text-xs font-semibold text-[var(--field-bright)]">
+            <p className="hud-chip px-2.5 py-1.5 text-center text-[11px] font-semibold text-[var(--field-bright)] sm:px-3 sm:text-xs">
               {spawnFlash}
             </p>
           )}
           {!showDetail ? (
-            <p className="hud-chip px-3 py-1.5 text-center font-mono text-[9px] text-[var(--ink-muted)]">
-              Overview — sector economy · zoom in for 3D streets & settlements
+            <p className="hud-chip px-2.5 py-1.5 text-center font-mono text-[8px] text-[var(--ink-muted)] sm:text-[9px]">
+              Overview — zoom in for streets
             </p>
           ) : zoom < EXPLORE_ZOOM ? (
-            <p className="hud-chip px-3 py-1.5 text-center font-mono text-[9px] text-[var(--ink-muted)]">
-              Zoom into {homeSector?.name ?? "your sector"} & roam for
-              resources · trip {Math.round(GATHER_TRIP_MS / 1000)}s
+            <p className="hud-chip px-2.5 py-1.5 text-center font-mono text-[8px] text-[var(--ink-muted)] sm:text-[9px]">
+              Zoom in & roam for resources
             </p>
           ) : exploring ? (
-            <div className="hud-chip px-3 py-1.5">
-              <p className="text-center font-mono text-[9px] text-[var(--sand)]">
-                Exploring — resources appear ahead as you roam
+            <div className="hud-chip px-2.5 py-1.5 sm:px-3">
+              <p className="text-center font-mono text-[8px] text-[var(--sand)] sm:text-[9px]">
+                Exploring — roam for finds
               </p>
-              <div className="mx-auto mt-1 h-1.5 max-w-xs overflow-hidden rounded-full bg-[var(--wash)]">
+              <div className="mx-auto mt-1 h-1.5 max-w-[10rem] overflow-hidden rounded-full bg-[var(--wash)]">
                 <div
                   className="h-full bg-[var(--sand)] transition-[width] duration-150"
                   style={{ width: `${huntPct}%` }}
@@ -1641,8 +1640,8 @@ export function GameMap({
               </div>
             </div>
           ) : (
-            <p className="hud-chip px-3 py-1.5 text-center font-mono text-[9px] text-[var(--ink-muted)]">
-              Pan into your sector while zoomed in to hunt resources
+            <p className="hud-chip px-2.5 py-1.5 text-center font-mono text-[8px] text-[var(--ink-muted)] sm:text-[9px]">
+              Pan into your sector to hunt
             </p>
           )}
         </div>
