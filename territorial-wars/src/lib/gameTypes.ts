@@ -138,6 +138,8 @@ export type Player = {
   lastRoamSpawnAt: number;
   /** Attack cooldown anchor */
   lastAttackAt: number;
+  /** Same-sector raze cooldown anchor */
+  lastRazeAt: number;
   createdAt: number;
   updatedAt: number;
 };
@@ -202,16 +204,20 @@ export type BattleReport = {
   defenderRocketsLost: number;
 };
 
-export type GameEvent = {
+type GameEventBase = {
   id: string;
   ts: number;
-  type: "attack";
   attackerId: string;
   attackerName: string;
   defenderId: string;
   defenderName: string;
   sectorId: string;
   sectorName: string;
+};
+
+/** Cross-sector rocket raid */
+export type AttackEvent = GameEventBase & {
+  type: "attack";
   win: boolean;
   damage: number;
   destroyed: string | null;
@@ -230,13 +236,33 @@ export type GameEvent = {
   houseDamaged?: boolean;
 };
 
+/** Same-sector sabotage — clear ground by destroying a neighbor's building */
+export type RazeEvent = GameEventBase & {
+  type: "raze";
+  buildingId: string;
+  buildingType: BuildingType;
+  buildingName: string;
+};
+
+export type GameEvent = AttackEvent | RazeEvent;
+
+export function isAttackEvent(e: GameEvent): e is AttackEvent {
+  return e.type === "attack" || (e as { type?: string }).type == null;
+}
+
+export function isRazeEvent(e: GameEvent): e is RazeEvent {
+  return e.type === "raze";
+}
+
 export type GameSnapshot = {
   sectors: Sector[];
   spots: ResourceSpot[];
   players: PublicPlayer[];
   me: Player | null;
-  /** Battle events involving me (attacker or defender), newest last */
+  /** Events involving me (attacker or defender), newest last */
   events: GameEvent[];
+  /** Recent world activity (raids + razes), newest last */
+  globalEvents: GameEvent[];
   serverNow: number;
   gatherTripMs: number;
   buildingCatalog: BuildingCatalogItem[];
@@ -271,6 +297,8 @@ export const HOUSE_MAX_HP = 5;
 /** Gold to stock one rocket in your arsenal */
 export const ROCKET_COST = 35;
 export const ATTACK_COOLDOWN_MS = 60_000;
+/** Min time between same-sector building razes */
+export const RAZE_COOLDOWN_MS = 20_000;
 
 /**
  * Building HP uses the same small scale as attack/defense points

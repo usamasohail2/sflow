@@ -33,6 +33,7 @@ import type {
   GameEvent,
   GameSnapshot,
   Player,
+  RazeEvent,
 } from "@/lib/gameTypes";
 import {
   GOLD_COIN,
@@ -40,8 +41,11 @@ import {
   ROCKET_COST,
   attackPower,
   buildingBonus,
+  catalogItem,
   defenseBreakdown,
   defensePower,
+  isAttackEvent,
+  isRazeEvent,
 } from "@/lib/gameTypes";
 import { pointInOrNearRing } from "@/lib/geo";
 import { ringCentroid } from "@/lib/mapMath";
@@ -171,7 +175,8 @@ function summaryFromAttack(
   };
 }
 
-function summaryFromEvent(e: GameEvent, asDefender = true): BattleSummary {
+function summaryFromEvent(e: GameEvent, asDefender = true): BattleSummary | null {
+  if (!isAttackEvent(e)) return null;
   const rocketsLost =
     e.rocketsLost ?? (e.soldiersLost || 0) + (e.tanksLost || 0);
   const defenderRocketsLost =
@@ -215,11 +220,37 @@ function summaryFromEvent(e: GameEvent, asDefender = true): BattleSummary {
 }
 
 function eventLogLine(e: GameEvent, myId: string | undefined): string {
+  if (isRazeEvent(e)) {
+    const asActor = e.attackerId === myId;
+    if (asActor) {
+      return `Cleared ${e.defenderName}'s ${e.buildingName} in ${e.sectorName}`;
+    }
+    return `${e.attackerName} destroyed your ${e.buildingName} in ${e.sectorName}`;
+  }
+  if (!isAttackEvent(e)) return "Activity";
   const asAttacker = e.attackerId === myId;
   if (asAttacker) {
     return `${e.win ? "Won" : "Lost"} vs ${e.defenderName} @ ${e.sectorName} · ${e.damage} dmg`;
   }
   return `${e.attackerName} hit ${e.sectorName} · ${e.damage} dmg · ${e.win ? "breached" : "held"}`;
+}
+
+function activityLine(e: GameEvent, myId?: string | null): string {
+  if (isRazeEvent(e)) {
+    if (myId && e.attackerId === myId) {
+      return `${e.attackerName} cleared ${e.defenderName}'s ${e.buildingName} · ${e.sectorName}`;
+    }
+    if (myId && e.defenderId === myId) {
+      return `${e.attackerName} destroyed your ${e.buildingName} · ${e.sectorName}`;
+    }
+    return `${e.attackerName} cleared ${e.defenderName}'s ${e.buildingName} · ${e.sectorName}`;
+  }
+  if (isAttackEvent(e)) {
+    return `${e.attackerName} raided ${e.defenderName} @ ${e.sectorName} · ${
+      e.win ? "breach" : "held"
+    }`;
+  }
+  return "Activity";
 }
 
 export function PlayShell() {
@@ -228,6 +259,13 @@ export function PlayShell() {
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(
     null
   );
+  const [razeTarget, setRazeTarget] = useState<{
+    playerId: string;
+    buildingId: string;
+  } | null>(null);
+  const [showActivity, setShowActivity] = useState(false);
+  const [activityTab, setActivityTab] = useState<"global" | "you">("global");
+  const [razeAlert, setRazeAlert] = useState<RazeEvent | null>(null);
   /** Rockets to fire in the next salvo */
   const [salvo, setSalvo] = useState(1);
   const [busy, setBusy] = useState(false);
@@ -364,24 +402,62 @@ export function PlayShell() {
       const pendingHit = [...events]
         .reverse()
         .find(
-          (e) => next.me && e.defenderId === next.me.id && e.ts > ack
+          (e) =>
+            next.me &&
+            e.defenderId === next.me.id &&
+            e.ts > ack &&
+            isAttackEvent(e)
         );
       if (pendingHit) {
-        setBattleSummary(summaryFromEvent(pendingHit));
+        const summary = summaryFromEvent(pendingHit);
+        if (summary) setBattleSummary(summary);
+      }
+      const pendingRaze = [...events]
+        .reverse()
+        .find(
+          (e) =>
+            next.me &&
+            e.defenderId === next.me.id &&
+            e.ts > ack &&
+            isRazeEvent(e)
+        );
+      if (pendingRaze && isRazeEvent(pendingRaze)) {
+        setRazeAlert(pendingRaze);
       }
       return;
     }
     for (const e of events) {
       if (seenEvents.current.has(e.id)) continue;
       seenEvents.current.add(e.id);
-      if (next.me && e.defenderId === next.me.id) {
+      if (!next.me || e.defenderId !== next.me.id) continue;
+
+      if (isRazeEvent(e)) {
+        playUnderAttackSound();
+        const building = next.me.buildings.find((b) => b.id === e.buildingId);
+        const at =
+          building != null
+            ? { lat: building.lat, lng: building.lng }
+            : next.me.house;
+        if (at) {
+          setImpact({ at, startedAt: Date.now() });
+          window.setTimeout(() => setImpact(null), 1600);
+        }
+        window.setTimeout(() => {
+          setRazeAlert(e);
+          setShowBattles(false);
+          setShowActivity(false);
+        }, 400);
+        continue;
+      }
+
+      if (isAttackEvent(e)) {
         const summary = summaryFromEvent(e);
+        if (!summary) continue;
         playUnderAttackSound();
         if (next.me.house) {
           setImpact({ at: next.me.house, startedAt: Date.now() });
           window.setTimeout(() => setImpact(null), 1600);
         }
-        // Show after the hit lands — stays until they close it
         window.setTimeout(() => {
           setBattleSummary(summary);
           setShowBattles(false);
@@ -1027,6 +1103,38 @@ export function PlayShell() {
   /** Attack modal after tapping any enemy house/building */
   const enemySelected = claimed && canAttackEnemy;
 
+  const razeOwner = razeTarget
+    ? snap?.players.find((p) => p.id === razeTarget.playerId) ?? null
+    : null;
+  const razeBuilding = razeOwner?.buildings.find(
+    (b) => b.id === razeTarget?.buildingId
+  );
+  const canRazeSelected = Boolean(
+    claimed &&
+      me?.homeSectorId &&
+      razeOwner &&
+      razeBuilding &&
+      razeOwner.id !== me.id &&
+      razeOwner.homeSectorId === me.homeSectorId
+  );
+
+  const confirmRaze = async () => {
+    if (!razeTarget || !razeBuilding || !razeOwner) return;
+    const name = catalogItem(razeBuilding.type).name;
+    const ownerName = razeOwner.name;
+    const data = await act(
+      "raze_building",
+      {
+        targetPlayerId: razeTarget.playerId,
+        buildingId: razeTarget.buildingId,
+      },
+      "Clearing ground…"
+    );
+    if (!data) return;
+    setRazeTarget(null);
+    showToast(`Cleared ${ownerName}'s ${name} — ground is free`);
+  };
+
   // Google auth required — gate the game until signed in
   if (snap && !snap.authDisabled && !me) {
     return (
@@ -1149,8 +1257,10 @@ export function PlayShell() {
             setSelectedId(id);
             // Sector taps never open attack UI — only houses do
             setSelectedPlayerId(null);
+            setRazeTarget(null);
           }}
           onSelectPlayer={(id) => {
+            setRazeTarget(null);
             if (!id) {
               setSelectedPlayerId(null);
               return;
@@ -1162,11 +1272,18 @@ export function PlayShell() {
               target.homeSectorId === me.homeSectorId
             ) {
               setSelectedPlayerId(null);
-              showToast("Can't attack settlers in your own sector");
+              showToast(
+                "Same sector — tap their building to clear ground for yours"
+              );
               return;
             }
             setSelectedPlayerId(id);
           }}
+          onSelectRaze={(target) => {
+            setSelectedPlayerId(null);
+            setRazeTarget(target);
+          }}
+          selectedRazeBuildingId={razeTarget?.buildingId ?? null}
           onPlace={(lat, lng) => void handlePlace(lat, lng)}
           onSpawnFind={(p) => spawnFind(p)}
           onCollectHidden={(spotId) => void act("collect_hidden", { spotId }).then((d) => {
@@ -1216,6 +1333,26 @@ export function PlayShell() {
                 {Math.floor(displayGold)}
               </span>
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                setShowActivity(true);
+                setShowMenu(false);
+                setShowBattles(false);
+                setShowRanks(false);
+                setShowMissions(false);
+                setShowInvite(false);
+                setShowPlayers(false);
+              }}
+              className={`hud-chip px-2.5 py-1.5 font-mono text-[11px] sm:px-3 ${
+                showActivity
+                  ? "text-[var(--sand)]"
+                  : "text-[var(--ink-muted)] hover:text-[var(--sand)]"
+              }`}
+              title="Activity summary — world & your fights"
+            >
+              Log
+            </button>
             <button
               type="button"
               onClick={() => setMusicOn(toggleMusic())}
@@ -1450,13 +1587,16 @@ export function PlayShell() {
               ✕
             </button>
           </div>
-          {(snap?.events ?? []).length === 0 ? (
+          {(snap?.events ?? []).filter(isAttackEvent).length === 0 ? (
             <p className="mt-2 text-[11px] text-[var(--ink-faint)]">
               No attacks yet. Raid a rival sector to see a report here.
             </p>
           ) : (
             <ul className="mt-2 max-h-72 space-y-1.5 overflow-y-auto">
-              {[...(snap?.events ?? [])].reverse().map((e) => (
+              {[...(snap?.events ?? [])]
+                .filter(isAttackEvent)
+                .reverse()
+                .map((e) => (
                 <li
                   key={e.id}
                   className="rounded-sm border border-[var(--line)] px-2 py-1.5 text-[11px] text-[var(--ink-muted)]"
@@ -1475,10 +1615,14 @@ export function PlayShell() {
                     type="button"
                     className="mt-1 text-[9px] font-bold text-[var(--sand)]"
                     onClick={() => {
-                      setBattleSummary(
-                        summaryFromEvent(e, e.defenderId === me?.id)
+                      const summary = summaryFromEvent(
+                        e,
+                        e.defenderId === me?.id
                       );
-                      setShowBattles(false);
+                      if (summary) {
+                        setBattleSummary(summary);
+                        setShowBattles(false);
+                      }
                     }}
                   >
                     Open report
@@ -2072,6 +2216,169 @@ export function PlayShell() {
             >
               🏠 Rebuild house
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ---- Clear ground: same-sector neighbor building ---- */}
+      {canRazeSelected && razeOwner && razeBuilding && !placing && (
+        <div
+          className={`absolute left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-xs -translate-x-1/2 sm:bottom-8 ${
+            buildOpen ? "bottom-56" : "bottom-28"
+          }`}
+        >
+          <div className="hud-panel p-3 text-center">
+            <p className="font-mono text-[8px] uppercase tracking-[0.2em] text-[var(--sand)]">
+              Clear ground
+            </p>
+            <p className="mt-1 font-display text-lg text-[var(--ink)]">
+              {catalogItem(razeBuilding.type).name}
+            </p>
+            <p className="mt-1 text-[11px] text-[var(--ink-muted)]">
+              Destroy <strong className="text-[var(--ink)]">{razeOwner.name}</strong>
+              &apos;s building so you can plant yours on this spot. They&apos;ll
+              be notified.
+            </p>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void confirmRaze()}
+              className="mt-3 w-full rounded-sm bg-[var(--signal)] px-3 py-2.5 text-sm font-bold text-white disabled:opacity-40"
+            >
+              Break building
+            </button>
+            <button
+              type="button"
+              className="mt-1.5 font-mono text-[10px] text-[var(--ink-faint)] hover:text-[var(--sand)]"
+              onClick={() => setRazeTarget(null)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Victim notice: same-sector building razed */}
+      {razeAlert && (
+        <div
+          className="battle-report-overlay absolute inset-0 z-[60] flex items-start justify-center px-3 pt-16 sm:items-center sm:pt-0"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Building destroyed"
+        >
+          <div className="battle-report battle-report-defense pointer-events-auto w-[min(20rem,calc(100%-1rem))] p-4">
+            <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-white/65">
+              Same sector
+            </p>
+            <p className="font-display text-2xl text-white">Building cleared</p>
+            <p className="mt-2 text-sm text-white/85">
+              <strong>{razeAlert.attackerName}</strong> destroyed your{" "}
+              <strong>{razeAlert.buildingName}</strong> in{" "}
+              {razeAlert.sectorName} to free ground for their village.
+            </p>
+            <button
+              type="button"
+              className="mt-4 w-full rounded-sm bg-white/15 px-3 py-2 text-sm font-bold text-white"
+              onClick={() => {
+                writeBattleAck(Math.max(readBattleAck(), razeAlert.ts));
+                setRazeAlert(null);
+              }}
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Activity summary — global + personal */}
+      {showActivity && (
+        <div
+          className="absolute inset-0 z-40 flex items-end justify-center bg-black/50 p-3 sm:items-center"
+          onClick={() => setShowActivity(false)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setShowActivity(false);
+          }}
+          role="presentation"
+        >
+          <div
+            className="hud-panel max-h-[min(80dvh,36rem)] w-full max-w-md overflow-hidden p-4"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-label="Activity summary"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="font-display text-xl text-[var(--ink)]">
+                  Activity
+                </h2>
+                <p className="mt-0.5 font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--ink-faint)]">
+                  Raids & ground clears
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowActivity(false)}
+                className="font-mono text-[14px] text-[var(--ink-faint)] hover:text-[var(--sand)]"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="mt-3 flex gap-1 rounded-sm bg-[var(--wash)] p-0.5">
+              <button
+                type="button"
+                className={`flex-1 rounded-sm px-2 py-1.5 font-mono text-[10px] ${
+                  activityTab === "global"
+                    ? "bg-[var(--signal)] font-bold text-white"
+                    : "text-[var(--ink-muted)]"
+                }`}
+                onClick={() => setActivityTab("global")}
+              >
+                World
+              </button>
+              <button
+                type="button"
+                className={`flex-1 rounded-sm px-2 py-1.5 font-mono text-[10px] ${
+                  activityTab === "you"
+                    ? "bg-[var(--signal)] font-bold text-white"
+                    : "text-[var(--ink-muted)]"
+                }`}
+                onClick={() => setActivityTab("you")}
+              >
+                Your fights
+              </button>
+            </div>
+
+            <ul className="mt-3 max-h-[min(55dvh,24rem)] space-y-1.5 overflow-y-auto pr-1">
+              {(activityTab === "global"
+                ? [...(snap?.globalEvents ?? [])].reverse()
+                : [...(snap?.events ?? [])].reverse()
+              ).length === 0 ? (
+                <li className="text-[12px] text-[var(--ink-faint)]">
+                  {activityTab === "global"
+                    ? "No world activity yet — raids and ground clears show up here."
+                    : "Nothing involving you yet."}
+                </li>
+              ) : (
+                (activityTab === "global"
+                  ? [...(snap?.globalEvents ?? [])].reverse()
+                  : [...(snap?.events ?? [])].reverse()
+                ).map((e) => (
+                  <li
+                    key={e.id}
+                    className="rounded-sm border border-[var(--line)] px-2.5 py-2 text-[11px] text-[var(--ink-muted)]"
+                  >
+                    <p className="font-semibold text-[var(--ink)]">
+                      {activityLine(e, me?.id)}
+                    </p>
+                    <p className="mt-0.5 font-mono text-[9px] text-[var(--ink-faint)]">
+                      {isRazeEvent(e) ? "Clear ground" : "Raid"} ·{" "}
+                      {new Date(e.ts).toLocaleString()}
+                    </p>
+                  </li>
+                ))
+              )}
+            </ul>
           </div>
         </div>
       )}

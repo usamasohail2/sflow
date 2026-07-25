@@ -11,6 +11,7 @@ import {
   HOUSE_MAX_HP,
   INVITE_VILLAGER_BONUS,
   MAX_ROAM_FINDS,
+  RAZE_COOLDOWN_MS,
   ROAM_METERS_TO_SPAWN,
   ROAM_MIN_EXPLORE_MS,
   ROCKET_COST,
@@ -582,6 +583,7 @@ function normalizePlayer(raw: Player): Player {
   const p = { ...raw } as Player & LegacyArmyFields;
   if (p.lastRoamSpawnAt == null) p.lastRoamSpawnAt = 0;
   if (p.lastAttackAt == null) p.lastAttackAt = 0;
+  if (p.lastRazeAt == null) p.lastRazeAt = 0;
   // Migrate soldiers/tanks → rockets (preserve old attack power: 1 + 3)
   if (p.rockets == null) {
     const soldiers = legacy.soldiers || 0;
@@ -696,11 +698,11 @@ async function getAllPlayers(): Promise<Player[]> {
 }
 
 async function pushEvent(e: GameEvent): Promise<void> {
-  await lPushTrim(K_EVENTS, JSON.stringify(e), 50);
+  await lPushTrim(K_EVENTS, JSON.stringify(e), 120);
 }
 
 async function recentEvents(): Promise<GameEvent[]> {
-  const raw = await lRangeAll(K_EVENTS, 50);
+  const raw = await lRangeAll(K_EVENTS, 120);
   const parsed: GameEvent[] = [];
   for (const item of raw) {
     try {
@@ -874,6 +876,7 @@ async function ensureRivalGarrison(): Promise<void> {
       lastGatherAt: now,
       lastRoamSpawnAt: now,
       lastAttackAt: 0,
+    lastRazeAt: 0,
       createdAt: now,
       updatedAt: now,
     });
@@ -1034,6 +1037,7 @@ export async function ensurePlayer(
       lastGatherAt: now,
       lastRoamSpawnAt: 0,
       lastAttackAt: 0,
+    lastRazeAt: 0,
       createdAt: now,
       updatedAt: now,
     };
@@ -1104,8 +1108,9 @@ export async function getSnapshot(meId?: string | null): Promise<GameSnapshot> {
   const events = me
     ? allEvents
         .filter((e) => e.attackerId === me!.id || e.defenderId === me!.id)
-        .slice(-12)
+        .slice(-30)
     : [];
+  const globalEvents = allEvents.slice(-40);
 
   // Persist any accrual/seed/bootstrap writes made during this request
   await flushStore();
@@ -1124,6 +1129,7 @@ export async function getSnapshot(meId?: string | null): Promise<GameSnapshot> {
     players,
     me,
     events,
+    globalEvents,
     serverNow: Date.now(),
     gatherTripMs: GATHER_TRIP_MS,
     buildingCatalog: BUILDING_CATALOG,
@@ -1168,6 +1174,7 @@ export async function beginTutorialTest(
     lastGatherAt: now,
     lastRoamSpawnAt: 0,
     lastAttackAt: 0,
+    lastRazeAt: 0,
     updatedAt: now,
   });
   await flushStore();
@@ -1307,6 +1314,7 @@ export async function claimSector(
     lastGatherAt: now,
     lastRoamSpawnAt: 0,
     lastAttackAt: 0,
+    lastRazeAt: 0,
     updatedAt: now,
   });
 
@@ -1665,6 +1673,102 @@ export async function buyRocket(
     updatedAt: Date.now(),
   });
   return { ok: true };
+}
+
+/**
+ * Same-sector sabotage: destroy a neighbor's building to free ground
+ * for your own construction. House cannot be razed this way.
+ */
+export async function razeBuilding(
+  playerId: string,
+  targetPlayerId: string,
+  buildingId: string
+): Promise<
+  | {
+      ok: true;
+      raze: {
+        buildingType: BuildingType;
+        buildingName: string;
+        sectorId: string;
+        sectorName: string;
+        defenderName: string;
+      };
+    }
+  | { error: string }
+> {
+  await bootstrap();
+  const me = await getPlayer(playerId);
+  if (!me?.homeSectorId || !me.house) {
+    return { error: "Settle and place your house first" };
+  }
+  if (!targetPlayerId || targetPlayerId === playerId) {
+    return { error: "Pick someone else's building" };
+  }
+  if (!buildingId) return { error: "Pick a building to clear" };
+
+  const now = Date.now();
+  if (me.lastRazeAt && now - me.lastRazeAt < RAZE_COOLDOWN_MS) {
+    const wait = Math.ceil(
+      (RAZE_COOLDOWN_MS - (now - me.lastRazeAt)) / 1000
+    );
+    return { error: `Clearing tools cooling down — ${wait}s` };
+  }
+
+  const owner = await getPlayer(targetPlayerId);
+  if (!owner?.homeSectorId) {
+    return { error: "That settler has no village" };
+  }
+  if (owner.homeSectorId !== me.homeSectorId) {
+    return {
+      error: "Only buildings in your sector can be cleared this way — raid other sectors with rockets",
+    };
+  }
+
+  const building = owner.buildings.find((b) => b.id === buildingId);
+  if (!building) return { error: "That building is already gone" };
+
+  const buildingName = catalogItem(building.type).name;
+  const nextBuildings = owner.buildings.filter((b) => b.id !== buildingId);
+  const sectors = await getSectors();
+  const sector = sectors.find((s) => s.id === me.homeSectorId);
+
+  await setPlayer({
+    ...owner,
+    buildings: nextBuildings,
+    updatedAt: now,
+  });
+  await setPlayer({
+    ...me,
+    lastRazeAt: now,
+    updatedAt: now,
+  });
+
+  await pushEvent({
+    id: `rz_${now.toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+    ts: now,
+    type: "raze",
+    attackerId: playerId,
+    attackerName: me.name,
+    defenderId: owner.id,
+    defenderName: owner.name,
+    sectorId: me.homeSectorId,
+    sectorName: sector?.name ?? me.homeSectorId,
+    buildingId: building.id,
+    buildingType: building.type,
+    buildingName,
+  });
+
+  await flushStore();
+  return {
+    ok: true,
+    raze: {
+      buildingType: building.type,
+      buildingName,
+      sectorId: me.homeSectorId,
+      sectorName: sector?.name ?? me.homeSectorId,
+      defenderName: owner.name,
+    },
+  };
 }
 
 export async function attackSector(

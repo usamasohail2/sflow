@@ -16,6 +16,7 @@ import {
   getSnapshot,
   placeHouse,
   renamePlayer,
+  razeBuilding,
   spawnRoamFind,
 } from "@/lib/store";
 
@@ -131,6 +132,8 @@ export async function POST(req: Request) {
     targetPlayerId?: string;
     /** Rockets to fire in an attack salvo */
     rockets?: number;
+    /** Same-sector building to raze */
+    buildingId?: string;
   };
 
   // Dev/test helper: hop between guest accounts (auth is disabled)
@@ -180,6 +183,7 @@ export async function POST(req: Request) {
     gem?: string;
     spotId?: string;
     battle?: unknown;
+    raze?: unknown;
   };
 
   if (body.action === "claim_sector") {
@@ -297,6 +301,25 @@ export async function POST(req: Request) {
     const rocketsToFire =
       body.rockets != null ? Number(body.rockets) : undefined;
     result = await attackSector(id, targetPlayerId, rocketsToFire);
+  } else if (body.action === "raze_building") {
+    const targetPlayerId =
+      typeof body.targetPlayerId === "string"
+        ? body.targetPlayerId
+        : typeof body.targetId === "string"
+          ? body.targetId
+          : "";
+    const buildingId =
+      typeof body.buildingId === "string" ? body.buildingId : "";
+    if (!targetPlayerId || !buildingId) {
+      return withGuestCookie(
+        NextResponse.json(
+          { error: "Pick a neighbor's building to clear" },
+          { status: 400 }
+        ),
+        setCookie
+      );
+    }
+    result = await razeBuilding(id, targetPlayerId, buildingId);
   } else if (body.action === "rename") {
     result = await renamePlayer(id, String(body.name || ""));
   } else if (body.action === "begin_tutorial_test") {
@@ -327,6 +350,7 @@ export async function POST(req: Request) {
       gem: "gem" in result ? result.gem : undefined,
       spotId: "spotId" in result ? result.spotId : undefined,
       battle: "battle" in result ? result.battle : undefined,
+      raze: "raze" in result ? result.raze : undefined,
     }),
     setCookie
   );

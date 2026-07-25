@@ -174,6 +174,11 @@ type Props = {
   /** Tap another settler's house to target them (null clears) */
   onSelectPlayer?: (playerId: string | null) => void;
   selectedPlayerId?: string | null;
+  /** Tap a same-sector neighbor building to clear ground */
+  onSelectRaze?: (
+    target: { playerId: string; buildingId: string } | null
+  ) => void;
+  selectedRazeBuildingId?: string | null;
   onPlace?: (lat: number, lng: number) => void;
   onSpawnFind?: (payload: {
     lat: number;
@@ -267,6 +272,8 @@ export function GameMap({
   onSelect,
   onSelectPlayer,
   selectedPlayerId = null,
+  onSelectRaze,
+  selectedRazeBuildingId = null,
   onPlace,
   onSpawnFind,
   onCollectHidden,
@@ -1292,11 +1299,17 @@ export function GameMap({
               .flatMap((p) =>
                 p.buildings.map((b) => {
                   const maxHp = catalogItem(b.type).hp;
-                  const canTarget =
+                  const relation = playerRelation(p, me);
+                  const canRaid =
+                    relation === "enemy" &&
                     p.id !== me?.id &&
                     Boolean(p.homeSectorId) &&
-                    Boolean(me?.homeSectorId) &&
-                    p.homeSectorId !== me?.homeSectorId;
+                    Boolean(me?.homeSectorId);
+                  const canRaze =
+                    relation === "ally" &&
+                    p.id !== me?.id &&
+                    Boolean(me?.homeSectorId);
+                  const razeSelected = selectedRazeBuildingId === b.id;
                   return (
                     <Marker
                       key={b.id}
@@ -1307,29 +1320,45 @@ export function GameMap({
                       <button
                         type="button"
                         className={`relative flex flex-col items-center bg-transparent p-0 ${
-                          selectedPlayerId === p.id
+                          selectedPlayerId === p.id || razeSelected
                             ? "ring-2 ring-[var(--sand)] rounded-sm"
                             : ""
                         }`}
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (canTarget) onSelectPlayer?.(p.id);
-                          else onSelectPlayer?.(null);
+                          if (canRaid) {
+                            onSelectRaze?.(null);
+                            onSelectPlayer?.(p.id);
+                          } else if (canRaze) {
+                            onSelectPlayer?.(null);
+                            onSelectRaze?.({
+                              playerId: p.id,
+                              buildingId: b.id,
+                            });
+                          } else {
+                            onSelectPlayer?.(null);
+                            onSelectRaze?.(null);
+                          }
                         }}
                         title={
                           p.id === me?.id
                             ? `Your ${catalogItem(b.type).name}`
-                            : canTarget
-                              ? `Tap to target ${p.name}`
-                              : `${p.name} (same sector — can't attack)`
+                            : canRaid
+                              ? `Tap to raid ${p.name}`
+                              : canRaze
+                                ? `Clear ${p.name}'s ${catalogItem(b.type).name} to free ground`
+                                : `${p.name}'s ${catalogItem(b.type).name}`
                         }
                       >
                         <BuildingSprite type={b.type} />
                         <HpBar hp={b.hp ?? maxHp} maxHp={maxHp} width={38} />
-                        {playerRelation(p, me) === "enemy" && (
+                        {relation === "enemy" && (
                           <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-[var(--signal-bright)] ring-1 ring-[var(--surface)]" />
                         )}
-                        {playerRelation(p, me) === "ally" && (
+                        {canRaze && (
+                          <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-[var(--sand)] ring-1 ring-[var(--surface)]" />
+                        )}
+                        {relation === "ally" && !canRaze && (
                           <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-[var(--field-bright)] ring-1 ring-[var(--surface)]" />
                         )}
                       </button>
