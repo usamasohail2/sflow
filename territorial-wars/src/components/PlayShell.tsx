@@ -2860,7 +2860,7 @@ export function PlayShell() {
                   Activity
                 </h2>
                 <p className="mt-0.5 font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--ink-faint)]">
-                  Raids & ground clears
+                  Attacks & sabotage
                 </p>
               </div>
               <button
