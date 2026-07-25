@@ -3136,22 +3136,33 @@ export function PlayShell() {
         </div>
       )}
 
-      {/* Google Maps business review → +villager */}
+      {/* Zoomed-in place tap → explain modal + Google review reward */}
       {reviewBiz && claimed && (
         <div
-          className="absolute inset-x-2 bottom-[max(6.5rem,calc(env(safe-area-inset-bottom)+5.5rem))] z-30 sm:inset-x-auto sm:bottom-auto sm:left-3 sm:top-[max(4.5rem,calc(env(safe-area-inset-top)+3.75rem))] sm:w-[min(20rem,calc(100%-1.5rem))]"
+          className="absolute inset-0 z-[48] flex items-end justify-center bg-black/55 p-3 sm:items-center"
+          onClick={() => {
+            setReviewBiz(null);
+            setReviewOpenedAt(null);
+            setReviewReady(false);
+          }}
+          role="presentation"
         >
-          <div className="hud-panel pointer-events-auto p-3.5">
+          <div
+            className="hud-panel pointer-events-auto w-full max-w-sm p-4"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-label="Local place reward"
+          >
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <p className="font-mono text-[8px] uppercase tracking-[0.2em] text-[var(--sand)]">
-                  Local business
+                <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-[var(--sand)]">
+                  Local place
                 </p>
-                <p className="truncate font-display text-lg text-[var(--ink)]">
+                <h2 className="mt-1 font-display text-2xl leading-tight text-[var(--ink)]">
                   {reviewBiz.name}
-                </p>
+                </h2>
                 {reviewBiz.address && (
-                  <p className="mt-0.5 line-clamp-2 text-[10px] text-[var(--ink-muted)]">
+                  <p className="mt-1 line-clamp-2 text-[11px] text-[var(--ink-muted)]">
                     {reviewBiz.address}
                   </p>
                 )}
@@ -3169,19 +3180,40 @@ export function PlayShell() {
                 ✕
               </button>
             </div>
-            <p className="mt-2 text-[11px] leading-snug text-[var(--ink-muted)]">
-              Leave a Google Maps review for this place in your sector and earn{" "}
-              <span className="text-[var(--sand)]">
-                +{REVIEW_VILLAGER_BONUS} villager
-              </span>
-              .
-            </p>
+
+            <div className="mt-3 rounded-sm border border-[var(--line)] bg-[var(--wash)] px-3 py-2.5">
+              <p className="font-mono text-[8px] uppercase tracking-[0.18em] text-[var(--ink-faint)]">
+                What you get
+              </p>
+              <p className="mt-1 text-sm text-[var(--ink)]">
+                <strong className="text-[var(--sand)]">
+                  +{REVIEW_VILLAGER_BONUS} villager
+                </strong>{" "}
+                permanently — more gold every gather trip.
+              </p>
+            </div>
+
+            <ol className="mt-3 space-y-2 text-left text-[12px] text-[var(--ink-muted)]">
+              <li className="flex gap-2">
+                <span className="font-mono text-[var(--sand)]">1.</span>
+                <span>Open this place in Google Maps.</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="font-mono text-[var(--sand)]">2.</span>
+                <span>Leave an honest review (stars + a short note).</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="font-mono text-[var(--sand)]">3.</span>
+                <span>Come back here and claim your villager.</span>
+              </li>
+            </ol>
+
             {me?.reviewedPlaceIds?.includes(reviewBiz.placeKey) ? (
-              <p className="mt-3 rounded-sm border border-[var(--field)] bg-[var(--wash)] px-2.5 py-2 text-center text-[11px] text-[var(--field-bright)]">
+              <p className="mt-4 rounded-sm border border-[var(--field)] bg-[var(--wash)] px-2.5 py-2 text-center text-[12px] text-[var(--field-bright)]">
                 Already claimed — thanks for supporting local
               </p>
             ) : (
-              <div className="mt-3 flex flex-col gap-1.5">
+              <div className="mt-4 flex flex-col gap-1.5">
                 <button
                   type="button"
                   onClick={() => {
@@ -3192,7 +3224,7 @@ export function PlayShell() {
                     );
                     setReviewOpenedAt(Date.now());
                   }}
-                  className="w-full rounded-sm bg-[var(--field)] px-3 py-2.5 text-sm font-bold text-white"
+                  className="w-full rounded-sm bg-[var(--signal)] px-3 py-2.5 text-sm font-bold text-white"
                 >
                   Open in Google Maps
                 </button>
@@ -3229,7 +3261,7 @@ export function PlayShell() {
                     ? "I left a review — claim villager"
                     : reviewReady
                       ? `Claim +${REVIEW_VILLAGER_BONUS} villager`
-                      : "Leave your review…"}
+                      : "Leave your review… (~15s)"}
                 </button>
               </div>
             )}

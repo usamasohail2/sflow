@@ -99,7 +99,7 @@ import {
 } from "@/components/sprites";
 import { ResourceNode } from "@/components/ResourceNode";
 import { ViewerMarkers } from "@/components/ViewerMarkers";
-import { findNearbyBusiness } from "@/lib/businesses";
+import { resolveTappedPlace } from "@/lib/businesses";
 import type { PresencePeer } from "@/lib/presenceTypes";
 
 const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
@@ -1084,18 +1084,20 @@ export function GameMap({
           }
 
           // Always accept map clicks (not only sector-fill) so taps on
-          // 3D buildings / POI labels still open the review sheet.
+          // 3D buildings / POI labels still open the place sheet.
+          let rendered: unknown[] = [];
           try {
-            const hits = e.target.queryRenderedFeatures(e.point, {
-              layers: ["sector-fill"],
-            });
-            const id = hits[0]?.properties?.id;
+            rendered = e.target.queryRenderedFeatures(e.point) as unknown[];
+            const sectorHit = (
+              rendered as { layer?: { id?: string }; properties?: { id?: unknown } }[]
+            ).find((f) => f.layer?.id === "sector-fill");
+            const id = sectorHit?.properties?.id;
             if (typeof id === "string") onSelect(id);
           } catch {
             /* layer may not be ready */
           }
 
-          // Tap near a business near your village → Google review reward sheet
+          // Fully zoomed in: tap a place label / nearby POI for review reward
           if (
             onSelectBusiness &&
             me?.homeSectorId &&
@@ -1110,11 +1112,11 @@ export function GameMap({
                 pointInOrNearRing(
                   { lat: e.lngLat.lat, lng: e.lngLat.lng },
                   homeSector.ring,
-                  40
+                  90
                 ))
           ) {
             const at = { lat: e.lngLat.lat, lng: e.lngLat.lng };
-            void findNearbyBusiness(at, TOKEN).then((biz) => {
+            void resolveTappedPlace(at, TOKEN, rendered).then((biz) => {
               if (!biz) return;
               if (isAzad) {
                 if (
@@ -1129,7 +1131,7 @@ export function GameMap({
                 !pointInOrNearRing(
                   { lat: biz.lat, lng: biz.lng },
                   homeSector.ring,
-                  55
+                  120
                 )
               ) {
                 return;
@@ -1824,6 +1826,14 @@ export function GameMap({
         <div className="pointer-events-none absolute bottom-[7.75rem] left-1/2 z-10 w-[min(16.5rem,calc(100%-7rem))] -translate-x-1/2 sm:bottom-[8.75rem] sm:w-[min(18rem,calc(100%-20rem))]">
           <p className="hud-chip px-2.5 py-1.5 text-center text-[11px] font-semibold text-[var(--field-bright)] sm:px-3 sm:text-xs">
             {spawnFlash}
+          </p>
+        </div>
+      )}
+
+      {me?.homeSectorId && showDetail && !placing && !spawnFlash && (
+        <div className="pointer-events-none absolute bottom-[7.75rem] left-1/2 z-10 w-[min(17rem,calc(100%-7rem))] -translate-x-1/2 sm:bottom-[8.75rem] sm:w-[min(19rem,calc(100%-20rem))]">
+          <p className="hud-chip px-2.5 py-1.5 text-center text-[10px] font-semibold text-[var(--sand)] sm:px-3 sm:text-[11px]">
+            Tap place names — review for +1 villager
           </p>
         </div>
       )}
