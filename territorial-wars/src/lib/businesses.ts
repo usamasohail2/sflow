@@ -17,7 +17,7 @@ type MapboxFeature = {
   properties?: { category?: string; address?: string };
 };
 
-const MAX_POI_DIST_M = 70;
+const MAX_POI_DIST_M = 95;
 
 /** Stable key for one-reward-per-place tracking */
 export function businessPlaceKey(b: {
