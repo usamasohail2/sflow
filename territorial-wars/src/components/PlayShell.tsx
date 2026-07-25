@@ -35,6 +35,7 @@ import {
   type MapBusiness,
 } from "@/lib/businesses";
 import {
+  HammerSprite,
   HouseSprite,
   MillSprite,
   RocketSprite,
@@ -3140,17 +3141,15 @@ export function PlayShell() {
                       </div>
                     )}
 
-                    <div className="mx-0.5 h-9 w-px shrink-0 self-center bg-[var(--line)] sm:hidden" />
-
                     <button
                       type="button"
-                      className={`cameo sm:hidden ${
+                      className={`cameo ml-auto sm:hidden ${
                         buildOpen ? "cameo-active" : ""
                       }`}
                       title="Open buildables — place structures"
                       onClick={() => setBuildOpen((o) => !o)}
                     >
-                      <MillSprite className="h-7 w-8" />
+                      <HammerSprite className="h-7 w-7" />
                       <span className="cameo-label">
                         {buildOpen ? "Close" : "Build"}
                       </span>

@@ -341,6 +341,53 @@ export function WellSprite({
   );
 }
 
+/** Simple hammer — build / craft affordance. */
+export function HammerSprite({
+  className = "",
+  title = "Build",
+}: SpriteProps) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 32 32"
+      width="40"
+      height="40"
+      role="img"
+      aria-label={title}
+    >
+      <title>{title}</title>
+      <ellipse cx="16" cy="29.5" rx="7" ry="1.4" fill="rgba(0,0,0,0.3)" />
+      {/* handle */}
+      <rect
+        x="14.2"
+        y="12"
+        width="3.6"
+        height="15"
+        rx="1.2"
+        fill="#8b5a2b"
+        transform="rotate(-28 16 20)"
+      />
+      <rect
+        x="14.7"
+        y="13"
+        width="1.4"
+        height="12"
+        rx="0.6"
+        fill="#c4a06a"
+        opacity="0.35"
+        transform="rotate(-28 16 20)"
+      />
+      {/* head */}
+      <g transform="translate(16 11) rotate(-28)">
+        <rect x="-7.5" y="-4.2" width="15" height="6.4" rx="1.4" fill="#9aa3a0" />
+        <rect x="-7.5" y="-4.2" width="15" height="2.2" rx="1.2" fill="#c5ccc8" />
+        <rect x="-6.2" y="-3.4" width="3.2" height="4.6" rx="0.6" fill="#6a726c" />
+        <rect x="3" y="-3.4" width="3.2" height="4.6" rx="0.6" fill="#6a726c" />
+      </g>
+    </svg>
+  );
+}
+
 /** Cozy little cottage with warm window glow. */
 export function HouseSprite({
   className = "",
