@@ -55,12 +55,16 @@ import {
 } from "@/lib/geo";
 
 /** Thin extruded wall band — lines stay on the single perimeter */
-const SECTOR_WALL_M = 16;
-/** Stacked extrusions — taller boundary walls fading upward */
+const SECTOR_WALL_M = 22;
+/**
+ * Stacked extrusions — tall boundary walls fading upward.
+ * Must live in the Standard `middle` slot (not `top`) or they render flat.
+ * `fill-extrusion-opacity` cannot be data-driven — keep it a constant per band.
+ */
 const SECTOR_WALL_STACK = [
-  { id: "sector-wall-low", base: 0, height: 56, opacity: 0.88 },
-  { id: "sector-wall-mid", base: 56, height: 120, opacity: 0.48 },
-  { id: "sector-wall-high", base: 120, height: 200, opacity: 0.18 },
+  { id: "sector-wall-low", base: 0, height: 140, opacity: 0.92 },
+  { id: "sector-wall-mid", base: 140, height: 320, opacity: 0.55 },
+  { id: "sector-wall-high", base: 320, height: 520, opacity: 0.22 },
 ] as const;
 
 /** You = blue, same-sector ally = green, other sector = enemy red */
@@ -1403,29 +1407,24 @@ export function GameMap({
           />
         </Source>
 
-        {/* Tall extruded wall band (no line stroke — avoids double edges) */}
+        {/* Tall extruded wall band — middle slot so Standard keeps 3D extrusion */}
         <Source id="sector-wall-bands" type="geojson" data={wallBandFc}>
           {SECTOR_WALL_STACK.map((band) => (
             <Layer
               key={band.id}
               id={band.id}
               type="fill-extrusion"
-              slot="top"
+              slot="middle"
               paint={{
                 "fill-extrusion-color": sectorWallColor,
                 "fill-extrusion-base": band.base,
                 "fill-extrusion-height": [
                   "case",
                   ["==", ["get", "mine"], 1],
-                  band.height + 24,
+                  band.height + 40,
                   band.height,
                 ] as never,
-                "fill-extrusion-opacity": [
-                  "case",
-                  ["==", ["get", "mine"], 1],
-                  Math.min(0.95, band.opacity + 0.06),
-                  band.opacity,
-                ] as never,
+                "fill-extrusion-opacity": band.opacity,
                 "fill-extrusion-vertical-gradient": true,
               }}
             />
