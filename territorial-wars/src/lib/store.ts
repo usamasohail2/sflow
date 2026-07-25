@@ -1336,12 +1336,17 @@ export async function spawnRoamFind(
     return { error: "You've found every vein in this sector for now" };
   }
 
-  const ahead = 35 + Math.random() * 45;
+  // Spawn close to the camera so finds are easy to notice and tap
+  const ahead = 12 + Math.random() * 18;
   let pos = offsetBearing(view, opts.bearing, ahead);
-  pos = offsetBearing(pos, opts.bearing + 90, (Math.random() - 0.5) * 28);
+  pos = offsetBearing(pos, opts.bearing + 90, (Math.random() - 0.5) * 16);
 
   if (!pointInRing(pos, sector.ring)) {
-    pos = offsetBearing(view, opts.bearing, 25);
+    pos = offsetBearing(view, opts.bearing, 14);
+  }
+  if (!pointInRing(pos, sector.ring)) {
+    // Fall back beside the view instead of failing at the edge
+    pos = offsetBearing(view, opts.bearing + 90, 12);
   }
   if (!pointInRing(pos, sector.ring)) {
     return { error: "Edge of the sector — turn back and keep roaming" };
@@ -1350,16 +1355,16 @@ export async function spawnRoamFind(
   const tooClose = spots.some(
     (s) =>
       s.sectorId === me.homeSectorId &&
-      distMeters(pos, { lat: s.lat, lng: s.lng }) < 25
+      distMeters(pos, { lat: s.lat, lng: s.lng }) < 14
   );
   if (tooClose) {
-    pos = offsetBearing(view, opts.bearing + 40, 40);
+    pos = offsetBearing(view, opts.bearing + 55, 16);
     if (
       !pointInRing(pos, sector.ring) ||
       spots.some(
         (s) =>
           s.sectorId === me.homeSectorId &&
-          distMeters(pos, { lat: s.lat, lng: s.lng }) < 20
+          distMeters(pos, { lat: s.lat, lng: s.lng }) < 12
       )
     ) {
       return { error: "Keep roaming a bit further" };

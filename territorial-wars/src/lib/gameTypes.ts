@@ -51,7 +51,7 @@ export const GEM_META: Record<
 };
 
 /** Fully zoomed-in explore threshold (Mapbox zoom) */
-export const EXPLORE_ZOOM = 15.6;
+export const EXPLORE_ZOOM = 15.2;
 /** Play map starts here — sector-level, walls readable */
 export const PLAY_ZOOM = 14.4;
 /** Don't pull out past a couple of sectors */
@@ -69,13 +69,13 @@ export const DETAIL_ZOOM = 15.0;
 /** Street-close ceiling — tight enough for house/villager detail */
 export const PLAY_MAX_ZOOM = 18.5;
 /** How far (m) you must roam while zoomed before a gem can appear */
-export const ROAM_METERS_TO_SPAWN = 240;
+export const ROAM_METERS_TO_SPAWN = 90;
 /** Must stay exploring (zoomed in, in sector) this long before a find */
-export const ROAM_MIN_EXPLORE_MS = 28_000;
+export const ROAM_MIN_EXPLORE_MS = 8_000;
 /** Min time between roam spawns */
-export const SPAWN_COOLDOWN_MS = 55_000;
+export const SPAWN_COOLDOWN_MS = 22_000;
 /** Cap finds spawned in a sector */
-export const MAX_ROAM_FINDS = 10;
+export const MAX_ROAM_FINDS = 14;
 
 export type BuildingType = "mill" | "warehouse" | "well" | "turret";
 
