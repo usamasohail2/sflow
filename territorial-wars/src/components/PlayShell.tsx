@@ -1180,7 +1180,7 @@ export function PlayShell() {
 
       {/* Placement cancel */}
       {placing && (
-        <div className="absolute bottom-24 left-1/2 z-30 -translate-x-1/2 sm:bottom-8">
+        <div className="absolute bottom-36 left-1/2 z-30 -translate-x-1/2 sm:bottom-8">
           <button
             type="button"
             onClick={cancelPlacement}
@@ -1193,7 +1193,7 @@ export function PlayShell() {
 
       {/* ---- Settle prompt (no home yet) ---- */}
       {!claimed && selected && !placing && (
-        <div className="absolute bottom-24 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-sm -translate-x-1/2 sm:bottom-8">
+        <div className="absolute bottom-36 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-sm -translate-x-1/2 sm:bottom-8">
           <div className="hud-panel p-4 text-center">
             <p className="font-display text-2xl text-[var(--ink)]">
               {selected.name}
@@ -1286,7 +1286,7 @@ export function PlayShell() {
 
       {/* ---- Rebuild house after it was destroyed ---- */}
       {needsHouseRebuild && me?.homeSectorId && !placing && (
-        <div className="absolute bottom-24 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-sm -translate-x-1/2 sm:bottom-8">
+        <div className="absolute bottom-36 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-sm -translate-x-1/2 sm:bottom-8">
           <div className="hud-panel p-4 text-center">
             <p className="font-display text-xl text-[var(--signal-bright)]">
               House destroyed
@@ -1317,7 +1317,7 @@ export function PlayShell() {
 
       {/* ---- Sector settlers / attack target picker ---- */}
       {claimed && selected && !placing && !needsHouseRebuild && !enemySelected && rivalsHere.length > 0 && (
-        <div className="absolute bottom-24 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-xs -translate-x-1/2 sm:bottom-8">
+        <div className="absolute bottom-36 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-xs -translate-x-1/2 sm:bottom-8">
           <div className="hud-panel p-3 text-center">
             <p className="font-display text-lg text-[var(--ink)]">
               {selected.name}
@@ -1347,7 +1347,7 @@ export function PlayShell() {
 
       {/* ---- Attack panel: rival settler selected ---- */}
       {enemySelected && enemyPlayer && !placing && !needsHouseRebuild && (
-        <div className="absolute bottom-24 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-xs -translate-x-1/2 sm:bottom-8">
+        <div className="absolute bottom-36 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-xs -translate-x-1/2 sm:bottom-8">
           <div className="hud-panel p-3 text-center">
             <p className="font-display text-lg text-[var(--ink)]">
               {enemyPlayer.name}
