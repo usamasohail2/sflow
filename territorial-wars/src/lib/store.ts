@@ -73,9 +73,9 @@ const kOwner = (sid: string) => `${P}:owner:${sid}`;
 
 const LEGACY_BLOB_KEY = "itw:v2:state";
 
+/** Legacy dummy enemy sector + bot — removed from the live map */
+const DUMMY_ENEMY_SECTOR_ID = "sec_e7";
 const BOT_ID = "bot_garrison";
-const BOT_SECTOR_ID = "sec_e7";
-const BOT_RESTOCK_MS = 3 * 60_000;
 
 function redis(): Redis | null {
   const url = process.env.UPSTASH_REDIS_REST_URL;
@@ -504,6 +504,43 @@ async function hDel(key: string, field: string): Promise<void> {
   markDirty();
 }
 
+async function sRem(key: string, member: string): Promise<void> {
+  if (supabaseConfigured()) {
+    const cur = (await sbGet<string[]>(key)) ?? [];
+    const next = cur.filter((m) => m !== member);
+    if (next.length === cur.length) return;
+    await sbSet(key, next);
+    return;
+  }
+  const r = redis();
+  if (r) {
+    await r.srem(key, member);
+    return;
+  }
+  mem().sets.get(key)?.delete(member);
+  markDirty();
+}
+
+async function delKey(key: string): Promise<void> {
+  if (supabaseConfigured()) {
+    const sb = supabase();
+    if (!sb) return;
+    const { error } = await sb.from("itw_kv").delete().eq("key", key);
+    if (error) console.error("supabase del", key, error.message);
+    return;
+  }
+  const r = redis();
+  if (r) {
+    await r.del(key);
+    return;
+  }
+  mem().json.delete(key);
+  mem().sets.delete(key);
+  mem().hashes.delete(key);
+  mem().lists.delete(key);
+  markDirty();
+}
+
 async function lPushTrim(key: string, value: string, max: number): Promise<void> {
   if (supabaseConfigured()) {
     const l = (await sbGet<string[]>(key)) ?? [];
@@ -723,7 +760,7 @@ export function makeInviteCode(seed: string): string {
 }
 
 /* ------------------------------------------------------------------ */
-/* Bootstrap: migrate the old blob once, seed sectors, keep bot alive  */
+/* Bootstrap: migrate the old blob once, seed sectors if empty           */
 /* ------------------------------------------------------------------ */
 
 let bootPromise: Promise<void> | null = null;
@@ -810,116 +847,50 @@ async function doBootstrap(): Promise<void> {
   }
 }
 
-/** Bot-held practice sector: create + heal/restock a few minutes after raids */
-async function ensureRivalGarrison(): Promise<void> {
+/** Drop the old dummy E-7 enemy sector + Rival Garrison bot if still present */
+async function removeDummyEnemySector(): Promise<void> {
   const sectors = (await getJSON<Sector[]>(K_SECTORS)) ?? [];
-  let sector = sectors.find((s) => s.id === BOT_SECTOR_ID);
-  if (!sector) {
-    const seeded = buildDummySectors().find((s) => s.id === BOT_SECTOR_ID);
-    if (!seeded) return;
-    sector = seeded;
-    await setJSON(K_SECTORS, [...sectors, sector]);
-  }
-
-  const now = Date.now();
-  const center = ringCentroid(sector.ring);
-  const defaultBuildings = (): Building[] => {
-    const turretPos = offsetMeters(center, 65, 5);
-    const millPos = offsetMeters(center, -80, -25);
-    const warehousePos = offsetMeters(center, 15, 85);
-    return [
-      {
-        id: "bot_b_turret",
-        type: "turret",
-        lat: turretPos.lat,
-        lng: turretPos.lng,
-        hp: catalogItem("turret").hp,
-        builtAt: now,
-      },
-      {
-        id: "bot_b_mill",
-        type: "mill",
-        lat: millPos.lat,
-        lng: millPos.lng,
-        hp: catalogItem("mill").hp,
-        builtAt: now,
-      },
-      {
-        id: "bot_b_warehouse",
-        type: "warehouse",
-        lat: warehousePos.lat,
-        lng: warehousePos.lng,
-        hp: catalogItem("warehouse").hp,
-        builtAt: now,
-      },
-    ];
-  };
-
+  const hasSector = sectors.some((s) => s.id === DUMMY_ENEMY_SECTOR_ID);
   const bot = await getPlayer(BOT_ID);
-  if (!bot) {
-    await setPlayer({
-      id: BOT_ID,
-      name: "Rival Garrison",
-      homeSectorId: BOT_SECTOR_ID,
-      house: center,
-      houseHp: HOUSE_MAX_HP,
-      villagerPost: center,
-      villagers: 1,
-      rockets: 2,
-      peakRockets: 2,
-      gold: 40,
-      totalFarmed: 0,
-      buildings: defaultBuildings(),
-      discoveredSpotIds: [],
-      inviteCode: "RIVAL0",
-      invitedBy: null,
-      lastGatherAt: now,
-      lastRoamSpawnAt: now,
-      lastAttackAt: 0,
-    lastRazeAt: 0,
-      createdAt: now,
-      updatedAt: now,
-    });
-    await hSet(K_INVITES, "RIVAL0", BOT_ID);
-    await setNX(kOwner(BOT_SECTOR_ID), BOT_ID);
-    const spots = seedSpotsForSector(sector, center, await getSpots());
-    await setSpots(spots);
-    return;
+  if (!hasSector && !bot) return;
+
+  if (hasSector) {
+    await setJSON(
+      K_SECTORS,
+      sectors.filter((s) => s.id !== DUMMY_ENEMY_SECTOR_ID)
+    );
   }
 
-  // Keep rival villager visible + easy spots seeded for walk loops
-  if (!bot.villagerPost && bot.house) {
-    await setPlayer({
-      ...bot,
-      villagerPost: bot.house,
-      updatedAt: now,
-    });
-  }
-  {
-    const spots = await getSpots();
-    if (!spots.some((s) => s.sectorId === BOT_SECTOR_ID && s.kind === "easy")) {
-      await setSpots(seedSpotsForSector(sector, bot.house ?? center, spots));
-    }
+  const spots = await getSpots();
+  const nextSpots = spots.filter((s) => s.sectorId !== DUMMY_ENEMY_SECTOR_ID);
+  if (nextSpots.length !== spots.length) {
+    await setSpots(nextSpots);
   }
 
-  const razed =
-    !bot.house ||
-    (bot.houseHp || 0) < HOUSE_MAX_HP ||
-    bot.buildings.length < 3 ||
-    (bot.rockets || 0) < 1 ||
-    bot.buildings.some((b) => b.hp < catalogItem(b.type).hp);
-  if (razed && now - (bot.lastAttackAt || 0) > BOT_RESTOCK_MS) {
+  if (bot) {
+    await sRem(K_PIDS, BOT_ID);
+    await delKey(kPlayer(BOT_ID));
+  }
+
+  // Unsettle any non-bot player still parked on the deleted dummy sector
+  const players = await getAllPlayers();
+  const now = Date.now();
+  for (const p of players) {
+    if (p.homeSectorId !== DUMMY_ENEMY_SECTOR_ID) continue;
     await setPlayer({
-      ...bot,
-      house: bot.house ?? center,
-      houseHp: HOUSE_MAX_HP,
-      villagerPost: bot.villagerPost ?? bot.house ?? center,
-      rockets: Math.max(bot.rockets || 0, 2),
-      peakRockets: Math.max(bot.peakRockets || 0, 2),
-      buildings: defaultBuildings(),
+      ...p,
+      homeSectorId: null,
+      house: null,
+      houseHp: 0,
+      villagerPost: null,
+      buildings: [],
       updatedAt: now,
     });
   }
+
+  await hDel(K_INVITES, "RIVAL0");
+  await delKey(kOwner(DUMMY_ENEMY_SECTOR_ID));
+  await flushStore();
 }
 
 /* ------------------------------------------------------------------ */
@@ -1067,7 +1038,7 @@ export async function ensurePlayer(
 
 export async function getSnapshot(meId?: string | null): Promise<GameSnapshot> {
   await bootstrap();
-  await ensureRivalGarrison();
+  await removeDummyEnemySector();
 
   const [sectors, spotsAll, playersAll] = await Promise.all([
     getSectors(),

@@ -23,13 +23,6 @@ export function buildDummySectors(now = Date.now()): Sector[] {
     [73.04, 33.702],
     [73.02, 33.702],
   ];
-  // Bot-held practice target, right next to F-6
-  const e7: [number, number][] = [
-    [73.079, 33.722],
-    [73.098, 33.722],
-    [73.098, 33.737],
-    [73.079, 33.737],
-  ];
 
   return [
     {
@@ -43,13 +36,6 @@ export function buildDummySectors(now = Date.now()): Sector[] {
       id: "sec_g9",
       name: "G-9",
       ring: closeRing(g9),
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: "sec_e7",
-      name: "E-7",
-      ring: closeRing(e7),
       createdAt: now,
       updatedAt: now,
     },
