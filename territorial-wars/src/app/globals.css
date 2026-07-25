@@ -298,6 +298,33 @@ body {
   }
 }
 
+/* Optimistic building sync — spinner above the planted structure */
+.building-syncing {
+  opacity: 0.92;
+}
+
+.building-sync-loader {
+  position: absolute;
+  top: -1.15rem;
+  left: 50%;
+  z-index: 3;
+  width: 1.1rem;
+  height: 1.1rem;
+  margin-left: -0.55rem;
+  border-radius: 999px;
+  border: 2px solid rgba(232, 207, 138, 0.25);
+  border-top-color: #e8cf8a;
+  animation: building-sync-spin 0.7s linear infinite;
+  pointer-events: none;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+}
+
+@keyframes building-sync-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* ---- RTS HUD ---- */
 
 .hud-panel {

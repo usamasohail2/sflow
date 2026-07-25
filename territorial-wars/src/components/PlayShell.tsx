@@ -29,6 +29,7 @@ import {
 import { ResourceGem } from "@/components/ResourceGem";
 import type {
   BattleReport,
+  Building,
   BuildingType,
   GameEvent,
   GameSnapshot,
@@ -282,6 +283,8 @@ export function PlayShell() {
   const [showBattles, setShowBattles] = useState(false);
   const [showWalkthrough, setShowWalkthrough] = useState(false);
   const [placing, setPlacing] = useState<Placing | null>(null);
+  /** Building ids currently syncing to the server (optimistic place) */
+  const [syncingBuildIds, setSyncingBuildIds] = useState<string[]>([]);
   /** Mobile: build tray collapsed by default so it doesn't stack over arsenal */
   const [buildOpen, setBuildOpen] = useState(false);
   const [pendingHouse, setPendingHouse] = useState<LatLng | null>(null);
@@ -712,11 +715,15 @@ export function PlayShell() {
   const act = async (
     action: string,
     extra: Record<string, unknown> = {},
-    label?: string
+    label?: string,
+    opts?: { silent?: boolean }
   ) => {
-    setBusy(true);
-    busyRef.current = true;
-    if (label) setSavingLabel(label);
+    const silent = Boolean(opts?.silent);
+    if (!silent) {
+      setBusy(true);
+      busyRef.current = true;
+      if (label) setSavingLabel(label);
+    }
     setError(null);
     try {
       const invite = readStoredInvite();
@@ -750,9 +757,11 @@ export function PlayShell() {
       window.setTimeout(() => setError(null), 3200);
       return null;
     } finally {
-      setBusy(false);
-      busyRef.current = false;
-      setSavingLabel(null);
+      if (!silent) {
+        setBusy(false);
+        busyRef.current = false;
+        setSavingLabel(null);
+      }
     }
   };
 
@@ -903,7 +912,12 @@ export function PlayShell() {
   }, [claimed, me]);
 
   const handlePlace = async (lat: number, lng: number) => {
-    if (!placing || busyRef.current) return;
+    if (!placing) return;
+    // Block settle/rebuild while a full-screen save is in flight;
+    // building places use optimistic sync and may run in parallel.
+    const isBuildingPlace =
+      placing.kind !== "house" && placing.kind !== "villager";
+    if (!isBuildingPlace && busyRef.current) return;
 
     if (placing.kind === "house") {
       // Stash the house, then ask for the villager
@@ -972,22 +986,94 @@ export function PlayShell() {
       return;
     }
 
-    // Building placement
+    // Building placement — show on the map immediately, sync in background
+    if (!me || !snap) return;
+    const kind = placing.kind as BuildingType;
+    const cat =
+      snap.buildingCatalog.find((b) => b.type === kind) ?? catalogItem(kind);
+    if (displayGold < cat.cost) {
+      setError(`Need ${GOLD_COIN}${cat.cost}`);
+      window.setTimeout(() => setError(null), 3200);
+      return;
+    }
+
+    const tempId = `pending_${Date.now().toString(36)}_${Math.random()
+      .toString(36)
+      .slice(2, 5)}`;
+    const optimistic: Building = {
+      id: tempId,
+      type: kind,
+      lat,
+      lng,
+      hp: cat.hp,
+      builtAt: Date.now(),
+    };
+    const nextMe: Player = {
+      ...me,
+      gold: me.gold - cat.cost,
+      buildings: [...me.buildings, optimistic],
+      updatedAt: Date.now(),
+    };
+
+    setSnap((prev) => {
+      if (!prev?.me) return prev;
+      return {
+        ...prev,
+        me: nextMe,
+        players: prev.players.map((p) =>
+          p.id === nextMe.id
+            ? {
+                ...p,
+                gold: nextMe.gold,
+                buildings: nextMe.buildings,
+              }
+            : p
+        ),
+      };
+    });
+    setDisplayGold(nextMe.gold);
+    lastGoodMe.current = nextMe;
+    settleGuardUntil.current = Date.now() + 20_000;
+    setPlacing(null);
+    setSyncingBuildIds((ids) => [...ids, tempId]);
+    playBuildSound();
+
     const data = await act(
       "build",
-      {
-        buildingType: placing.kind,
-        lat,
-        lng,
-      },
-      "Saving building…"
+      { buildingType: kind, lat, lng },
+      undefined,
+      { silent: true }
     );
-    if (data) {
-      playBuildSound();
-      showToast("Building placed");
-      setPlacing(null);
+    setSyncingBuildIds((ids) => ids.filter((id) => id !== tempId));
+    if (!data) {
+      // Roll back optimistic place
+      setSnap((prev) => {
+        if (!prev?.me) return prev;
+        const rolled: Player = {
+          ...prev.me,
+          gold: prev.me.gold + cat.cost,
+          buildings: prev.me.buildings.filter((b) => b.id !== tempId),
+          updatedAt: Date.now(),
+        };
+        lastGoodMe.current = rolled.homeSectorId ? rolled : lastGoodMe.current;
+        return {
+          ...prev,
+          me: rolled,
+          players: prev.players.map((p) =>
+            p.id === rolled.id
+              ? {
+                  ...p,
+                  gold: rolled.gold,
+                  buildings: rolled.buildings,
+                }
+              : p
+          ),
+        };
+      });
+      setDisplayGold((g) => g + cat.cost);
+      return;
     }
-    // On error keep placement mode so they can pick a clear spot
+    showToast("Building synced");
   };
 
   const cancelPlacement = () => {
@@ -1301,6 +1387,7 @@ export function PlayShell() {
             showWalkthrough &&
             (placing?.kind === "house" || placing?.kind === "villager")
           }
+          syncingBuildingIds={syncingBuildIds}
           className="h-full w-full"
         />
       </div>

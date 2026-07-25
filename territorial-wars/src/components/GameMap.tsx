@@ -193,6 +193,8 @@ type Props = {
   onIntroComplete?: () => void;
   /** Pulsing map beacon during guided house/villager placement */
   guidePulse?: boolean;
+  /** Optimistic buildings currently writing to the server */
+  syncingBuildingIds?: string[];
   className?: string;
 };
 
@@ -279,8 +281,13 @@ export function GameMap({
   onCollectHidden,
   onIntroComplete,
   guidePulse = false,
+  syncingBuildingIds = [],
   className = "",
 }: Props) {
+  const syncingSet = useMemo(
+    () => new Set(syncingBuildingIds),
+    [syncingBuildingIds]
+  );
   const onIntroCompleteRef = useRef(onIntroComplete);
   onIntroCompleteRef.current = onIntroComplete;
   const mapRef = useRef<MapRef>(null);
@@ -1310,6 +1317,7 @@ export function GameMap({
                     p.id !== me?.id &&
                     Boolean(me?.homeSectorId);
                   const razeSelected = selectedRazeBuildingId === b.id;
+                  const syncing = syncingSet.has(b.id);
                   return (
                     <Marker
                       key={b.id}
@@ -1323,9 +1331,10 @@ export function GameMap({
                           selectedPlayerId === p.id || razeSelected
                             ? "ring-2 ring-[var(--sand)] rounded-sm"
                             : ""
-                        }`}
+                        } ${syncing ? "building-syncing" : ""}`}
                         onClick={(e) => {
                           e.stopPropagation();
+                          if (syncing) return;
                           if (canRaid) {
                             onSelectRaze?.(null);
                             onSelectPlayer?.(p.id);
@@ -1341,24 +1350,32 @@ export function GameMap({
                           }
                         }}
                         title={
-                          p.id === me?.id
-                            ? `Your ${catalogItem(b.type).name}`
-                            : canRaid
-                              ? `Tap to raid ${p.name}`
-                              : canRaze
-                                ? `Clear ${p.name}'s ${catalogItem(b.type).name} to free ground`
-                                : `${p.name}'s ${catalogItem(b.type).name}`
+                          syncing
+                            ? `Syncing ${catalogItem(b.type).name}…`
+                            : p.id === me?.id
+                              ? `Your ${catalogItem(b.type).name}`
+                              : canRaid
+                                ? `Tap to raid ${p.name}`
+                                : canRaze
+                                  ? `Clear ${p.name}'s ${catalogItem(b.type).name} to free ground`
+                                  : `${p.name}'s ${catalogItem(b.type).name}`
                         }
                       >
+                        {syncing && (
+                          <span
+                            className="building-sync-loader"
+                            aria-label="Syncing with server"
+                          />
+                        )}
                         <BuildingSprite type={b.type} />
                         <HpBar hp={b.hp ?? maxHp} maxHp={maxHp} width={38} />
-                        {relation === "enemy" && (
+                        {relation === "enemy" && !syncing && (
                           <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-[var(--signal-bright)] ring-1 ring-[var(--surface)]" />
                         )}
-                        {canRaze && (
+                        {canRaze && !syncing && (
                           <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-[var(--sand)] ring-1 ring-[var(--surface)]" />
                         )}
-                        {relation === "ally" && !canRaze && (
+                        {relation === "ally" && !canRaze && !syncing && (
                           <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-[var(--field-bright)] ring-1 ring-[var(--surface)]" />
                         )}
                       </button>
