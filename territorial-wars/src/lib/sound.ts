@@ -405,7 +405,8 @@ export function playCoinSound(): void {
 export function playGemSpawnSound(): void {
   if (!sfxOn) return;
   const c = ensureCtx();
-  if (!c || !sfxGain) return;
+  const out = sfxGain;
+  if (!c || !out) return;
   const t = c.currentTime;
   const notes = [783.99, 987.77, 1318.51, 1567.98]; // G5 B5 E6 G6
   notes.forEach((f, i) => {
@@ -416,7 +417,7 @@ export function playGemSpawnSound(): void {
     g.gain.setValueAtTime(0.0001, t + i * 0.055);
     g.gain.exponentialRampToValueAtTime(0.2 - i * 0.03, t + i * 0.055 + 0.02);
     g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.055 + 0.35);
-    osc.connect(g).connect(sfxGain);
+    osc.connect(g).connect(out);
     osc.start(t + i * 0.055);
     osc.stop(t + i * 0.055 + 0.38);
   });
@@ -430,7 +431,7 @@ export function playGemSpawnSound(): void {
   const g2 = c.createGain();
   g2.gain.setValueAtTime(0.12, t);
   g2.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
-  src.connect(filt).connect(g2).connect(sfxGain);
+  src.connect(filt).connect(g2).connect(out);
   src.start(t);
 }
 

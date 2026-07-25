@@ -77,6 +77,7 @@ import {
   playAttackSound,
   playBuildSound,
   playCoinSound,
+  playGemSpawnSound,
   playRecruitSound,
   playUnderAttackSound,
   readMusicPref,
@@ -1065,6 +1066,7 @@ export function PlayShell() {
       const data = await res.json();
       if (!res.ok) return false;
       applySnap(data as GameSnapshot);
+      playGemSpawnSound();
       const gem = String(data.gem || "resource");
       const label = `${gem[0]!.toUpperCase()}${gem.slice(1)}`;
       showToast(`${label} appeared — tap to claim before others do!`);
