@@ -552,6 +552,9 @@ export function PlayShell() {
   const [placing, setPlacing] = useState<Placing | null>(null);
   /** Building ids currently syncing to the server (optimistic place) */
   const [syncingBuildIds, setSyncingBuildIds] = useState<string[]>([]);
+  /** Gem/resource spot ids currently claiming on the server */
+  const [claimingSpotIds, setClaimingSpotIds] = useState<string[]>([]);
+  const claimingSpotIdsRef = useRef<string[]>([]);
   const [pendingHouse, setPendingHouse] = useState<LatLng | null>(null);
   const [march, setMarch] = useState<MarchAnim | null>(null);
   const [impact, setImpact] = useState<ImpactAnim | null>(null);
@@ -615,9 +618,17 @@ export function PlayShell() {
   }, []);
 
   const applySnap = useCallback((data: GameSnapshot) => {
-    let next = data;
+    // Don't resurrect gems mid-claim if a poll races the write
+    const claiming = new Set(claimingSpotIdsRef.current);
+    let next: GameSnapshot =
+      claiming.size > 0
+        ? {
+            ...data,
+            spots: data.spots.filter((s) => !claiming.has(s.id)),
+          }
+        : data;
     const prevMe = lastGoodMe.current;
-    const incoming = data.me;
+    const incoming = next.me;
     // Guard against a stale poll wiping a just-saved settlement (~3s race)
     if (
       prevMe?.homeSectorId &&
@@ -631,9 +642,9 @@ export function PlayShell() {
         (incoming.updatedAt ?? 0) < (prevMe.updatedAt ?? 0)
       ) {
         next = {
-          ...data,
+          ...next,
           me: prevMe,
-          players: data.players.map((p) =>
+          players: next.players.map((p) =>
             p.id === prevMe.id
               ? {
                   ...p,
@@ -1188,6 +1199,81 @@ export function PlayShell() {
       return true;
     } catch {
       return false;
+    }
+  };
+
+  /** Claim a gem/find — no busy lock; top loader while the server writes */
+  const claimHidden = async (spotId: string) => {
+    if (!spotId || claimingSpotIdsRef.current.includes(spotId)) return;
+    const spot = snap?.spots.find((s) => s.id === spotId) ?? null;
+
+    claimingSpotIdsRef.current = [...claimingSpotIdsRef.current, spotId];
+    setClaimingSpotIds(claimingSpotIdsRef.current);
+
+    // Optimistic: pull it off the map immediately so taps feel instant
+    if (spot) {
+      setSnap((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          spots: prev.spots.filter((s) => s.id !== spotId),
+        };
+      });
+    }
+
+    try {
+      const invite = readStoredInvite();
+      const res = await fetch("/api/game", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "collect_hidden",
+          spotId,
+          ...(invite ? { invite } : {}),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        // Put the gem back if the server rejected the claim
+        if (spot) {
+          setSnap((prev) => {
+            if (!prev) return prev;
+            if (prev.spots.some((s) => s.id === spotId)) return prev;
+            return { ...prev, spots: [...prev.spots, spot] };
+          });
+        }
+        setError(data.error || "Couldn't claim that find");
+        window.setTimeout(() => setError(null), 3200);
+        return;
+      }
+      applySnap(data as GameSnapshot);
+      if (data?.gained) {
+        playCoinSound();
+        const gem = String(data.gem || "gem");
+        const label = `${gem[0]!.toUpperCase()}${gem.slice(1)}`;
+        if (data.stolen && data.ownerName) {
+          showToast(
+            `Snatched ${personName(String(data.ownerName))}'s ${label} +${GOLD_COIN}${data.gained}`
+          );
+        } else {
+          showToast(`Claimed ${label} +${GOLD_COIN}${data.gained}`);
+        }
+      }
+    } catch {
+      if (spot) {
+        setSnap((prev) => {
+          if (!prev) return prev;
+          if (prev.spots.some((s) => s.id === spotId)) return prev;
+          return { ...prev, spots: [...prev.spots, spot] };
+        });
+      }
+      setError("Network error — try claiming again");
+      window.setTimeout(() => setError(null), 3200);
+    } finally {
+      claimingSpotIdsRef.current = claimingSpotIdsRef.current.filter(
+        (id) => id !== spotId
+      );
+      setClaimingSpotIds([...claimingSpotIdsRef.current]);
     }
   };
 
@@ -2072,21 +2158,8 @@ export function PlayShell() {
           selectedRazeBuildingId={razeTarget?.buildingId ?? null}
           onPlace={(lat, lng) => void handlePlace(lat, lng)}
           onSpawnFind={(p) => spawnFind(p)}
-          onCollectHidden={(spotId) =>
-            void act("collect_hidden", { spotId }).then((d) => {
-              if (!d?.gained) return;
-              playCoinSound();
-              const gem = String(d.gem || "gem");
-              const label = `${gem[0]!.toUpperCase()}${gem.slice(1)}`;
-              if (d.stolen && d.ownerName) {
-                showToast(
-                  `Snatched ${personName(String(d.ownerName))}'s ${label} +${GOLD_COIN}${d.gained}`
-                );
-              } else {
-                showToast(`Claimed ${label} +${GOLD_COIN}${d.gained}`);
-              }
-            })
-          }
+          onCollectHidden={(spotId) => void claimHidden(spotId)}
+          claimingSpotIds={claimingSpotIds}
           onSelectBusiness={(biz) => {
             setReviewBiz(biz);
             setReviewOpenedAt(null);
@@ -2976,6 +3049,23 @@ export function PlayShell() {
               </p>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Top loader while a gem/resource claim is writing to the server */}
+      {claimingSpotIds.length > 0 && (
+        <div
+          className="claim-top-loader pointer-events-none absolute left-0 right-0 z-[55]"
+          style={{ top: "max(0px, env(safe-area-inset-top))" }}
+          role="status"
+          aria-live="polite"
+          aria-label="Claiming resource"
+        >
+          <div className="claim-top-loader-bar" />
+          <p className="claim-top-loader-label">
+            Claiming…
+            {claimingSpotIds.length > 1 ? ` ×${claimingSpotIds.length}` : ""}
+          </p>
         </div>
       )}
 

@@ -216,6 +216,8 @@ type Props = {
     exploreMs: number;
   }) => boolean | Promise<boolean>;
   onCollectHidden?: (spotId: string) => void;
+  /** Spot ids currently claiming on the server — show a spinner on the gem */
+  claimingSpotIds?: string[];
   /** Tap a Mapbox POI / business inside the home sector */
   onSelectBusiness?: (business: {
     placeKey: string;
@@ -318,6 +320,7 @@ export function GameMap({
   onPlace,
   onSpawnFind,
   onCollectHidden,
+  claimingSpotIds = [],
   onSelectBusiness,
   onIntroComplete,
   guidePulse = false,
@@ -330,6 +333,10 @@ export function GameMap({
   const syncingSet = useMemo(
     () => new Set(syncingBuildingIds),
     [syncingBuildingIds]
+  );
+  const claimingSet = useMemo(
+    () => new Set(claimingSpotIds),
+    [claimingSpotIds]
   );
   const onIntroCompleteRef = useRef(onIntroComplete);
   onIntroCompleteRef.current = onIntroComplete;
@@ -1629,6 +1636,7 @@ export function GameMap({
                 const gem = s.gem || "diamond";
                 const contested = Boolean(s.claimable);
                 const mine = s.ownerId === me?.id;
+                const claiming = claimingSet.has(s.id);
                 return (
                   <Marker
                     key={s.id}
@@ -1636,24 +1644,37 @@ export function GameMap({
                     latitude={s.lat}
                     anchor="center"
                   >
-                    <ResourceNode
-                      gem={gem}
-                      size={ready || contested ? 40 : 32}
-                      depleted={!ready && !contested}
-                      pulse={ready || contested}
-                      title={
-                        contested
-                          ? mine
-                            ? `${GEM_META[gem].label} — tap to claim (others can snatch it)`
-                            : `${GEM_META[gem].label} — tap to claim`
-                          : ready
-                            ? `${GEM_META[gem].label} — tap to collect`
-                            : `${GEM_META[gem].label} refilling…`
-                      }
-                      onClick={() => {
-                        if (contested || ready) onCollectHidden?.(s.id);
-                      }}
-                    />
+                    <div
+                      className={`relative ${claiming ? "gem-claiming" : ""}`}
+                    >
+                      {claiming && (
+                        <span
+                          className="building-sync-loader"
+                          aria-label="Claiming…"
+                        />
+                      )}
+                      <ResourceNode
+                        gem={gem}
+                        size={ready || contested ? 40 : 32}
+                        depleted={claiming || (!ready && !contested)}
+                        pulse={!claiming && (ready || contested)}
+                        title={
+                          claiming
+                            ? "Claiming…"
+                            : contested
+                              ? mine
+                                ? `${GEM_META[gem].label} — tap to claim (others can snatch it)`
+                                : `${GEM_META[gem].label} — tap to claim`
+                              : ready
+                                ? `${GEM_META[gem].label} — tap to collect`
+                                : `${GEM_META[gem].label} refilling…`
+                        }
+                        onClick={() => {
+                          if (claiming) return;
+                          if (contested || ready) onCollectHidden?.(s.id);
+                        }}
+                      />
+                    </div>
                   </Marker>
                 );
               })}
