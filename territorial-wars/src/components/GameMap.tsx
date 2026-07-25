@@ -330,8 +330,6 @@ export function GameMap({
   const [zoom, setZoom] = useState(INTRO_GLOBE_ZOOM);
   const showDetail = zoom >= DETAIL_ZOOM;
   const [now, setNow] = useState(() => Date.now());
-  const [roamMeters, setRoamMeters] = useState(0);
-  const [exploreMs, setExploreMs] = useState(0);
   const [exploring, setExploring] = useState(false);
   const [spawnFlash, setSpawnFlash] = useState<string | null>(null);
   const [hover, setHover] = useState<LatLng | null>(null);
@@ -898,8 +896,6 @@ export function GameMap({
         window.setTimeout(() => setSpawnFlash(null), 2600);
         roamAcc.current = 0;
         exploreAcc.current = 0;
-        setRoamMeters(0);
-        setExploreMs(0);
         lastExploreTick.current = Date.now();
         localCooldownUntil.current = Date.now() + SPAWN_COOLDOWN_MS;
       } finally {
@@ -948,8 +944,6 @@ export function GameMap({
           if (step > 2.5 && step < 90) {
             exploreAcc.current += dt;
             roamAcc.current += step;
-            setExploreMs(exploreAcc.current);
-            setRoamMeters(roamAcc.current);
           }
         }
       }
