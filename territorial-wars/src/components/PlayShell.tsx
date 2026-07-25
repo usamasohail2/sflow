@@ -561,7 +561,7 @@ export function PlayShell() {
     );
   };
 
-  const confirmGpsForSector = (sectorId: string, _sectorName: string) => {
+  const confirmGpsForSector = (sectorId: string) => {
     requestGps(sectorId);
   };
 
@@ -1199,9 +1199,7 @@ export function PlayShell() {
                 <button
                   type="button"
                   disabled={busy || !me || gpsBusy}
-                  onClick={() =>
-                    confirmGpsForSector(selected.id, selected.name)
-                  }
+                  onClick={() => confirmGpsForSector(selected.id)}
                   className={`mt-3 w-full rounded-sm px-3 py-2.5 text-sm font-bold shadow-[0_2px_8px_rgba(0,0,0,0.5)] disabled:opacity-40 ${
                     gpsFix?.sectorId === selected.id
                       ? "bg-[var(--field)] text-white"
