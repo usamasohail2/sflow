@@ -3248,20 +3248,22 @@ export function PlayShell() {
                   type="button"
                   disabled={busy || !reviewReady}
                   onClick={() => {
+                    const biz = reviewBiz;
+                    // Close right away so claim doesn't leave the modal stuck open
+                    setReviewBiz(null);
+                    setReviewOpenedAt(null);
+                    setReviewReady(false);
                     void act("claim_business_review", {
-                      placeKey: reviewBiz.placeKey,
-                      placeName: reviewBiz.name,
-                      lat: reviewBiz.lat,
-                      lng: reviewBiz.lng,
+                      placeKey: biz.placeKey,
+                      placeName: biz.name,
+                      lat: biz.lat,
+                      lng: biz.lng,
                     }).then((d) => {
                       if (!d) return;
                       playRecruitSound();
                       showToast(
                         `Yay! +${REVIEW_VILLAGER_BONUS} bonus villager!`
                       );
-                      setReviewBiz(null);
-                      setReviewOpenedAt(null);
-                      setReviewReady(false);
                     });
                   }}
                   className="w-full rounded-sm border border-[var(--line-strong)] bg-[var(--wash)] px-3 py-2 text-xs font-semibold text-[var(--sand)] disabled:opacity-40"
