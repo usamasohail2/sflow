@@ -19,6 +19,7 @@ import {
   getSnapshot,
   placeHouse,
   renamePlayer,
+  resetPlayerProgress,
   razeBuilding,
   spawnRoamFind,
 } from "@/lib/store";
@@ -381,6 +382,9 @@ export async function POST(req: Request) {
       lat: Number(body.lat),
       lng: Number(body.lng),
     });
+  } else if (body.action === "reset_progress") {
+    // Any signed-in / guest player may wipe their own settlement to retest GPS
+    result = await resetPlayerProgress(id);
   } else if (body.action === "begin_tutorial_test") {
     if (!AUTH_DISABLED && !isAdminEmail(identity.email)) {
       return withGuestCookie(

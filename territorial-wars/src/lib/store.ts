@@ -1142,25 +1142,9 @@ export async function getSnapshot(
   };
 }
 
-/**
- * Back up the current player and reset them to a fresh unsettled account
- * so the settle / villager tutorial can be tested end-to-end.
- */
-export async function beginTutorialTest(
-  playerId: string
-): Promise<{ ok: true } | { error: string }> {
-  await bootstrap();
-  const me = await getPlayer(playerId);
-  if (!me) return { error: "Player missing" };
-
-  // Keep the first backup if already testing (re-run fresh settle)
-  const existing = await hGet(K_TUTORIAL_BACKUP, playerId);
-  if (!existing) {
-    await hSet(K_TUTORIAL_BACKUP, playerId, JSON.stringify(me));
-  }
-
+async function wipePlayerSettlement(me: Player): Promise<Player> {
   const now = Date.now();
-  await setPlayer({
+  const next: Player = {
     ...me,
     homeSectorId: null,
     house: null,
@@ -1179,7 +1163,52 @@ export async function beginTutorialTest(
     lastAttackAt: 0,
     lastRazeAt: 0,
     updatedAt: now,
-  });
+  };
+  await setPlayer(next);
+
+  // Drop gems / finds owned by this player so the map is clean
+  const spots = await getSpots();
+  const kept = spots.filter((s) => s.ownerId !== me.id);
+  if (kept.length !== spots.length) {
+    await setSpots(kept);
+  }
+  return next;
+}
+
+/**
+ * Hard-reset the current player's settlement so they can re-run
+ * location / GPS setup from a blank slate. Keeps name + invite code.
+ */
+export async function resetPlayerProgress(
+  playerId: string
+): Promise<{ ok: true } | { error: string }> {
+  await bootstrap();
+  const me = await getPlayer(playerId);
+  if (!me) return { error: "Player missing" };
+  await wipePlayerSettlement(me);
+  await hDel(K_TUTORIAL_BACKUP, playerId);
+  await flushStore();
+  return { ok: true };
+}
+
+/**
+ * Back up the current player and reset them to a fresh unsettled account
+ * so the settle / villager tutorial can be tested end-to-end.
+ */
+export async function beginTutorialTest(
+  playerId: string
+): Promise<{ ok: true } | { error: string }> {
+  await bootstrap();
+  const me = await getPlayer(playerId);
+  if (!me) return { error: "Player missing" };
+
+  // Keep the first backup if already testing (re-run fresh settle)
+  const existing = await hGet(K_TUTORIAL_BACKUP, playerId);
+  if (!existing) {
+    await hSet(K_TUTORIAL_BACKUP, playerId, JSON.stringify(me));
+  }
+
+  await wipePlayerSettlement(me);
   await flushStore();
   return { ok: true };
 }

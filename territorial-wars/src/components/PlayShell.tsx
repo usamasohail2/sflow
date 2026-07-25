@@ -2027,10 +2027,10 @@ export function PlayShell() {
     setShowWalkthrough(true);
   };
 
-  const startTutorialTest = async () => {
-    setShowMenu(false);
+  const clearLocalSettleState = () => {
     clearWalkthroughDone();
     tipsArmed.current = false;
+    pinDropAzad.current = false;
     setShowWalkthrough(false);
     setPlacing(null);
     setPendingHouse(null);
@@ -2040,8 +2040,32 @@ export function PlayShell() {
     setLocStatus("idle");
     setPickingPin(false);
     setSelectedId(null);
+    setSelectedPlayerId(null);
+    setRazeTarget(null);
     lastGoodMe.current = null;
     settleGuardUntil.current = 0;
+  };
+
+  /** Wipe settlement so GPS / settle can be tested from scratch */
+  const resetMyProgress = async () => {
+    const ok = window.confirm(
+      "Remove your village data and start over?\n\nYou’ll go back to the location setup screen. Name and invite code are kept."
+    );
+    if (!ok) return;
+    setShowMenu(false);
+    clearLocalSettleState();
+    const data = await act(
+      "reset_progress",
+      {},
+      "Removing your progress…"
+    );
+    if (!data) return;
+    showToast("Progress cleared — share location to settle again");
+  };
+
+  const startTutorialTest = async () => {
+    setShowMenu(false);
+    clearLocalSettleState();
     const data = await act(
       "begin_tutorial_test",
       {},
@@ -2398,6 +2422,19 @@ export function PlayShell() {
           >
             <span>? How to play</span>
           </button>
+          {me && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void resetMyProgress()}
+              className="flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-[12px] text-[var(--signal-bright)] hover:bg-[var(--wash)] disabled:opacity-40"
+            >
+              <span>Remove my progress</span>
+              <span className="font-mono text-[9px] text-[var(--ink-faint)]">
+                retest GPS
+              </span>
+            </button>
+          )}
           {(snap?.authDisabled || snap?.isAdmin) &&
             me &&
             !snap?.tutorialTestActive && (
