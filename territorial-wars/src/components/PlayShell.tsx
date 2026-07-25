@@ -3541,7 +3541,8 @@ export function PlayShell() {
                           lat: gpsFix.lat,
                           lng: gpsFix.lng,
                         })
-                      : selected!;
+                      : snap?.sectors.find((s) => s.id === gpsFix.sectorId) ??
+                        selected;
                     if (!sector) {
                       setError("Pick a sector first");
                       window.setTimeout(() => setError(null), 2800);

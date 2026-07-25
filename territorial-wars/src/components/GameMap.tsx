@@ -1770,10 +1770,10 @@ export function GameMap({
             draggable={pinDraggable}
             onDragEnd={(e) => {
               if (!onMovePin) return;
-              const { lng, lat } = e.lngLat;
-              onMovePin(lat, lng);
+              const ll = e.lngLat;
+              if (!ll) return;
+              onMovePin(ll.lat, ll.lng);
             }}
-            style={pinDraggable ? { cursor: "grab" } : undefined}
           >
             <div
               className="you-are-here"
@@ -1820,26 +1820,32 @@ export function GameMap({
         )}
 
         <ViewerMarkers peers={presencePeers} self={presenceSelf} />
-      </MapboxMap>
 
-      {/* Guided placement beacon — blinks in the sector while planting */}
-      {guidePulse && placing && (
-        <Marker
-          latitude={
-            placing.sector.ring.length >= 4
-              ? ringCentroid(placing.sector.ring).lat
-              : hover?.lat ?? me?.house?.lat ?? 33.71
-          }
-          longitude={
-            placing.sector.ring.length >= 4
-              ? ringCentroid(placing.sector.ring).lng
-              : hover?.lng ?? me?.house?.lng ?? 73.045
-          }
-          anchor="center"
-        >
-          <div className="guide-map-beacon" aria-hidden />
-        </Marker>
-      )}
+        {/* Guided placement beacon — must stay inside MapboxMap */}
+        {guidePulse && placing && (
+          <Marker
+            latitude={
+              placing.sector.ring.length >= 4
+                ? ringCentroid(placing.sector.ring).lat
+                : hover?.lat ??
+                  userLocation?.lat ??
+                  me?.house?.lat ??
+                  33.71
+            }
+            longitude={
+              placing.sector.ring.length >= 4
+                ? ringCentroid(placing.sector.ring).lng
+                : hover?.lng ??
+                  userLocation?.lng ??
+                  me?.house?.lng ??
+                  73.045
+            }
+            anchor="center"
+          >
+            <div className="guide-map-beacon" aria-hidden />
+          </Marker>
+        )}
+      </MapboxMap>
 
       {/* Placement banner */}
       {placing && (
