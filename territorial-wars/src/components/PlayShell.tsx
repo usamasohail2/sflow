@@ -73,8 +73,12 @@ import {
   isRazeEvent,
   makeAzadPlacementSector,
 } from "@/lib/gameTypes";
-import { pointInOrNearRing } from "@/lib/geo";
+import { pointInOrNearRing, pointInRing } from "@/lib/geo";
 import { ringCentroid } from "@/lib/mapMath";
+import {
+  buildingPlacementError,
+  housePlacementError,
+} from "@/lib/placement";
 import {
   isMusicOn,
   installUiSounds,
@@ -1475,8 +1479,26 @@ export function PlayShell() {
     if (!isBuildingPlace && busyRef.current) return;
 
     if (placing.kind === "house") {
+      const pos = { lat, lng };
+      const unbound =
+        isAzadHomeId(placing.sector.id) || placing.sector.ring.length < 4;
+      if (!unbound && !pointInRing(pos, placing.sector.ring)) {
+        setError("Place your house inside the sector");
+        window.setTimeout(() => setError(null), 3200);
+        return;
+      }
+      const occupied = housePlacementError(
+        pos,
+        snap?.players ?? [],
+        me?.id
+      );
+      if (occupied) {
+        setError(occupied);
+        window.setTimeout(() => setError(null), 3200);
+        return;
+      }
       // Stash the house; settle flow waits for the Villager tile next
-      setPendingHouse({ lat, lng });
+      setPendingHouse(pos);
       if (settleSector) {
         setPlacing(null);
         showToast("House set — tap Villager, then place them on the map");
@@ -1597,6 +1619,18 @@ export function PlayShell() {
       snap.buildingCatalog.find((b) => b.type === kind) ?? catalogItem(kind);
     if (displayGold < cat.cost) {
       setError(`Need ${GOLD_COIN}${cat.cost}`);
+      window.setTimeout(() => setError(null), 3200);
+      return;
+    }
+
+    const buildBlocked = buildingPlacementError(
+      { lat, lng },
+      cat.footprintM,
+      snap.players,
+      me.id
+    );
+    if (buildBlocked) {
+      setError(buildBlocked);
       window.setTimeout(() => setError(null), 3200);
       return;
     }
