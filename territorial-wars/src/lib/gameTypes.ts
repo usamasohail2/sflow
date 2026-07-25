@@ -254,12 +254,18 @@ export type AttackEvent = GameEventBase & {
   houseDamaged?: boolean;
 };
 
-/** Same-sector sabotage — clear ground by destroying a neighbor's building */
+/** Same-sector sabotage — clear ground by rocketing a neighbor's building */
 export type RazeEvent = GameEventBase & {
   type: "raze";
   buildingId: string;
   buildingType: BuildingType;
   buildingName: string;
+  /** Rockets expended on this clear */
+  rocketsLost?: number;
+  /** HP damage dealt */
+  damage?: number;
+  /** True when the building was fully destroyed */
+  destroyed?: boolean;
 };
 
 /** Contested roam find claimed by someone else */

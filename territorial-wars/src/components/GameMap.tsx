@@ -1545,7 +1545,7 @@ export function GameMap({
                                 : canRaid
                                   ? `Tap to raid ${p.name}`
                                   : canRaze
-                                    ? `Clear ${p.name}'s ${bName} to free ground`
+                                    ? `Rocket ${p.name}'s ${bName} to free ground`
                                     : `${p.name}'s ${bName}`
                         }
                       >

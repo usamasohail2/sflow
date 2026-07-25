@@ -353,7 +353,14 @@ export async function POST(req: Request) {
         setCookie
       );
     }
-    result = await razeBuilding(id, targetPlayerId, buildingId);
+    const rocketsToFire =
+      body.rockets != null ? Number(body.rockets) : undefined;
+    result = await razeBuilding(
+      id,
+      targetPlayerId,
+      buildingId,
+      rocketsToFire
+    );
   } else if (body.action === "rename") {
     result = await renamePlayer(id, String(body.name || ""));
   } else if (body.action === "claim_business_review") {

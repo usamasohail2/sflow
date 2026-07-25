@@ -1953,13 +1953,14 @@ export async function buyRocket(
 }
 
 /**
- * Same-sector sabotage: destroy a neighbor's building to free ground
- * for your own construction. House cannot be razed this way.
+ * Same-sector sabotage: rocket a neighbor's building to free ground.
+ * House cannot be cleared this way — only placed buildings.
  */
 export async function razeBuilding(
   playerId: string,
   targetPlayerId: string,
-  buildingId: string
+  buildingId: string,
+  rocketsToFire?: number
 ): Promise<
   | {
       ok: true;
@@ -1969,6 +1970,10 @@ export async function razeBuilding(
         sectorId: string;
         sectorName: string;
         defenderName: string;
+        rocketsLost: number;
+        damage: number;
+        destroyed: boolean;
+        buildingHp: number;
       };
     }
   | { error: string }
@@ -1983,12 +1988,18 @@ export async function razeBuilding(
   }
   if (!buildingId) return { error: "Pick a building to clear" };
 
+  const stock = me.rockets || 0;
+  if (stock <= 0) {
+    return { error: "Buy rockets for your arsenal before clearing ground" };
+  }
+
   const now = Date.now();
-  if (me.lastRazeAt && now - me.lastRazeAt < RAZE_COOLDOWN_MS) {
+  // Same arsenal reload as cross-sector raids
+  if (me.lastAttackAt && now - me.lastAttackAt < ATTACK_COOLDOWN_MS) {
     const wait = Math.ceil(
-      (RAZE_COOLDOWN_MS - (now - me.lastRazeAt)) / 1000
+      (ATTACK_COOLDOWN_MS - (now - me.lastAttackAt)) / 1000
     );
-    return { error: `Clearing tools cooling down — ${wait}s` };
+    return { error: `Reloading arsenal — ${wait}s until next strike` };
   }
 
   const owner = await getPlayer(targetPlayerId);
@@ -1997,17 +2008,32 @@ export async function razeBuilding(
   }
   if (owner.homeSectorId !== me.homeSectorId) {
     return {
-      error: "Only buildings in your sector can be cleared this way — raid other sectors with rockets",
+      error:
+        "Only buildings in your sector can be cleared this way — raid other sectors with rockets",
     };
   }
 
   const building = owner.buildings.find((b) => b.id === buildingId);
   if (!building) return { error: "That building is already gone" };
 
+  const fired = Math.max(
+    1,
+    Math.min(stock, Math.floor(Number(rocketsToFire) || stock))
+  );
+  const damage = attackPower(fired);
+  const nextHp = Math.max(0, (building.hp || 0) - damage);
+  const destroyed = nextHp <= 0;
   const buildingName = catalogItem(building.type).name;
-  const nextBuildings = owner.buildings.filter((b) => b.id !== buildingId);
+  const nextBuildings = destroyed
+    ? owner.buildings.filter((b) => b.id !== buildingId)
+    : owner.buildings.map((b) =>
+        b.id === buildingId ? { ...b, hp: nextHp } : b
+      );
   const sectors = await getSectors();
   const sector = sectors.find((s) => s.id === me.homeSectorId);
+  const sectorName = isAzadHomeId(me.homeSectorId)
+    ? AZAD_ARENA_NAME
+    : sector?.name ?? me.homeSectorId ?? "Sector";
 
   await setPlayer({
     ...owner,
@@ -2016,6 +2042,8 @@ export async function razeBuilding(
   });
   await setPlayer({
     ...me,
+    rockets: stock - fired,
+    lastAttackAt: now,
     lastRazeAt: now,
     updatedAt: now,
   });
@@ -2029,12 +2057,13 @@ export async function razeBuilding(
     defenderId: owner.id,
     defenderName: owner.name,
     sectorId: me.homeSectorId,
-    sectorName: isAzadHomeId(me.homeSectorId)
-      ? AZAD_ARENA_NAME
-      : sector?.name ?? me.homeSectorId ?? "Sector",
+    sectorName,
     buildingId: building.id,
     buildingType: building.type,
     buildingName,
+    rocketsLost: fired,
+    damage,
+    destroyed,
   });
 
   await flushStore();
@@ -2044,10 +2073,12 @@ export async function razeBuilding(
       buildingType: building.type,
       buildingName,
       sectorId: me.homeSectorId,
-      sectorName: isAzadHomeId(me.homeSectorId)
-        ? AZAD_ARENA_NAME
-        : sector?.name ?? me.homeSectorId ?? "Sector",
+      sectorName,
       defenderName: owner.name,
+      rocketsLost: fired,
+      damage,
+      destroyed,
+      buildingHp: nextHp,
     },
   };
 }

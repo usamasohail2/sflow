@@ -141,7 +141,7 @@ function tipFor(
     },
     "tips-raid": {
       title: "Raid rivals",
-      body: "Tap an enemy house or building to attack. Same-sector settlers are allies (green) — you can’t hit them. Azad players each have their own arena.",
+      body: "Tap an enemy house or building to attack with rockets. Same-sector allies are green — you can still rocket their buildings to clear ground. Azad players each have their own arena.",
       target: null,
       blocking: true,
       cta: "Next",

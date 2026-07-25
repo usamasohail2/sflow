@@ -334,7 +334,10 @@ function eventLogLine(
   colors?: ActivityColors
 ): ReactNode {
   if (isRazeEvent(e)) {
-    const verb = pickVariant(e.id, RAZE_VERBS);
+    const verb =
+      e.destroyed === false
+        ? "hit"
+        : pickVariant(e.id, RAZE_VERBS);
     if (e.attackerId === myId) {
       return (
         <>
@@ -347,7 +350,8 @@ function eventLogLine(
             colors={colors}
             possessive
           />{" "}
-          {e.buildingName} in {e.sectorName}
+          {e.buildingName}
+          {e.rocketsLost ? ` (${e.rocketsLost}🚀)` : ""} in {e.sectorName}
         </>
       );
     }
@@ -1859,9 +1863,28 @@ export function PlayShell() {
       razeOwner.id !== me.id &&
       razeOwner.homeSectorId === me.homeSectorId
   );
+  const razeBuildingHp = razeBuilding?.hp ?? 0;
+  const razeSalvoAttack = attackPower(salvo);
+
+  // When clearing an ally building, suggest enough rockets to finish its HP
+  useEffect(() => {
+    if (!me || !razeBuilding) return;
+    const stock = me.rockets || 0;
+    if (stock <= 0) {
+      setSalvo(1);
+      return;
+    }
+    const need = Math.min(stock, Math.max(1, razeBuilding.hp || 1));
+    setSalvo(need);
+  }, [razeTarget?.buildingId, me?.rockets, razeBuilding?.hp]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const confirmRaze = async () => {
-    if (!razeTarget || !razeBuilding || !razeOwner) return;
+    if (!razeTarget || !razeBuilding || !razeOwner || !me) return;
+    if ((me.rockets || 0) <= 0) {
+      setError("Buy rockets before clearing ground");
+      window.setTimeout(() => setError(null), 3200);
+      return;
+    }
     const name = catalogItem(razeBuilding.type).name;
     const ownerName = razeOwner.name;
     const data = await act(
@@ -1869,12 +1892,34 @@ export function PlayShell() {
       {
         targetPlayerId: razeTarget.playerId,
         buildingId: razeTarget.buildingId,
+        rockets: salvo,
       },
-      "Clearing ground…"
+      "Firing rockets…"
     );
     if (!data) return;
+    playAttackSound();
+    const raze = data.raze as
+      | {
+          destroyed?: boolean;
+          damage?: number;
+          rocketsLost?: number;
+          buildingHp?: number;
+        }
+      | undefined;
     setRazeTarget(null);
-    showToast(`Cleared ${ownerName}'s ${name} — ground is free`);
+    if (raze?.destroyed) {
+      showToast(
+        `Cleared ${ownerName}'s ${name} with ${raze.rocketsLost ?? salvo} rocket${
+          (raze.rocketsLost ?? salvo) === 1 ? "" : "s"
+        } — ground is free`
+      );
+    } else {
+      showToast(
+        `Hit ${ownerName}'s ${name} for ${raze?.damage ?? razeSalvoAttack} dmg — ${
+          raze?.buildingHp ?? "?"
+        } HP left`
+      );
+    }
   };
 
   const openShovel = (buildingId: string) => {
@@ -2143,7 +2188,7 @@ export function PlayShell() {
             ) {
               setSelectedPlayerId(null);
               showToast(
-                "Same sector — tap their building to clear ground for yours"
+                "Same sector — rocket their building to clear ground for yours"
               );
               return;
             }
@@ -3551,7 +3596,7 @@ export function PlayShell() {
         </div>
       )}
 
-      {/* ---- Clear ground: same-sector neighbor building ---- */}
+      {/* ---- Clear ground: rocket a same-sector neighbor building ---- */}
       {canRazeSelected && razeOwner && razeBuilding && !placing && (
         <div className="absolute bottom-28 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-xs -translate-x-1/2 sm:bottom-8">
           <div className="hud-panel p-3 text-center">
@@ -3562,17 +3607,81 @@ export function PlayShell() {
               {catalogItem(razeBuilding.type).name}
             </p>
             <p className="mt-1 text-[11px] text-[var(--ink-muted)]">
-              Destroy <strong className="text-[var(--ink)]">{razeOwner.name}</strong>
-              &apos;s building so you can plant yours on this spot. They&apos;ll
-              be notified.
+              Fire rockets at{" "}
+              <strong className="text-[var(--ink)]">{razeOwner.name}</strong>
+              &apos;s building to free the ground. Spent rockets are gone —
+              they&apos;ll be notified.
             </p>
+
+            <div className="salvo-picker mt-3">
+              <p className="font-mono text-[8px] uppercase tracking-[0.18em] text-[var(--ink-faint)]">
+                Rockets to fire
+              </p>
+              <div className="mt-1.5 flex items-center justify-center gap-3">
+                <button
+                  type="button"
+                  className="salvo-btn"
+                  disabled={!me || salvo <= 1}
+                  onClick={() => setSalvo((n) => Math.max(1, n - 1))}
+                >
+                  −
+                </button>
+                <div className="min-w-[4.5rem]">
+                  <p className="font-display text-2xl leading-none text-[var(--sand)]">
+                    {salvo}
+                  </p>
+                  <p className="font-mono text-[8px] text-[var(--ink-faint)]">
+                    of {me?.rockets || 0}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="salvo-btn"
+                  disabled={!me || salvo >= (me.rockets || 0)}
+                  onClick={() =>
+                    setSalvo((n) => Math.min(me?.rockets || 1, n + 1))
+                  }
+                >
+                  +
+                </button>
+              </div>
+              <input
+                type="range"
+                min={1}
+                max={Math.max(1, me?.rockets || 1)}
+                value={Math.min(salvo, Math.max(1, me?.rockets || 1))}
+                disabled={!me || (me.rockets || 0) <= 0}
+                onChange={(e) => setSalvo(Number(e.target.value))}
+                className="salvo-range mt-2"
+              />
+            </div>
+
+            <div className="mt-2 flex items-center justify-center gap-3 font-mono text-[11px]">
+              <span className="text-[var(--sand)]">ATK {razeSalvoAttack}</span>
+              <span className="text-[var(--ink-faint)]">vs</span>
+              <span className="text-[var(--ink-muted)]">
+                HP {razeBuildingHp}
+              </span>
+              <span
+                className={`rounded-sm px-1.5 py-0.5 text-[9px] font-bold ${
+                  razeSalvoAttack >= razeBuildingHp
+                    ? "bg-[rgba(90,154,99,0.35)] text-[var(--field-bright)]"
+                    : "bg-[rgba(226,59,47,0.25)] text-[var(--signal-bright)]"
+                }`}
+              >
+                {razeSalvoAttack >= razeBuildingHp ? "Destroy" : "Chip"}
+              </span>
+            </div>
+
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || !me || (me.rockets || 0) <= 0 || !me.house}
               onClick={() => void confirmRaze()}
               className="mt-3 w-full rounded-sm bg-[var(--signal)] px-3 py-2.5 text-sm font-bold text-white disabled:opacity-40"
             >
-              Break building
+              {(me?.rockets || 0) <= 0
+                ? "Need rockets"
+                : `Fire ${salvo} rocket${salvo === 1 ? "" : "s"}`}
             </button>
             <button
               type="button"
@@ -3603,13 +3712,21 @@ export function PlayShell() {
                   Same sector
                 </p>
                 <p className="font-display text-xl leading-tight text-white sm:text-2xl">
-                  Building lost
+                  {razeAlert.destroyed === false
+                    ? "Building hit"
+                    : "Building lost"}
                 </p>
                 <p className="mt-1.5 text-[13px] leading-snug text-white/90">
                   Your ally, <strong>{personName(razeAlert.attackerName)}</strong>,
-                  destroyed your{" "}
+                  {razeAlert.destroyed === false ? " hit" : " rocketed"} your{" "}
                   <strong>{razeAlert.buildingName}</strong>
-                  {razeAlert.sectorName ? ` in ${razeAlert.sectorName}` : ""}.
+                  {razeAlert.sectorName ? ` in ${razeAlert.sectorName}` : ""}
+                  {razeAlert.rocketsLost
+                    ? ` with ${razeAlert.rocketsLost} rocket${
+                        razeAlert.rocketsLost === 1 ? "" : "s"
+                      }`
+                    : ""}
+                  .
                 </p>
               </div>
               <button
