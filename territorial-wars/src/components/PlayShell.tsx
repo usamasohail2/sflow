@@ -3105,7 +3105,7 @@ export function PlayShell() {
                       {GOLD_COIN}
                       {ROCKET_COST}
                     </span>
-                    <span className="cameo-label">Buy +1</span>
+                    <span className="cameo-label">Rocket</span>
                   </button>
 
                   <div className="w-px shrink-0 self-stretch bg-[var(--line)]" />
