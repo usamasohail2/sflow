@@ -1527,7 +1527,7 @@ export function PlayShell() {
             villagerLat: lat,
             villagerLng: lng,
           },
-          "Saving house…"
+          "Rebuilding your house…"
         );
         if (data) {
           playBuildSound();
@@ -1574,7 +1574,7 @@ export function PlayShell() {
               gpsLat: gpsFix.lat,
               gpsLng: gpsFix.lng,
             },
-            "Saving your settlement…"
+            "Founding your village…"
           )
         : await act(
             "claim_sector",
@@ -1587,7 +1587,7 @@ export function PlayShell() {
               gpsLat: gpsFix.lat,
               gpsLng: gpsFix.lng,
             },
-            "Saving your settlement…"
+            "Founding your village…"
           );
       if (data) {
         playBuildSound();
@@ -3044,7 +3044,7 @@ export function PlayShell() {
           <div className="hud-panel w-full max-w-xs p-4 text-center">
             <p className="font-display text-lg text-[var(--sand)]">{savingLabel}</p>
             <p className="mt-1 text-[11px] text-[var(--ink-muted)]">
-              Hold on — writing your village to the server…
+              Planting your claim on the map — almost there…
             </p>
             <div className="mx-auto mt-3 h-1 w-32 overflow-hidden rounded-full bg-[var(--wash)]">
               <div className="h-full w-1/2 animate-pulse bg-[var(--sand)]" />
