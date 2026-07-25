@@ -222,16 +222,18 @@ export function PlayShell() {
   return (
     <main className="relative h-[100dvh] w-full overflow-hidden bg-[var(--surface)]">
       {/* Full-bleed map */}
-      <GameMap
-        sectors={snap?.sectors ?? []}
-        spots={snap?.spots ?? []}
-        me={me}
-        selectedId={selectedId}
-        onSelect={setSelectedId}
-        onSpawnFind={(p) => spawnFind(p)}
-        onCollectHidden={(spotId) => void act("collect_hidden", { spotId })}
-        className="absolute inset-0"
-      />
+      <div className="absolute inset-0">
+        <GameMap
+          sectors={snap?.sectors ?? []}
+          spots={snap?.spots ?? []}
+          me={me}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          onSpawnFind={(p) => spawnFind(p)}
+          onCollectHidden={(spotId) => void act("collect_hidden", { spotId })}
+          className="h-full w-full"
+        />
+      </div>
 
       {/* ---- Top bar ---- */}
       <div className="pointer-events-none absolute left-0 right-0 top-0 z-20 flex items-start justify-between gap-2 p-2 sm:p-3">
