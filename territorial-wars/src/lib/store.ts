@@ -1715,14 +1715,11 @@ export async function collectHidden(
     };
   }
 
-  // Legacy private refillable cache
+  // Legacy private cache — claim is instant, no refill cooldown
   if (!me.discoveredSpotIds.includes(spotId)) {
     return { error: "Explore and discover this spot first" };
   }
   if (spot.sectorId !== me.homeSectorId) return { error: "Wrong sector" };
-  if (spot.availableAt > now) {
-    return { error: "Still refilling — come back later" };
-  }
 
   await setPlayer({
     ...me,
@@ -1730,11 +1727,8 @@ export async function collectHidden(
     totalFarmed: (me.totalFarmed || 0) + spot.yield,
     updatedAt: now,
   });
-  await setSpots(
-    spots.map((s) =>
-      s.id === spotId ? { ...s, availableAt: now + (s.refillMs || 45_000) } : s
-    )
-  );
+  // Remove on claim (same as contested finds) — no wait-to-refill
+  await setSpots(spots.filter((s) => s.id !== spotId));
   return { ok: true, gained: spot.yield, gem: spot.gem };
 }
 
