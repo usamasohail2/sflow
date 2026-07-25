@@ -44,6 +44,8 @@ export function PublicChat({
     onSent,
   });
 
+  const latest = messages.length > 0 ? messages[messages.length - 1]! : null;
+
   useEffect(() => {
     setNameDraft(displayName);
   }, [displayName]);
@@ -148,6 +150,23 @@ export function PublicChat({
     </div>
   ) : null;
 
+  const collapsedPreview =
+    !open && latest ? (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="public-chat-preview max-w-[min(16rem,calc(100vw-5rem))] text-left"
+        title="Open chat"
+      >
+        <span className="block truncate text-[10px] font-bold text-[var(--ink)]">
+          {latest.name}
+        </span>
+        <span className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-[var(--ink)]/90">
+          {latest.text}
+        </span>
+      </button>
+    ) : null;
+
   const toggle = (
     <button
       type="button"
@@ -157,8 +176,7 @@ export function PublicChat({
       className="hud-chip inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold sm:px-3"
     >
       <ChatIcon />
-      <span className="sm:hidden">{open ? "Hide" : "Chat"}</span>
-      <span className="hidden sm:inline">{open ? "Hide chat" : "Public chat"}</span>
+      <span>{open ? "Hide" : "Chat"}</span>
       {!open && messages.length > 0 && (
         <span className="rounded bg-[var(--wash)] px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-[var(--ink-muted)]">
           {messages.length}
@@ -169,18 +187,18 @@ export function PublicChat({
 
   return (
     <div
-      className={`pointer-events-auto flex flex-col gap-2 ${
-        placement === "top" ? "items-end" : "items-end"
-      } ${className}`}
+      className={`pointer-events-auto flex flex-col items-end gap-1.5 ${className}`}
     >
       {placement === "top" ? (
         <>
           {toggle}
+          {collapsedPreview}
           {panel}
         </>
       ) : (
         <>
           {panel}
+          {collapsedPreview}
           {toggle}
         </>
       )}

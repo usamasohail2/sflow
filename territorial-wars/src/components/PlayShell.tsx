@@ -1702,15 +1702,6 @@ export function PlayShell() {
               {claimed ? homeName : "settle"}
             </span>
           </Link>
-          {visitorId && (
-            <PublicChat
-              visitorId={visitorId}
-              displayName={displayName || me?.name || "Scout"}
-              onSent={noteLocalMessage}
-              onRename={renamePresence}
-              placement="top"
-            />
-          )}
         </div>
 
         <div className="pointer-events-auto flex flex-col items-end gap-1.5">
@@ -3011,50 +3002,77 @@ export function PlayShell() {
         </div>
       )}
 
-      {/* ---- Bottom dock: status chips + arsenal/build row ---- */}
+      {/* ---- Chat while unsettled (no dock yet) ---- */}
+      {visitorId && !claimed && (
+        <div className="pointer-events-none absolute bottom-[max(0.75rem,env(safe-area-inset-bottom))] right-2 z-30 sm:right-3">
+          <PublicChat
+            visitorId={visitorId}
+            displayName={displayName || me?.name || "Scout"}
+            onSent={noteLocalMessage}
+            onRename={renamePresence}
+            placement="bottom"
+          />
+        </div>
+      )}
+
+      {/* ---- Bottom dock: status + chat above arsenal/build ---- */}
       {claimed && me && (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 sm:px-3 sm:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-          <div className="flex max-w-full flex-col items-start gap-1 sm:max-w-[min(100%,36rem)]">
-            <div className="hud-status pointer-events-auto">
-              <div
-                className="hud-status-chip"
-                title={`${me.villagers} villager(s) gathering`}
-              >
-                <VillagerSprite walking className="h-5 w-5" />
-                <span>×{me.villagers}</span>
-              </div>
-              <div
-                className={`hud-status-chip ${
-                  me.house ? "hud-status-chip--hp" : "hud-status-chip--down"
-                }`}
-                title={
-                  me.house
-                    ? `House health ${me.houseHp}/${HOUSE_MAX_HP}`
-                    : "House destroyed — rebuild to gather"
-                }
-              >
-                <HouseSprite className="h-5 w-6" />
-                <span>{me.house ? `${me.houseHp}/${HOUSE_MAX_HP}` : "✕"}</span>
-              </div>
-              <div
-                className="hud-status-chip"
-                title={`Arsenal: ${me.rockets || 0} rocket(s) · ${myAttack} attack power`}
-              >
-                <RocketSprite className="h-5 w-5" />
-                <span>×{me.rockets || 0}</span>
-              </div>
-              {gemsFound > 0 && (
+          <div className="flex w-full flex-col gap-1">
+            <div className="flex w-full items-end justify-between gap-2">
+              <div className="hud-status pointer-events-auto min-w-0">
                 <div
                   className="hud-status-chip"
-                  title={`${gemsFound} resource site(s) found`}
+                  title={`${me.villagers} villager(s) gathering`}
                 >
-                  <ResourceGem gem="diamond" size={16} pulse />
-                  <span>×{gemsFound}</span>
+                  <VillagerSprite walking className="h-5 w-5" />
+                  <span>×{me.villagers}</span>
                 </div>
+                <div
+                  className={`hud-status-chip ${
+                    me.house ? "hud-status-chip--hp" : "hud-status-chip--down"
+                  }`}
+                  title={
+                    me.house
+                      ? `House health ${me.houseHp}/${HOUSE_MAX_HP}`
+                      : "House destroyed — rebuild to gather"
+                  }
+                >
+                  <HouseSprite className="h-5 w-6" />
+                  <span>
+                    {me.house ? `${me.houseHp}/${HOUSE_MAX_HP}` : "✕"}
+                  </span>
+                </div>
+                <div
+                  className="hud-status-chip"
+                  title={`Arsenal: ${me.rockets || 0} rocket(s) · ${myAttack} attack power`}
+                >
+                  <RocketSprite className="h-5 w-5" />
+                  <span>×{me.rockets || 0}</span>
+                </div>
+                {gemsFound > 0 && (
+                  <div
+                    className="hud-status-chip"
+                    title={`${gemsFound} resource site(s) found`}
+                  >
+                    <ResourceGem gem="diamond" size={16} pulse />
+                    <span>×{gemsFound}</span>
+                  </div>
+                )}
+              </div>
+
+              {visitorId && (
+                <PublicChat
+                  visitorId={visitorId}
+                  displayName={displayName || me?.name || "Scout"}
+                  onSent={noteLocalMessage}
+                  onRename={renamePresence}
+                  placement="bottom"
+                />
               )}
             </div>
 
-            <div className="pointer-events-auto w-full min-w-0">
+            <div className="pointer-events-auto w-full min-w-0 sm:max-w-[min(100%,36rem)]">
               <div className="hud-panel hud-panel-arsenal p-1.5 sm:p-2">
                 <div className="flex w-full items-stretch gap-1 sm:gap-1.5">
                   <button

@@ -1460,6 +1460,22 @@ button.cameo:not(:disabled):hover {
   backdrop-filter: blur(10px);
 }
 
+/* Latest message while chat is collapsed — glass over the map */
+.public-chat-preview {
+  border-radius: 4px;
+  border: 1px solid rgba(232, 235, 228, 0.14);
+  background: rgba(12, 16, 14, 0.38);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(8px);
+  padding: 0.4rem 0.65rem;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.public-chat-preview:hover {
+  background: rgba(12, 16, 14, 0.52);
+  border-color: rgba(232, 235, 228, 0.22);
+}
+
 @keyframes viewer-map-bob {
   0%,
   100% {
