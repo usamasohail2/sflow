@@ -423,6 +423,13 @@ button.cameo:not(:disabled):hover {
   transition: width 0.6s ease;
 }
 
+/* Full-screen dim so the report can't hide under HUD/map chrome */
+.battle-report-overlay {
+  pointer-events: auto;
+  background: rgba(6, 10, 8, 0.62);
+  backdrop-filter: blur(2px);
+}
+
 /* Persistent battle report card */
 .battle-report {
   border-radius: 8px;

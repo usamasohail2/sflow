@@ -528,14 +528,23 @@ export function PlayShell() {
       return;
     }
 
-    // Impact + battle summary land when the march arrives (not mid-flight)
+    // Show the report immediately — don't wait for the march animation.
+    // (Waiting made it feel like "nothing happened" and was easy to miss.)
+    const summary = summaryFromAttack(
+      battle,
+      targetSector.name,
+      defenderName
+    );
+    setBattleSummary(summary);
+    setShowBattles(false);
+
+    // Impact FX still lands when the army arrives
     window.setTimeout(() => {
       setMarch(null);
       setImpact({ at: target, startedAt: Date.now() });
       window.setTimeout(() => setImpact(null), 1600);
-      setBattleSummary(
-        summaryFromAttack(battle, targetSector.name, defenderName)
-      );
+      // Re-assert report in case something cleared it mid-march
+      setBattleSummary((cur) => cur ?? summary);
     }, durationMs);
   };
 
@@ -837,11 +846,16 @@ export function PlayShell() {
         </div>
       )}
 
-      {/* Persistent battle report (attacker + defender) */}
+      {/* Persistent battle report (attacker + defender) — blocks until dismissed */}
       {battleSummary && (
-        <div className="pointer-events-none absolute inset-x-0 top-14 z-50 flex justify-center px-2">
+        <div
+          className="battle-report-overlay absolute inset-0 z-[60] flex items-start justify-center px-3 pt-16 sm:items-center sm:pt-0"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Battle report"
+        >
           <div
-            className={`battle-report pointer-events-auto w-[min(22rem,calc(100%-1rem))] p-3 ${
+            className={`battle-report pointer-events-auto w-[min(22rem,calc(100%-1rem))] p-4 ${
               battleSummary.role === "defender"
                 ? "battle-report-defense"
                 : battleSummary.win
@@ -854,7 +868,7 @@ export function PlayShell() {
                 <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-white/70">
                   Battle report
                 </p>
-                <p className="font-display text-xl text-white">
+                <p className="font-display text-2xl text-white">
                   {battleSummary.headline}
                 </p>
               </div>
@@ -866,20 +880,20 @@ export function PlayShell() {
                 ✕
               </button>
             </div>
-            <p className="mt-1 text-[11px] text-white/85">
+            <p className="mt-1 text-xs text-white/85">
               {battleSummary.role === "attacker" ? "vs" : "from"}{" "}
               <span className="font-semibold">{battleSummary.opponent}</span>
               {" · "}
               {battleSummary.sectorName}
             </p>
-            <ul className="mt-2 space-y-0.5 border-t border-white/20 pt-2 text-[11px] text-white/90">
+            <ul className="mt-3 space-y-1 border-t border-white/20 pt-3 text-xs text-white/90">
               {battleSummary.rows.map((row) => (
                 <li key={row}>· {row}</li>
               ))}
             </ul>
             <button
               type="button"
-              className="mt-3 w-full rounded-sm bg-white/15 px-3 py-1.5 text-xs font-bold text-white"
+              className="mt-4 w-full rounded-sm bg-white/20 px-3 py-2 text-sm font-bold text-white"
               onClick={() => setBattleSummary(null)}
             >
               Dismiss
