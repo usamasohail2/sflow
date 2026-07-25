@@ -781,6 +781,112 @@ button.cameo:not(:disabled):hover {
   animation: battle-report-in 0.35s ease-out, attack-alert-pulse 0.9s ease-in-out 3;
 }
 
+.battle-vs {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.battle-vs-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 2.4rem;
+}
+
+.battle-vs-num {
+  font-family: var(--font-display), "Iowan Old Style", Palatino, serif;
+  font-size: 1.65rem;
+  line-height: 1;
+  color: #fff;
+}
+
+.battle-vs-lbl {
+  margin-top: 2px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 8px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.battle-vs-bar {
+  display: flex;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.battle-vs-fill.is-atk {
+  background: linear-gradient(90deg, #5a9a63, #8fe098);
+}
+
+.battle-vs-fill.is-def {
+  background: linear-gradient(90deg, #ff6b5a, #e23b2f);
+}
+
+.battle-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.35rem;
+}
+
+.battle-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.45rem 0.2rem;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.battle-stat-val {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.battle-stat-lbl {
+  margin-top: 1px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 7px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.salvo-picker {
+  padding: 0.55rem 0.4rem 0.35rem;
+  border-radius: 4px;
+  background: rgba(10, 14, 10, 0.35);
+  border: 1px solid var(--line);
+}
+
+.salvo-btn {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 4px;
+  border: 1px solid var(--line-strong);
+  background: var(--wash);
+  color: var(--ink);
+  font-size: 1.1rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.salvo-btn:disabled {
+  opacity: 0.35;
+}
+
+.salvo-range {
+  width: 100%;
+  accent-color: var(--signal);
+}
+
 @keyframes battle-report-in {
   from {
     opacity: 0;

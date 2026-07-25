@@ -127,6 +127,8 @@ export async function POST(req: Request) {
     exploreMs?: number;
     targetId?: string;
     targetPlayerId?: string;
+    /** Rockets to fire in an attack salvo */
+    rockets?: number;
   };
 
   // Dev/test helper: hop between guest accounts (auth is disabled)
@@ -290,7 +292,9 @@ export async function POST(req: Request) {
         setCookie
       );
     }
-    result = await attackSector(id, targetPlayerId);
+    const rocketsToFire =
+      body.rockets != null ? Number(body.rockets) : undefined;
+    result = await attackSector(id, targetPlayerId, rocketsToFire);
   } else if (body.action === "rename") {
     result = await renamePlayer(id, String(body.name || ""));
   } else {

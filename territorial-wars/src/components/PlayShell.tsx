@@ -31,7 +31,6 @@ import type {
 import {
   HOUSE_MAX_HP,
   ROCKET_COST,
-  attackBreakdown,
   attackPower,
   buildingBonus,
   defenseBreakdown,
@@ -77,7 +76,16 @@ type BattleSummary = {
   sectorName: string;
   opponent: string;
   win: boolean;
-  rows: string[];
+  attackPower: number;
+  defensePower: number;
+  damage: number;
+  destroyedCount: number;
+  damagedCount: number;
+  houseDestroyed: boolean;
+  houseDamaged: boolean;
+  rocketsLost: number;
+  defenderRocketsLost: number;
+  lootedGold: number;
 };
 
 function BuildingThumb({
@@ -93,37 +101,17 @@ function BuildingThumb({
   return <WellSprite className={className} />;
 }
 
+function destroyedCountFrom(destroyed: string | null): number {
+  if (!destroyed) return 0;
+  return destroyed.split(",").map((s) => s.trim()).filter(Boolean).length;
+}
+
 function summaryFromAttack(
   battle: BattleReport,
   sectorName: string,
   defenderName: string,
   id = `atk_${Date.now()}`
 ): BattleSummary {
-  const rows = [
-    battle.attackPower > 0 || battle.defensePower > 0
-      ? `Attack ${battle.attackPower} vs Defense ${battle.defensePower}`
-      : null,
-    battle.damage > 0
-      ? `Dealt ${battle.damage} damage`
-      : "No structure damage",
-    battle.houseDestroyed
-      ? "Their house was destroyed — they must rebuild"
-      : battle.houseDamaged
-        ? "Their house was damaged"
-        : null,
-    battle.destroyed ? `Destroyed: ${battle.destroyed}` : null,
-    battle.damagedBuildings.length
-      ? `Damaged: ${battle.damagedBuildings.join(", ")}`
-      : null,
-    battle.defenderRocketsLost > 0
-      ? `Enemy arsenal −${battle.defenderRocketsLost} rocket(s)`
-      : null,
-    battle.lootedGold > 0 ? `Looted +${battle.lootedGold}g` : null,
-    battle.rocketsLost > 0
-      ? `Rockets expended: ${battle.rocketsLost}`
-      : null,
-  ].filter(Boolean) as string[];
-
   return {
     id,
     role: "attacker",
@@ -131,7 +119,16 @@ function summaryFromAttack(
     sectorName,
     opponent: defenderName,
     win: battle.win,
-    rows,
+    attackPower: battle.attackPower,
+    defensePower: battle.defensePower,
+    damage: battle.damage,
+    destroyedCount: destroyedCountFrom(battle.destroyed),
+    damagedCount: battle.damagedBuildings.length,
+    houseDestroyed: battle.houseDestroyed,
+    houseDamaged: battle.houseDamaged,
+    rocketsLost: battle.rocketsLost,
+    defenderRocketsLost: battle.defenderRocketsLost,
+    lootedGold: battle.lootedGold,
   };
 }
 
@@ -140,57 +137,41 @@ function summaryFromEvent(e: GameEvent, asDefender = true): BattleSummary {
     e.rocketsLost ?? (e.soldiersLost || 0) + (e.tanksLost || 0);
   const defenderRocketsLost =
     e.defenderRocketsLost ?? e.defenderSoldiersLost ?? 0;
+  const report: BattleReport = {
+    win: e.win,
+    attackPower: e.attackPower ?? 0,
+    defensePower: e.defensePower ?? 0,
+    damage: e.damage,
+    destroyed: e.destroyed,
+    damagedBuildings: e.damagedBuildings ?? [],
+    houseDestroyed: Boolean(e.houseDestroyed),
+    houseDamaged: Boolean(e.houseDamaged),
+    lootedGold: e.lootedGold,
+    rocketsLost,
+    defenderRocketsLost,
+  };
 
   if (!asDefender) {
-    return summaryFromAttack(
-      {
-        win: e.win,
-        attackPower: e.attackPower ?? 0,
-        defensePower: e.defensePower ?? 0,
-        damage: e.damage,
-        destroyed: e.destroyed,
-        damagedBuildings: e.damagedBuildings ?? [],
-        houseDestroyed: Boolean(e.houseDestroyed),
-        houseDamaged: Boolean(e.houseDamaged),
-        lootedGold: e.lootedGold,
-        rocketsLost,
-        defenderRocketsLost,
-      },
-      e.sectorName,
-      e.defenderName,
-      e.id
-    );
+    return summaryFromAttack(report, e.sectorName, e.defenderName, e.id);
   }
-
-  const rows = [
-    e.attackPower != null && e.defensePower != null
-      ? `Attack ${e.attackPower} vs Defense ${e.defensePower}`
-      : null,
-    e.damage > 0 ? `Took ${e.damage} damage` : "No structure damage",
-    e.houseDestroyed
-      ? "Your house was destroyed — rebuild it to gather again"
-      : e.houseDamaged
-        ? "Your house was damaged"
-        : null,
-    e.destroyed ? `Destroyed: ${e.destroyed}` : null,
-    e.damagedBuildings?.length
-      ? `Damaged: ${e.damagedBuildings.join(", ")}`
-      : null,
-    defenderRocketsLost > 0
-      ? `Arsenal −${defenderRocketsLost} rocket(s)`
-      : null,
-    e.lootedGold > 0 ? `${e.lootedGold}g looted` : null,
-    e.win ? "Enemy broke through" : "Your defenses held",
-  ].filter(Boolean) as string[];
 
   return {
     id: e.id,
     role: "defender",
-    headline: e.win ? "Under attack — breach" : "Under attack — held",
+    headline: e.win ? "Breach" : "Held",
     sectorName: e.sectorName,
     opponent: e.attackerName,
     win: !e.win,
-    rows,
+    attackPower: report.attackPower,
+    defensePower: report.defensePower,
+    damage: report.damage,
+    destroyedCount: destroyedCountFrom(report.destroyed),
+    damagedCount: report.damagedBuildings.length,
+    houseDestroyed: report.houseDestroyed,
+    houseDamaged: report.houseDamaged,
+    rocketsLost: report.rocketsLost,
+    defenderRocketsLost: report.defenderRocketsLost,
+    lootedGold: report.lootedGold,
   };
 }
 
@@ -208,6 +189,8 @@ export function PlayShell() {
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(
     null
   );
+  /** Rockets to fire in the next salvo */
+  const [salvo, setSalvo] = useState(1);
   const [busy, setBusy] = useState(false);
   /** Shown while a settle/rebuild/build write is in flight */
   const [savingLabel, setSavingLabel] = useState<string | null>(null);
@@ -458,6 +441,7 @@ export function PlayShell() {
         houseHp: me.houseHp,
       })
     : 0;
+  const salvoAttack = attackPower(salvo);
   const settlersBySector = useMemo(() => {
     const map = new Map<string, NonNullable<typeof snap>["players"]>();
     for (const p of snap?.players ?? []) {
@@ -480,6 +464,18 @@ export function PlayShell() {
         houseHp: enemyPlayer.houseHp,
       })
     : 0;
+
+  // When targeting someone, suggest enough rockets to breach (+1 over defense)
+  useEffect(() => {
+    if (!me || !enemyPlayer) return;
+    const stock = me.rockets || 0;
+    if (stock <= 0) {
+      setSalvo(1);
+      return;
+    }
+    const need = Math.min(stock, Math.max(1, enemyDefense + 1));
+    setSalvo(need);
+  }, [selectedPlayerId, me?.rockets, enemyPlayer?.id, enemyDefense]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const gemsFound = useMemo(() => {
     if (!me) return 0;
@@ -881,11 +877,16 @@ export function PlayShell() {
   };
 
   const launchAttack = async () => {
-    if (!me?.house || !enemyPlayer?.house) return;
+    if (!me?.house || !enemyPlayer) return;
+    const b0 = enemyPlayer.buildings[0];
+    const target =
+      enemyPlayer.house ??
+      (b0 ? { lat: b0.lat, lng: b0.lng } : null);
+    if (!target) return;
     const targetSector =
       snap?.sectors.find((s) => s.id === enemyPlayer.homeSectorId) ?? null;
     const defenderName = enemyPlayer.name;
-    const target = enemyPlayer.house;
+    const rockets = Math.max(1, Math.min(me.rockets || 0, salvo));
     const durationMs = 3200;
     const marchStarted = Date.now();
     setMarch({
@@ -895,7 +896,10 @@ export function PlayShell() {
       durationMs,
     });
     playAttackSound();
-    const data = await act("attack", { targetPlayerId: enemyPlayer.id });
+    const data = await act("attack", {
+      targetPlayerId: enemyPlayer.id,
+      rockets,
+    });
     const battle = data?.battle as BattleReport | undefined;
 
     if (!data || !battle) {
@@ -951,7 +955,7 @@ export function PlayShell() {
       enemyPlayer.homeSectorId &&
       enemyPlayer.homeSectorId !== me.homeSectorId
   );
-  /** Attack modal only after tapping an enemy house */
+  /** Attack modal after tapping any enemy house/building */
   const enemySelected = claimed && canAttackEnemy;
 
   // Google auth required — gate the game until signed in
@@ -1463,7 +1467,7 @@ export function PlayShell() {
         </div>
       )}
 
-      {/* Persistent battle report (attacker + defender) — blocks until dismissed */}
+      {/* Graphical battle report — blocks until dismissed */}
       {battleSummary && (
         <div
           className="battle-report-overlay absolute inset-0 z-[60] flex items-start justify-center px-3 pt-16 sm:items-center sm:pt-0"
@@ -1472,7 +1476,7 @@ export function PlayShell() {
           aria-label="Battle report"
         >
           <div
-            className={`battle-report pointer-events-auto w-[min(22rem,calc(100%-1rem))] p-4 ${
+            className={`battle-report pointer-events-auto w-[min(20rem,calc(100%-1rem))] p-4 ${
               battleSummary.role === "defender"
                 ? "battle-report-defense"
                 : battleSummary.win
@@ -1482,11 +1486,17 @@ export function PlayShell() {
           >
             <div className="flex items-start justify-between gap-2">
               <div>
-                <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-white/70">
-                  Battle report
+                <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-white/65">
+                  {battleSummary.role === "defender" ? "Under attack" : "Raid"}
                 </p>
                 <p className="font-display text-2xl text-white">
                   {battleSummary.headline}
+                </p>
+                <p className="mt-0.5 text-[11px] text-white/80">
+                  {battleSummary.role === "attacker" ? "vs" : "from"}{" "}
+                  <span className="font-semibold">{battleSummary.opponent}</span>
+                  {" · "}
+                  {battleSummary.sectorName}
                 </p>
               </div>
               <button
@@ -1497,23 +1507,97 @@ export function PlayShell() {
                 ✕
               </button>
             </div>
-            <p className="mt-1 text-xs text-white/85">
-              {battleSummary.role === "attacker" ? "vs" : "from"}{" "}
-              <span className="font-semibold">{battleSummary.opponent}</span>
-              {" · "}
-              {battleSummary.sectorName}
-            </p>
-            <ul className="mt-3 space-y-1 border-t border-white/20 pt-3 text-xs text-white/90">
-              {battleSummary.rows.map((row) => (
-                <li key={row}>· {row}</li>
-              ))}
-            </ul>
+
+            {/* ATK vs DEF meter */}
+            <div className="battle-vs mt-4">
+              <div className="battle-vs-side">
+                <span className="battle-vs-num">{battleSummary.attackPower}</span>
+                <span className="battle-vs-lbl">ATK</span>
+              </div>
+              <div className="battle-vs-bar" aria-hidden>
+                <span
+                  className="battle-vs-fill is-atk"
+                  style={{
+                    width: `${Math.min(
+                      100,
+                      (battleSummary.attackPower /
+                        Math.max(
+                          1,
+                          battleSummary.attackPower + battleSummary.defensePower
+                        )) *
+                        100
+                    )}%`,
+                  }}
+                />
+                <span
+                  className="battle-vs-fill is-def"
+                  style={{
+                    width: `${Math.min(
+                      100,
+                      (battleSummary.defensePower /
+                        Math.max(
+                          1,
+                          battleSummary.attackPower + battleSummary.defensePower
+                        )) *
+                        100
+                    )}%`,
+                  }}
+                />
+              </div>
+              <div className="battle-vs-side">
+                <span className="battle-vs-num">{battleSummary.defensePower}</span>
+                <span className="battle-vs-lbl">DEF</span>
+              </div>
+            </div>
+
+            {/* Outcome chips */}
+            <div className="battle-stat-grid mt-3">
+              <div className="battle-stat">
+                <span className="battle-stat-val">{battleSummary.damage}</span>
+                <span className="battle-stat-lbl">Damage</span>
+              </div>
+              <div className="battle-stat">
+                <span className="battle-stat-val">
+                  {battleSummary.destroyedCount}
+                </span>
+                <span className="battle-stat-lbl">Destroyed</span>
+              </div>
+              <div className="battle-stat">
+                <span className="battle-stat-val">
+                  {battleSummary.role === "attacker"
+                    ? `−${battleSummary.rocketsLost}`
+                    : `−${battleSummary.defenderRocketsLost}`}
+                </span>
+                <span className="battle-stat-lbl">Rockets</span>
+              </div>
+              <div className="battle-stat">
+                <span className="battle-stat-val">
+                  {battleSummary.lootedGold > 0
+                    ? `+${battleSummary.lootedGold}`
+                    : "0"}
+                </span>
+                <span className="battle-stat-lbl">Gold</span>
+              </div>
+            </div>
+
+            {(battleSummary.houseDestroyed || battleSummary.houseDamaged) && (
+              <p className="mt-3 text-center font-mono text-[10px] text-white/85">
+                {battleSummary.houseDestroyed
+                  ? battleSummary.role === "attacker"
+                    ? "🏠 House razed — they must rebuild"
+                    : "🏠 Your house was razed — rebuild to gather"
+                  : battleSummary.role === "attacker"
+                    ? "🏠 House damaged"
+                    : "🏠 Your house was damaged"}
+              </p>
+            )}
+
             <button
               type="button"
               className="mt-4 w-full rounded-sm bg-white/20 px-3 py-2 text-sm font-bold text-white"
               onClick={dismissBattle}
             >
-              Close report
+              Close
             </button>
           </div>
         </div>
@@ -1689,7 +1773,7 @@ export function PlayShell() {
         </div>
       )}
 
-      {/* ---- Attack panel: only after tapping an enemy house ---- */}
+      {/* ---- Attack panel: after tapping any enemy building/house ---- */}
       {enemySelected && enemyPlayer && !placing && !needsHouseRebuild && (
         <div
           className={`absolute left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-xs -translate-x-1/2 sm:bottom-8 ${
@@ -1705,22 +1789,71 @@ export function PlayShell() {
               {snap?.sectors.find((s) => s.id === enemyPlayer.homeSectorId)
                 ?.name ?? "sector"}
             </p>
-            <p className="mt-2 font-mono text-[10px] text-[var(--sand)]">
-              Your attack {myAttack}
-              <span className="text-[var(--ink-faint)]">
-                {" "}
-                ({attackBreakdown(me?.rockets ?? 0)})
+
+            {/* Salvo picker */}
+            <div className="salvo-picker mt-3">
+              <p className="font-mono text-[8px] uppercase tracking-[0.18em] text-[var(--ink-faint)]">
+                Rockets to fire
+              </p>
+              <div className="mt-1.5 flex items-center justify-center gap-3">
+                <button
+                  type="button"
+                  className="salvo-btn"
+                  disabled={!me || salvo <= 1}
+                  onClick={() => setSalvo((n) => Math.max(1, n - 1))}
+                >
+                  −
+                </button>
+                <div className="min-w-[4.5rem]">
+                  <p className="font-display text-2xl leading-none text-[var(--sand)]">
+                    {salvo}
+                  </p>
+                  <p className="font-mono text-[8px] text-[var(--ink-faint)]">
+                    of {me?.rockets || 0}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="salvo-btn"
+                  disabled={!me || salvo >= (me.rockets || 0)}
+                  onClick={() =>
+                    setSalvo((n) => Math.min(me?.rockets || 1, n + 1))
+                  }
+                >
+                  +
+                </button>
+              </div>
+              <input
+                type="range"
+                min={1}
+                max={Math.max(1, me?.rockets || 1)}
+                value={Math.min(salvo, Math.max(1, me?.rockets || 1))}
+                disabled={!me || (me.rockets || 0) <= 0}
+                onChange={(e) => setSalvo(Number(e.target.value))}
+                className="salvo-range mt-2"
+              />
+            </div>
+
+            <div className="mt-2 flex items-center justify-center gap-3 font-mono text-[11px]">
+              <span className="text-[var(--sand)]">
+                ATK {salvoAttack}
               </span>
-            </p>
-            <p className="font-mono text-[10px] text-[var(--ink-muted)]">
-              Their defense {enemyDefense}
-              <span className="text-[var(--ink-faint)]">
-                {" "}
-                ({defenseBreakdown(enemyPlayer)})
+              <span className="text-[var(--ink-faint)]">vs</span>
+              <span className="text-[var(--ink-muted)]">
+                DEF {enemyDefense}
               </span>
-            </p>
+              <span
+                className={`rounded-sm px-1.5 py-0.5 text-[9px] font-bold ${
+                  salvoAttack > enemyDefense
+                    ? "bg-[rgba(90,154,99,0.35)] text-[var(--field-bright)]"
+                    : "bg-[rgba(226,59,47,0.25)] text-[var(--signal-bright)]"
+                }`}
+              >
+                {salvoAttack > enemyDefense ? "Breach" : "Hold"}
+              </span>
+            </div>
             <p className="mt-1 text-[9px] text-[var(--ink-faint)]">
-              Rocket = 1 atk (expended) · House = 1 def · Turret = 2 def
+              Fired rockets are spent · {defenseBreakdown(enemyPlayer)}
             </p>
             <button
               type="button"
@@ -1734,7 +1867,7 @@ export function PlayShell() {
               onClick={() => void launchAttack()}
               className="mt-2 w-full rounded-sm bg-[var(--signal)] px-3 py-2 text-sm font-bold text-white disabled:opacity-40"
             >
-              ✦ Fire rockets at {enemyPlayer.name} ({myAttack} vs {enemyDefense})
+              ✦ Fire {salvo} rocket{salvo === 1 ? "" : "s"}
             </button>
             <button
               type="button"
@@ -1745,7 +1878,7 @@ export function PlayShell() {
             </button>
             {me && (me.rockets || 0) <= 0 && (
               <p className="mt-1 text-[9px] text-[var(--ink-faint)]">
-                Stock rockets in Arsenal first — they are expended on each raid
+                Stock rockets in Arsenal first
               </p>
             )}
           </div>

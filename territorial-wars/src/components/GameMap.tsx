@@ -1096,6 +1096,11 @@ export function GameMap({
               .flatMap((p) =>
                 p.buildings.map((b) => {
                   const maxHp = catalogItem(b.type).hp;
+                  const canTarget =
+                    p.id !== me?.id &&
+                    Boolean(p.homeSectorId) &&
+                    Boolean(me?.homeSectorId) &&
+                    p.homeSectorId !== me?.homeSectorId;
                   return (
                     <Marker
                       key={b.id}
@@ -1103,13 +1108,32 @@ export function GameMap({
                       latitude={b.lat}
                       anchor="bottom"
                     >
-                      <div className="relative flex flex-col items-center">
+                      <button
+                        type="button"
+                        className={`relative flex flex-col items-center bg-transparent p-0 ${
+                          selectedPlayerId === p.id
+                            ? "ring-2 ring-[var(--sand)] rounded-sm"
+                            : ""
+                        }`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (canTarget) onSelectPlayer?.(p.id);
+                          else onSelectPlayer?.(null);
+                        }}
+                        title={
+                          p.id === me?.id
+                            ? `Your ${catalogItem(b.type).name}`
+                            : canTarget
+                              ? `Tap to target ${p.name}`
+                              : `${p.name} (same sector — can't attack)`
+                        }
+                      >
                         <BuildingSprite type={b.type} />
                         <HpBar hp={b.hp ?? maxHp} maxHp={maxHp} width={38} />
                         {p.id !== me?.id && (
                           <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-[var(--signal-bright)] ring-1 ring-[var(--surface)]" />
                         )}
-                      </div>
+                      </button>
                     </Marker>
                   );
                 })

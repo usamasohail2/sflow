@@ -1567,7 +1567,8 @@ export async function buyRocket(
 
 export async function attackSector(
   playerId: string,
-  targetPlayerId: string
+  targetPlayerId: string,
+  rocketsToFire?: number
 ): Promise<{ ok: true; battle: BattleReport } | { error: string }> {
   await bootstrap();
   const me = await getPlayer(playerId);
@@ -1575,7 +1576,8 @@ export async function attackSector(
   if (!me.house) {
     return { error: "Rebuild your house before attacking" };
   }
-  if ((me.rockets || 0) <= 0) {
+  const stock = me.rockets || 0;
+  if (stock <= 0) {
     return { error: "Buy rockets for your arsenal before attacking" };
   }
   if (!targetPlayerId || targetPlayerId === playerId) {
@@ -1596,7 +1598,12 @@ export async function attackSector(
   }
   const targetSectorId = defender.homeSectorId;
 
-  const atk = attackPower(me.rockets || 0);
+  // Fire a chosen salvo — those rockets are always expended
+  const fired = Math.max(
+    1,
+    Math.min(stock, Math.floor(Number(rocketsToFire) || stock))
+  );
+  const atk = attackPower(fired);
   const def = defensePower(defender);
   const win = atk > def;
 
@@ -1647,26 +1654,22 @@ export async function attackSector(
 
   const damageDealt = damageBudget - remaining;
 
-  let rocketsLost: number;
+  const rocketsLost = fired;
   let defenderRocketsLost: number;
   let lootedGold = 0;
 
   if (win) {
-    // Munitions expended on a successful salvo
-    rocketsLost = Math.max(1, Math.floor((me.rockets || 0) * 0.4));
     defenderRocketsLost = Math.min(
       defender.rockets || 0,
-      Math.floor((me.rockets || 0) / 2) || 1
+      Math.floor(fired / 2) || 1
     );
     if (survivingBuildings.length === 0 || houseDestroyed) {
       lootedGold = Math.min(defender.gold, 25);
     }
   } else {
-    // Failed raid burns the whole salvo
-    rocketsLost = me.rockets || 0;
     defenderRocketsLost = Math.min(
       defender.rockets || 0,
-      Math.max(1, Math.floor(atk / 3))
+      Math.max(1, Math.floor(fired / 3))
     );
   }
 
