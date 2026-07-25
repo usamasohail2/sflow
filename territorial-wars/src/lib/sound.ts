@@ -1,13 +1,17 @@
 "use client";
 
 /**
- * Procedural game audio — Web Audio API, no asset files.
- * Everything is synthesized: theme loop, combat stingers, build thuds,
- * and a proximity-based villager work loop.
+ * Game audio — Web Audio UI/game SFX + a real ambient theme loop.
+ *
+ * Theme: "Sector" from Dark Sci-Fi Audio Pack by SRG774 (CC0)
+ * https://opengameart.org/content/dark-sci-fi-audio-pack
+ *
+ * UI click/hover recipe mirrors soft tactical UI (sine chirps, dual-layer click).
  */
 
 const MUSIC_KEY = "itw_music_on";
 const SFX_KEY = "itw_sfx_on";
+const THEME_URL = "/audio/theme.mp3";
 
 let ctx: AudioContext | null = null;
 let masterGain: GainNode | null = null;
@@ -16,12 +20,18 @@ let sfxGain: GainNode | null = null;
 
 let musicOn = false;
 let sfxOn = true;
-let musicTimer: number | null = null;
-let musicStep = 0;
+
+/* Sampled theme */
+let themeBuffer: AudioBuffer | null = null;
+let themeSource: AudioBufferSourceNode | null = null;
+let themeLoading: Promise<AudioBuffer | null> | null = null;
 
 /* Villager work loop */
 let workGain: GainNode | null = null;
 let workTimer: number | null = null;
+
+let uiInstalled = false;
+let lastHoverAt = 0;
 
 function ensureCtx(): AudioContext | null {
   if (typeof window === "undefined") return null;
@@ -37,11 +47,11 @@ function ensureCtx(): AudioContext | null {
     masterGain.connect(ctx.destination);
 
     musicGain = ctx.createGain();
-    musicGain.gain.value = 0.16;
+    musicGain.gain.value = 0.22;
     musicGain.connect(masterGain);
 
     sfxGain = ctx.createGain();
-    sfxGain.gain.value = 0.6;
+    sfxGain.gain.value = 0.65;
     sfxGain.connect(masterGain);
   }
   if (ctx.state === "suspended") void ctx.resume();
@@ -65,73 +75,177 @@ export function readSfxPref(): boolean {
 }
 
 /* ------------------------------------------------------------------ */
-/* Theme music — slow minor arpeggio over a drone, RTS dusk mood       */
+/* Low-level tone helper (Volt-style soft UI)                          */
 /* ------------------------------------------------------------------ */
 
-// A minor pentatonic-ish sequence (Hz)
-const THEME_SEQ = [
-  220.0, 261.63, 329.63, 293.66, 261.63, 329.63, 392.0, 329.63,
-  220.0, 261.63, 329.63, 440.0, 392.0, 329.63, 261.63, 246.94,
-];
-const THEME_STEP_MS = 620;
+type ToneOpts = {
+  type?: OscillatorType;
+  f0?: number;
+  f1?: number | null;
+  dur?: number;
+  vol?: number;
+  attack?: number;
+  dest?: GainNode | null;
+};
 
-function playThemeNote(freq: number, dur: number) {
+function tone({
+  type = "sine",
+  f0 = 440,
+  f1 = null,
+  dur = 0.08,
+  vol = 0.18,
+  attack = 0.004,
+  dest = null,
+}: ToneOpts = {}) {
+  const c = ensureCtx();
+  const out = dest ?? sfxGain;
+  if (!c || !out || !sfxOn) return;
+  const t = c.currentTime;
+  const osc = c.createOscillator();
+  const g = c.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(f0, t);
+  if (f1 != null) {
+    osc.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
+  }
+  g.gain.setValueAtTime(1e-4, t);
+  g.gain.exponentialRampToValueAtTime(Math.max(1e-4, vol), t + attack);
+  g.gain.exponentialRampToValueAtTime(1e-4, t + dur);
+  osc.connect(g).connect(out);
+  osc.start(t);
+  osc.stop(t + dur + 0.02);
+}
+
+/** Soft dual-tone click — mid fundamental + quiet high overtone */
+export function playUiClick(): void {
+  if (!sfxOn) return;
+  tone({ type: "sine", f0: 520, f1: 660, dur: 0.085, vol: 0.07, attack: 0.012 });
+  tone({ type: "sine", f0: 1040, dur: 0.05, vol: 0.018, attack: 0.012 });
+}
+
+/** Tiny upward hover chirp */
+export function playUiHover(): void {
+  if (!sfxOn) return;
+  const now = performance.now();
+  if (now - lastHoverAt < 45) return;
+  lastHoverAt = now;
+  tone({ type: "sine", f0: 880, f1: 1320, dur: 0.05, vol: 0.045, attack: 0.004 });
+}
+
+/**
+ * Global UI SFX like Volt: click/hover on buttons & links via delegation.
+ * Opt out with data-snd="off" / data-nohover="1".
+ */
+export function installUiSounds(): void {
+  if (typeof window === "undefined" || uiInstalled) return;
+  uiInstalled = true;
+
+  const onPointerDown = () => {
+    unlockAudio();
+  };
+
+  const onClick = (e: MouseEvent) => {
+    const el = (e.target as Element | null)?.closest?.(
+      "button, a, [role=button], input, select, summary"
+    ) as HTMLElement | null;
+    if (!el) return;
+    if (el.dataset.snd === "off") return;
+    if (el.getAttribute("aria-disabled") === "true") return;
+    if ((el as HTMLButtonElement).disabled) return;
+    const kind = el.dataset.snd || "click";
+    if (kind === "click") playUiClick();
+    else if (kind === "hover") playUiHover();
+  };
+
+  const onPointerOver = (e: PointerEvent) => {
+    const el = (e.target as Element | null)?.closest?.(
+      "button, a, [role=button]"
+    ) as HTMLElement | null;
+    if (!el) return;
+    if (el.dataset.nohover === "1" || el.dataset.snd === "off") return;
+    if ((el as HTMLButtonElement).disabled) return;
+    // Only when entering the interactive element itself (not bubbling children spam)
+    const related = e.relatedTarget as Node | null;
+    if (related && el.contains(related)) return;
+    playUiHover();
+  };
+
+  window.addEventListener("pointerdown", onPointerDown, { passive: true });
+  window.addEventListener("click", onClick, true);
+  window.addEventListener("pointerover", onPointerOver, true);
+}
+
+/* ------------------------------------------------------------------ */
+/* Theme music — sampled ambient loop (not synth beeps)                */
+/* ------------------------------------------------------------------ */
+
+async function loadThemeBuffer(): Promise<AudioBuffer | null> {
+  if (themeBuffer) return themeBuffer;
+  if (themeLoading) return themeLoading;
+  themeLoading = (async () => {
+    try {
+      const c = ensureCtx();
+      if (!c) return null;
+      const res = await fetch(THEME_URL, { cache: "force-cache" });
+      if (!res.ok) return null;
+      const raw = await res.arrayBuffer();
+      themeBuffer = await c.decodeAudioData(raw.slice(0));
+      return themeBuffer;
+    } catch (err) {
+      console.warn("Theme load failed", err);
+      return null;
+    } finally {
+      themeLoading = null;
+    }
+  })();
+  return themeLoading;
+}
+
+function stopThemeSource() {
+  if (themeSource) {
+    try {
+      themeSource.stop();
+    } catch {
+      /* already stopped */
+    }
+    try {
+      themeSource.disconnect();
+    } catch {
+      /* ignore */
+    }
+    themeSource = null;
+  }
+}
+
+async function startThemeSource() {
   const c = ensureCtx();
   if (!c || !musicGain) return;
-  const t = c.currentTime;
-
-  const osc = c.createOscillator();
-  osc.type = "triangle";
-  osc.frequency.value = freq;
-  const g = c.createGain();
-  g.gain.setValueAtTime(0, t);
-  g.gain.linearRampToValueAtTime(0.5, t + 0.05);
-  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-  osc.connect(g).connect(musicGain);
-  osc.start(t);
-  osc.stop(t + dur + 0.05);
-
-  // Soft fifth underneath every other note
-  if (musicStep % 2 === 0) {
-    const osc2 = c.createOscillator();
-    osc2.type = "sine";
-    osc2.frequency.value = freq / 2;
-    const g2 = c.createGain();
-    g2.gain.setValueAtTime(0, t);
-    g2.gain.linearRampToValueAtTime(0.3, t + 0.08);
-    g2.gain.exponentialRampToValueAtTime(0.001, t + dur * 1.4);
-    osc2.connect(g2).connect(musicGain);
-    osc2.start(t);
-    osc2.stop(t + dur * 1.4 + 0.05);
-  }
+  const buf = await loadThemeBuffer();
+  if (!buf || !musicOn) return;
+  stopThemeSource();
+  const src = c.createBufferSource();
+  src.buffer = buf;
+  src.loop = true;
+  src.connect(musicGain);
+  src.start(0);
+  themeSource = src;
 }
 
 export function startMusic(): void {
   const c = ensureCtx();
   if (!c) return;
-  if (musicTimer != null) return;
   musicOn = true;
   try {
     window.localStorage.setItem(MUSIC_KEY, "1");
   } catch {
     /* private mode */
   }
-  musicStep = 0;
-  const tick = () => {
-    if (!musicOn) return;
-    playThemeNote(THEME_SEQ[musicStep % THEME_SEQ.length]!, 0.9);
-    musicStep += 1;
-    musicTimer = window.setTimeout(tick, THEME_STEP_MS);
-  };
-  tick();
+  void startThemeSource();
 }
 
 export function stopMusic(): void {
   musicOn = false;
-  if (musicTimer != null) {
-    window.clearTimeout(musicTimer);
-    musicTimer = null;
-  }
+  stopThemeSource();
   try {
     window.localStorage.setItem(MUSIC_KEY, "0");
   } catch {
@@ -153,7 +267,7 @@ export function isMusicOn(): boolean {
 }
 
 /* ------------------------------------------------------------------ */
-/* SFX                                                                 */
+/* Game SFX                                                            */
 /* ------------------------------------------------------------------ */
 
 export function setSfxOn(on: boolean): void {
@@ -177,7 +291,7 @@ function noiseBuffer(c: AudioContext, seconds: number): AudioBuffer {
   return buf;
 }
 
-/** March launched — brass-ish rising call */
+/** March launched — soft rising brass call (triangle, not harsh saw) */
 export function playAttackSound(): void {
   if (!sfxOn) return;
   const c = ensureCtx();
@@ -185,47 +299,45 @@ export function playAttackSound(): void {
   const t = c.currentTime;
   [220, 293.66, 392].forEach((f, i) => {
     const osc = c.createOscillator();
-    osc.type = "sawtooth";
+    osc.type = "triangle";
     osc.frequency.setValueAtTime(f, t + i * 0.09);
     const g = c.createGain();
     g.gain.setValueAtTime(0, t + i * 0.09);
-    g.gain.linearRampToValueAtTime(0.5, t + i * 0.09 + 0.03);
-    g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.09 + 0.5);
+    g.gain.linearRampToValueAtTime(0.38, t + i * 0.09 + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.09 + 0.48);
     osc.connect(g).connect(sfxGain!);
     osc.start(t + i * 0.09);
-    osc.stop(t + i * 0.09 + 0.55);
+    osc.stop(t + i * 0.09 + 0.52);
   });
 }
 
-/** You are under attack — dissonant alarm + rumble */
+/** You are under attack — tense but not square-wave alarm */
 export function playUnderAttackSound(): void {
   if (!sfxOn) return;
   const c = ensureCtx();
   if (!c || !sfxGain) return;
   const t = c.currentTime;
 
-  // Two-tone alarm
   for (let i = 0; i < 3; i++) {
     const osc = c.createOscillator();
-    osc.type = "square";
+    osc.type = "triangle";
     osc.frequency.setValueAtTime(311, t + i * 0.28);
     osc.frequency.setValueAtTime(233, t + i * 0.28 + 0.14);
     const g = c.createGain();
-    g.gain.setValueAtTime(0.24, t + i * 0.28);
+    g.gain.setValueAtTime(0.2, t + i * 0.28);
     g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.28 + 0.26);
     osc.connect(g).connect(sfxGain!);
     osc.start(t + i * 0.28);
     osc.stop(t + i * 0.28 + 0.28);
   }
 
-  // Impact rumble
   const src = c.createBufferSource();
   src.buffer = noiseBuffer(c, 0.7);
   const filt = c.createBiquadFilter();
   filt.type = "lowpass";
   filt.frequency.value = 160;
   const g = c.createGain();
-  g.gain.setValueAtTime(0.7, t);
+  g.gain.setValueAtTime(0.55, t);
   g.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
   src.connect(filt).connect(g).connect(sfxGain);
   src.start(t);
@@ -243,7 +355,7 @@ export function playBuildSound(): void {
   osc.frequency.setValueAtTime(140, t);
   osc.frequency.exponentialRampToValueAtTime(52, t + 0.18);
   const g = c.createGain();
-  g.gain.setValueAtTime(0.9, t);
+  g.gain.setValueAtTime(0.75, t);
   g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
   osc.connect(g).connect(sfxGain);
   osc.start(t);
@@ -255,7 +367,7 @@ export function playBuildSound(): void {
   filt.type = "bandpass";
   filt.frequency.value = 900;
   const g2 = c.createGain();
-  g2.gain.setValueAtTime(0.25, t + 0.02);
+  g2.gain.setValueAtTime(0.22, t + 0.02);
   g2.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
   src.connect(filt).connect(g2).connect(sfxGain);
   src.start(t + 0.02);
@@ -274,39 +386,19 @@ export function playRecruitSound(): void {
   filt.type = "highpass";
   filt.frequency.value = 1800;
   const g = c.createGain();
-  g.gain.setValueAtTime(0.3, t);
+  g.gain.setValueAtTime(0.26, t);
   g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
   src.connect(filt).connect(g).connect(sfxGain);
   src.start(t);
 
-  const osc = c.createOscillator();
-  osc.type = "triangle";
-  osc.frequency.setValueAtTime(523.25, t + 0.06);
-  const g2 = c.createGain();
-  g2.gain.setValueAtTime(0.3, t + 0.06);
-  g2.gain.exponentialRampToValueAtTime(0.001, t + 0.24);
-  osc.connect(g2).connect(sfxGain);
-  osc.start(t + 0.06);
-  osc.stop(t + 0.26);
+  tone({ type: "triangle", f0: 523.25, f1: 659.25, dur: 0.2, vol: 0.22, attack: 0.01 });
 }
 
 /** Coin/collect chime */
 export function playCoinSound(): void {
   if (!sfxOn) return;
-  const c = ensureCtx();
-  if (!c || !sfxGain) return;
-  const t = c.currentTime;
-  [880, 1174.66].forEach((f, i) => {
-    const osc = c.createOscillator();
-    osc.type = "sine";
-    osc.frequency.value = f;
-    const g = c.createGain();
-    g.gain.setValueAtTime(0.22, t + i * 0.07);
-    g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.07 + 0.3);
-    osc.connect(g).connect(sfxGain!);
-    osc.start(t + i * 0.07);
-    osc.stop(t + i * 0.07 + 0.32);
-  });
+  tone({ type: "sine", f0: 880, dur: 0.28, vol: 0.18, attack: 0.008 });
+  tone({ type: "sine", f0: 1174.66, dur: 0.32, vol: 0.14, attack: 0.01 });
 }
 
 /* ------------------------------------------------------------------ */
@@ -318,7 +410,6 @@ function villagerChop() {
   if (!c || !workGain) return;
   const t = c.currentTime;
 
-  // Wood chop: filtered noise burst + low knock
   const src = c.createBufferSource();
   src.buffer = noiseBuffer(c, 0.08);
   const filt = c.createBiquadFilter();
@@ -362,7 +453,6 @@ export function setVillagerWorkLevel(level: number): void {
   if (workTimer == null) {
     const tick = () => {
       villagerChop();
-      // Irregular chopping rhythm
       workTimer = window.setTimeout(tick, 450 + Math.random() * 500);
     };
     tick();
@@ -382,4 +472,6 @@ export function stopVillagerWork(): void {
 /** Resume audio context on first user gesture (mobile autoplay policy) */
 export function unlockAudio(): void {
   ensureCtx();
+  // Warm-load theme so music toggle feels instant
+  void loadThemeBuffer();
 }

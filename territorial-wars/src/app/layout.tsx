@@ -4,6 +4,7 @@ import "./globals.css";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { AuthSessionProvider } from "@/components/AuthSessionProvider";
+import { SoundBootstrap } from "@/components/SoundBootstrap";
 
 const sans = DM_Sans({
   subsets: ["latin"],
@@ -53,6 +54,7 @@ export default function RootLayout({
         className={`${sans.variable} ${display.variable} ${mono.variable} bg-[var(--surface)] font-sans text-[var(--ink)] antialiased`}
       >
         <AuthSessionProvider>{children}</AuthSessionProvider>
+        <SoundBootstrap />
         <Analytics />
         <SpeedInsights />
       </body>

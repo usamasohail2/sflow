@@ -54,6 +54,7 @@ import { pointInOrNearRing } from "@/lib/geo";
 import { ringCentroid } from "@/lib/mapMath";
 import {
   isMusicOn,
+  installUiSounds,
   playAttackSound,
   playBuildSound,
   playCoinSound,
@@ -872,8 +873,9 @@ export function PlayShell() {
     showToast(`Demo: GPS bypassed for ${sector.name}`);
   };
 
-  // Audio: unlock on first tap (mobile autoplay) and resume music pref
+  // Audio: Volt-style UI clicks/hovers + unlock / resume music pref
   useEffect(() => {
+    installUiSounds();
     const unlock = () => {
       unlockAudio();
       if (readMusicPref() && !isMusicOn()) {
@@ -1488,6 +1490,7 @@ export function PlayShell() {
             </button>
             <button
               type="button"
+              data-nohover="1"
               onClick={() => setMusicOn(toggleMusic())}
               className={`hud-chip px-2.5 py-1.5 font-mono text-[11px] sm:px-3 ${
                 musicOn
