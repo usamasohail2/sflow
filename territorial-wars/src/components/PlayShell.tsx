@@ -565,6 +565,18 @@ export function PlayShell() {
     requestGps(sectorId);
   };
 
+  /** Demo-only: skip real GPS and treat the sector center as your location */
+  const bypassGpsForSector = (sectorId: string) => {
+    const sector = snap?.sectors.find((s) => s.id === sectorId);
+    if (!sector) return;
+    const center = ringCentroid(sector.ring);
+    setLiveLocation(center);
+    setGpsFix({ sectorId, lat: center.lat, lng: center.lng });
+    setLocationFocus((n) => n + 1);
+    setError(null);
+    showToast(`Demo: GPS bypassed for ${sector.name}`);
+  };
+
   // While choosing a sector, show the player's live GPS on the map
   useEffect(() => {
     if (claimed || !me || !navigator.geolocation || gpsWatchStarted.current) {
@@ -1229,6 +1241,15 @@ export function PlayShell() {
                   className="mt-2 w-full rounded-sm bg-[var(--signal)] px-3 py-2.5 text-sm font-bold text-white shadow-[0_2px_8px_rgba(0,0,0,0.5)] disabled:opacity-40"
                 >
                   ⚑ Claim {selected.name} — place your house
+                </button>
+                <button
+                  type="button"
+                  disabled={busy || !me}
+                  onClick={() => bypassGpsForSector(selected.id)}
+                  className="mt-1.5 text-[9px] font-mono text-[var(--ink-faint)] underline decoration-dotted underline-offset-2 hover:text-[var(--sand)] disabled:opacity-40"
+                  title="Demo only — skips the GPS check"
+                >
+                  Demo: bypass location check
                 </button>
               </>
             )}
