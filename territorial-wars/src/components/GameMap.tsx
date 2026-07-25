@@ -155,7 +155,8 @@ export type Placing = {
   sector: Sector;
 };
 
-const VILLAGER_FOOTPRINT_M = 8;
+/** Personal space shown while dropping a villager (collision still sector-only) */
+const VILLAGER_FOOTPRINT_M = 14;
 
 function placingFootprint(kind: PlacingKind): number {
   if (kind === "house") return HOUSE_FOOTPRINT_M;
@@ -292,8 +293,9 @@ function circleFeature(
   props: Record<string, unknown>
 ): Feature<Polygon> {
   const pts: [number, number][] = [];
-  for (let i = 0; i <= 20; i++) {
-    const a = (i / 20) * Math.PI * 2;
+  const steps = 48;
+  for (let i = 0; i <= steps; i++) {
+    const a = (i / steps) * Math.PI * 2;
     const p = offsetMeters(center, Math.cos(a) * radiusM, Math.sin(a) * radiusM);
     pts.push([p.lng, p.lat]);
   }
@@ -357,6 +359,9 @@ export function GameMap({
   const mapRef = useRef<MapRef>(null);
   const [zoom, setZoom] = useState(INTRO_GLOBE_ZOOM);
   const showDetail = zoom >= DETAIL_ZOOM;
+  /** Keep footprints/buildings visible while settling even if zoomed out */
+  const showPlaceOverlays = showDetail || Boolean(placing) || Boolean(previewHouse);
+  const placingMode = Boolean(placing) || Boolean(previewHouse);
   const [now, setNow] = useState(() => Date.now());
   const [exploring, setExploring] = useState(false);
   const [spawnFlash, setSpawnFlash] = useState<string | null>(null);
@@ -862,16 +867,22 @@ export function GameMap({
     settled ? "#ffb0a4" : "#f0f2ea",
   ] as never;
 
-  // Footprint circles — rel: 0 you, 1 ally, 2 enemy
+  // Footprint circles — rel: 0 you, 1 ally, 2 enemy; emphasis while placing
   const footprints = useMemo<FeatureCollection>(() => {
     const feats: Feature<Polygon>[] = [];
+    const emphasis = placingMode ? 1 : 0;
     for (const p of players) {
       if (!p.homeSectorId) continue;
       const relation = playerRelation(p, me);
       const rel = relation === "self" ? 0 : relation === "ally" ? 1 : 2;
       if (p.house) {
         feats.push(
-          circleFeature(p.house, HOUSE_FOOTPRINT_M, { rel, ghost: 0 })
+          circleFeature(p.house, HOUSE_FOOTPRINT_M, {
+            rel,
+            ghost: 0,
+            emphasis,
+            preview: 0,
+          })
         );
       }
       for (const b of p.buildings) {
@@ -879,10 +890,21 @@ export function GameMap({
           circleFeature(
             { lat: b.lat, lng: b.lng },
             catalogItem(b.type).footprintM,
-            { rel, ghost: 0 }
+            { rel, ghost: 0, emphasis, preview: 0 }
           )
         );
       }
+    }
+    // Stashed house during first-time settle — keep its claim ring visible
+    if (previewHouse) {
+      feats.push(
+        circleFeature(previewHouse, HOUSE_FOOTPRINT_M, {
+          rel: 0,
+          ghost: 0,
+          emphasis: 1,
+          preview: 1,
+        })
+      );
     }
     if (placing && hover) {
       const fp = placingFootprint(placing.kind);
@@ -895,6 +917,7 @@ export function GameMap({
       if (unbound && inSector) {
         const anchor =
           me?.house ??
+          previewHouse ??
           userLocation ??
           (placing.sector.ring[0]
             ? {
@@ -907,7 +930,7 @@ export function GameMap({
         }
       }
       let clear = inSector;
-      // Villager only needs to stand inside the sector
+      // Villager only needs to stand inside the sector / near pin
       if (clear && placing.kind !== "villager") {
         for (const p of players) {
           for (const b of p.buildings) {
@@ -928,13 +951,43 @@ export function GameMap({
           }
           if (!clear) break;
         }
+        if (
+          clear &&
+          previewHouse &&
+          distMeters(hover, previewHouse) < fp + HOUSE_FOOTPRINT_M
+        ) {
+          clear = false;
+        }
       }
       feats.push(
-        circleFeature(hover, fp, { rel: 0, ghost: 1, ok: clear ? 1 : 0 })
+        circleFeature(hover, fp, {
+          rel: 0,
+          ghost: 1,
+          ok: clear ? 1 : 0,
+          emphasis: 1,
+          preview: 0,
+        })
       );
     }
     return { type: "FeatureCollection", features: feats };
-  }, [players, me, placing, hover, userLocation]);
+  }, [players, me, placing, hover, userLocation, previewHouse, placingMode]);
+
+  // Seed / clear the drop-ring while placing so villager/house bounds show immediately
+  useEffect(() => {
+    if (!placing) {
+      setHover(null);
+      return;
+    }
+    setHover((cur) => {
+      if (cur) return cur;
+      if (previewHouse) return previewHouse;
+      if (userLocation) return userLocation;
+      if (me?.house) return me.house;
+      const ring0 = placing.sector.ring[0];
+      if (ring0) return { lat: ring0[1], lng: ring0[0] };
+      return null;
+    });
+  }, [placing, previewHouse, userLocation, me?.house]);
 
   /** Easy/private hiddens in home sector; contested finds visible everywhere */
   const mySpots = useMemo(() => {
@@ -1230,8 +1283,15 @@ export function GameMap({
             setHover({ lat: e.lngLat.lat, lng: e.lngLat.lng });
           }
         }}
+        onTouchMove={(e) => {
+          if (!placing) return;
+          const ll = e.lngLat;
+          if (!ll) return;
+          setHover({ lat: ll.lat, lng: ll.lng });
+        }}
         onClick={(e: MapMouseEvent) => {
           if (placing && onPlace) {
+            setHover({ lat: e.lngLat.lat, lng: e.lngLat.lng });
             onPlace(e.lngLat.lat, e.lngLat.lng);
             return;
           }
@@ -1487,8 +1547,8 @@ export function GameMap({
               );
             })}
 
-        {/* Detail: footprints, houses, buildings, villagers, resources */}
-        {showDetail && (
+        {/* Detail / placement: footprints, houses, buildings, villagers, resources */}
+        {showPlaceOverlays && (
           <>
             <Source id="footprints" type="geojson" data={footprints}>
               <Layer
@@ -1499,7 +1559,9 @@ export function GameMap({
                   "fill-color": [
                     "case",
                     ["==", ["get", "ghost"], 1],
-                    ["case", ["==", ["get", "ok"], 1], "#3b9eff", "#e23b2f"],
+                    ["case", ["==", ["get", "ok"], 1], "#3ddb7a", "#e23b2f"],
+                    ["==", ["get", "preview"], 1],
+                    "#e8cf8a",
                     ["==", ["get", "rel"], 0],
                     "#3b9eff",
                     ["==", ["get", "rel"], 1],
@@ -1509,7 +1571,11 @@ export function GameMap({
                   "fill-opacity": [
                     "case",
                     ["==", ["get", "ghost"], 1],
-                    0.3,
+                    0.34,
+                    ["==", ["get", "preview"], 1],
+                    0.32,
+                    ["==", ["get", "emphasis"], 1],
+                    0.26,
                     0.1,
                   ] as never,
                 }}
@@ -1522,20 +1588,46 @@ export function GameMap({
                   "line-color": [
                     "case",
                     ["==", ["get", "ghost"], 1],
-                    ["case", ["==", ["get", "ok"], 1], "#7ec8ff", "#ff5245"],
+                    ["case", ["==", ["get", "ok"], 1], "#7dffb0", "#ff5245"],
+                    ["==", ["get", "preview"], 1],
+                    "#f0e0a0",
                     ["==", ["get", "rel"], 0],
-                    "#3b9eff",
+                    "#7ec8ff",
                     ["==", ["get", "rel"], 1],
                     "#4dff8a",
-                    "#e23b2f",
+                    "#ff6b5c",
                   ] as never,
                   "line-width": [
                     "case",
                     ["==", ["get", "ghost"], 1],
-                    2,
+                    3,
+                    ["==", ["get", "emphasis"], 1],
+                    2.75,
                     1,
                   ] as never,
-                  "line-dasharray": [2, 1.5] as never,
+                  "line-opacity": [
+                    "case",
+                    ["==", ["get", "emphasis"], 1],
+                    0.95,
+                    0.75,
+                  ] as never,
+                }}
+              />
+              <Layer
+                id="footprint-line-dash"
+                type="line"
+                slot="top"
+                filter={["==", ["get", "ghost"], 1]}
+                paint={{
+                  "line-color": [
+                    "case",
+                    ["==", ["get", "ok"], 1],
+                    "#c8ffe0",
+                    "#ffb0a8",
+                  ] as never,
+                  "line-width": 1.25,
+                  "line-dasharray": [1.2, 1.6] as never,
+                  "line-opacity": 0.9,
                 }}
               />
             </Source>
@@ -1970,7 +2062,7 @@ export function GameMap({
             {isAzadHomeId(placing.sector.id) ||
             placing.sector.ring.length < 4
               ? `Tap near your pin to place your ${placingLabel(placing.kind)} — no sector walls in ${AZAD_ARENA_NAME}`
-              : `Tap inside ${placing.sector.name} to place your ${placingLabel(placing.kind)} — green ring = clear ground`}
+              : `Tap inside ${placing.sector.name} to place your ${placingLabel(placing.kind)} — bright rings show taken ground · green = clear`}
           </p>
         </div>
       )}

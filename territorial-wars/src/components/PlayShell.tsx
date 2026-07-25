@@ -81,6 +81,7 @@ import {
   playAttackSound,
   playBuildSound,
   playCoinSound,
+  playErrorSound,
   playGemSpawnSound,
   playRecruitSound,
   playUnderAttackSound,
@@ -1735,6 +1736,11 @@ export function PlayShell() {
     }
     setGemClaimAlert(null);
   }, [gemClaimAlert]);
+
+  // Error toast SFX
+  useEffect(() => {
+    if (error) playErrorSound();
+  }, [error]);
 
   // Corner toasts auto-dismiss after 7s
   useEffect(() => {

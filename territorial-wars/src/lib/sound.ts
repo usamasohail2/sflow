@@ -401,6 +401,42 @@ export function playCoinSound(): void {
   tone({ type: "sine", f0: 1174.66, dur: 0.32, vol: 0.14, attack: 0.01 });
 }
 
+/** Error toast / failed action — short descending buzz */
+export function playErrorSound(): void {
+  if (!sfxOn) return;
+  const c = ensureCtx();
+  if (!c || !sfxGain) return;
+  const t = c.currentTime;
+
+  tone({
+    type: "triangle",
+    f0: 280,
+    f1: 140,
+    dur: 0.18,
+    vol: 0.22,
+    attack: 0.006,
+  });
+  tone({
+    type: "sine",
+    f0: 210,
+    f1: 95,
+    dur: 0.26,
+    vol: 0.16,
+    attack: 0.01,
+  });
+
+  const src = c.createBufferSource();
+  src.buffer = noiseBuffer(c, 0.14);
+  const filt = c.createBiquadFilter();
+  filt.type = "lowpass";
+  filt.frequency.value = 420;
+  const g = c.createGain();
+  g.gain.setValueAtTime(0.18, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+  src.connect(filt).connect(g).connect(sfxGain);
+  src.start(t);
+}
+
 /** Contested gem appeared on the map — bright sparkle arpeggio */
 export function playGemSpawnSound(): void {
   if (!sfxOn) return;
