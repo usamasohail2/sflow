@@ -367,9 +367,27 @@ export function makeAzadPlacementSector(center?: LatLng | null): Sector {
  */
 export const GOLD_COIN = "◈";
 
+/** Compact gold for HUD badges (e.g. 85M, 1.2B). */
+export function formatGoldCompact(amount: number): string {
+  const n = Math.floor(amount);
+  if (n >= 1_000_000_000) {
+    const v = n / 1_000_000_000;
+    return `${v % 1 === 0 ? v.toFixed(0) : v.toFixed(1)}B`;
+  }
+  if (n >= 1_000_000) {
+    const v = n / 1_000_000;
+    return `${v % 1 === 0 ? v.toFixed(0) : v.toFixed(1)}M`;
+  }
+  if (n >= 10_000) {
+    const v = n / 1_000;
+    return `${v % 1 === 0 ? v.toFixed(0) : v.toFixed(1)}K`;
+  }
+  return String(n);
+}
+
 /** Format a gold amount for plain strings (toasts, errors). */
 export function formatGold(amount: number): string {
-  return `${GOLD_COIN}${amount}`;
+  return `${GOLD_COIN}${formatGoldCompact(amount)}`;
 }
 
 export const INVITE_VILLAGER_BONUS = 1;
@@ -462,7 +480,7 @@ export const BUILDING_CATALOG: BuildingCatalogItem[] = [
   {
     type: "civic",
     name: "Honda Civic",
-    cost: 400,
+    cost: 85_000_000,
     blurb: "Park it by your house — flex tier",
     tripBonus: 0,
     footprintM: 16,
@@ -472,7 +490,7 @@ export const BUILDING_CATALOG: BuildingCatalogItem[] = [
   {
     type: "prado",
     name: "Toyota Prado",
-    cost: 950,
+    cost: 150_000_000,
     blurb: "SUV flex — park near home",
     tripBonus: 0,
     footprintM: 20,
@@ -482,7 +500,7 @@ export const BUILDING_CATALOG: BuildingCatalogItem[] = [
   {
     type: "landcruiser",
     name: "Land Cruiser",
-    cost: 1800,
+    cost: 250_000_000,
     blurb: "Top-shelf flex — everyone sees it",
     tripBonus: 0,
     footprintM: 24,

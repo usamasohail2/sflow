@@ -69,6 +69,8 @@ import {
   catalogItem,
   defenseBreakdown,
   defensePower,
+  formatGold,
+  formatGoldCompact,
   isAttackEvent,
   isAzadHomeId,
   isGemClaimEvent,
@@ -1622,7 +1624,7 @@ export function PlayShell() {
     const cat =
       snap.buildingCatalog.find((b) => b.type === kind) ?? catalogItem(kind);
     if (displayGold < cat.cost) {
-      setError(`Need ${GOLD_COIN}${cat.cost}`);
+      setError(`Need ${formatGold(cat.cost)}`);
       window.setTimeout(() => setError(null), 3200);
       return;
     }
@@ -4259,7 +4261,7 @@ export function PlayShell() {
                         />
                         <span className="cameo-cost">
                           <GoldCoinIcon size={10} />
-                          {b.cost}
+                          {formatGoldCompact(b.cost)}
                         </span>
                         <span className="cameo-label">
                           {syncing ? "Building…" : shortLabel}
