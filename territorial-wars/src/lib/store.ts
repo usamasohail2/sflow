@@ -20,6 +20,7 @@ import {
   defensePower,
   type BattleReport,
   type BuildingType,
+  type GameEvent,
   type GameSnapshot,
   type GameState,
   type GemType,
@@ -57,6 +58,7 @@ function emptyState(): GameState {
     spots: [],
     players: {},
     invites: {},
+    events: [],
     updatedAt: Date.now(),
   };
 }
@@ -103,6 +105,8 @@ function migrateLegacy(raw: unknown): GameState {
       if (p.lastAttackAt == null) p.lastAttackAt = 0;
       if (p.soldiers == null) p.soldiers = 0;
       if (p.tanks == null) p.tanks = 0;
+      if (p.peakSoldiers == null) p.peakSoldiers = p.soldiers;
+      if (p.peakTanks == null) p.peakTanks = p.tanks;
       if (p.villagerPost === undefined) p.villagerPost = null;
       if (p.totalFarmed == null) p.totalFarmed = p.gold || 0;
       p.buildings = (p.buildings || []).map((b) => ({
@@ -119,6 +123,7 @@ function migrateLegacy(raw: unknown): GameState {
       spots,
       players,
       invites: (o.invites as Record<string, string>) ?? {},
+      events: Array.isArray(o.events) ? (o.events as GameEvent[]) : [],
       updatedAt: Number(o.updatedAt) || Date.now(),
     };
   }
@@ -202,6 +207,8 @@ function ensureRivalGarrison(state: GameState): boolean {
       villagers: 1,
       soldiers: 1,
       tanks: 0,
+      peakSoldiers: 1,
+      peakTanks: 0,
       gold: 40,
       totalFarmed: 0,
       buildings: defaultBuildings(),
@@ -218,7 +225,10 @@ function ensureRivalGarrison(state: GameState): boolean {
     state.invites["RIVAL0"] = BOT_ID;
     changed = true;
   } else {
-    const razed = bot.buildings.length < 3 || (bot.soldiers || 0) < 1;
+    const razed =
+      bot.buildings.length < 3 ||
+      (bot.soldiers || 0) < 1 ||
+      bot.buildings.some((b) => b.hp < catalogItem(b.type).hp);
     // lastAttackAt on the bot marks when it was last raided
     if (razed && now - (bot.lastAttackAt || 0) > BOT_RESTOCK_MS) {
       state.players[BOT_ID] = {
@@ -289,6 +299,8 @@ function publicPlayer(p: Player): PublicPlayer {
     villagers: p.villagers,
     soldiers: p.soldiers || 0,
     tanks: p.tanks || 0,
+    peakSoldiers: Math.max(p.peakSoldiers || 0, p.soldiers || 0),
+    peakTanks: Math.max(p.peakTanks || 0, p.tanks || 0),
     gold: p.gold,
     totalFarmed: p.totalFarmed || 0,
     buildings: p.buildings,
@@ -365,6 +377,8 @@ export async function ensurePlayer(
       villagers: 0,
       soldiers: 0,
       tanks: 0,
+      peakSoldiers: 0,
+      peakTanks: 0,
       gold: STARTING.gold,
       totalFarmed: 0,
       buildings: [],
@@ -406,11 +420,17 @@ export async function getSnapshot(meId?: string | null): Promise<GameSnapshot> {
       s.ownerId === me.id || me.discoveredSpotIds.includes(s.id)
     );
   });
+  const events = me
+    ? (state.events || [])
+        .filter((e) => e.attackerId === me.id || e.defenderId === me.id)
+        .slice(-12)
+    : [];
   return {
     sectors: state.sectors,
     spots,
     players: Object.values(state.players).map(publicPlayer),
     me,
+    events,
     serverNow,
     gatherTripMs: GATHER_TRIP_MS,
     buildingCatalog: BUILDING_CATALOG,
@@ -495,6 +515,8 @@ export async function claimSector(
     villagers: STARTING.villagers,
     soldiers: 0,
     tanks: 0,
+    peakSoldiers: 0,
+    peakTanks: 0,
     gold: STARTING.gold,
     totalFarmed: 0,
     buildings: [],
@@ -799,6 +821,7 @@ export async function recruitSoldier(
     ...me,
     gold: me.gold - SOLDIER_COST,
     soldiers: (me.soldiers || 0) + 1,
+    peakSoldiers: Math.max(me.peakSoldiers || 0, (me.soldiers || 0) + 1),
     updatedAt: Date.now(),
   };
   await saveState(state);
@@ -818,6 +841,7 @@ export async function buildTank(
     ...me,
     gold: me.gold - TANK_COST,
     tanks: (me.tanks || 0) + 1,
+    peakTanks: Math.max(me.peakTanks || 0, (me.tanks || 0) + 1),
     updatedAt: Date.now(),
   };
   await saveState(state);
@@ -854,48 +878,48 @@ export async function attackSector(
   const def = defensePower(defender);
   const win = atk > def;
 
-  let destroyed: string | null = null;
-  let soldiersLost = 0;
-  let tanksLost = 0;
-  let defenderSoldiersLost = 0;
+  // Damage chews through building hp — turrets first, then newest.
+  // Winning armies deal full damage; repelled ones still deal half.
+  const damageBudget = win ? atk : Math.floor(atk / 2);
+  let remaining = damageBudget;
+  const destroyedNames: string[] = [];
+  const damagedNames: string[] = [];
+  const targets = [...defender.buildings].sort((a, b) => {
+    if (a.type === "turret" && b.type !== "turret") return -1;
+    if (b.type === "turret" && a.type !== "turret") return 1;
+    return b.builtAt - a.builtAt;
+  });
+  const survivingBuildings = targets
+    .map((b) => {
+      if (remaining <= 0) return b;
+      const dmg = Math.min(b.hp, remaining);
+      remaining -= dmg;
+      const hp = b.hp - dmg;
+      if (hp <= 0) {
+        destroyedNames.push(catalogItem(b.type).name);
+        return null;
+      }
+      if (dmg > 0) damagedNames.push(catalogItem(b.type).name);
+      return { ...b, hp };
+    })
+    .filter(Boolean) as typeof defender.buildings;
+  const damageDealt = damageBudget - remaining;
+
+  let soldiersLost: number;
+  let tanksLost: number;
+  let defenderSoldiersLost: number;
+  let lootedGold = 0;
 
   if (win) {
-    // Turrets die first, then the newest building
-    const targets = [...defender.buildings].sort((a, b) => {
-      if (a.type === "turret" && b.type !== "turret") return -1;
-      if (b.type === "turret" && a.type !== "turret") return 1;
-      return b.builtAt - a.builtAt;
-    });
-    const victim = targets[0] ?? null;
-    if (victim) {
-      destroyed = catalogItem(victim.type).name;
-      state.players[defender.id] = {
-        ...defender,
-        buildings: defender.buildings.filter((b) => b.id !== victim.id),
-        soldiers: Math.max(
-          0,
-          (defender.soldiers || 0) - Math.floor(me.soldiers / 2)
-        ),
-        lastAttackAt: now,
-        updatedAt: now,
-      };
-      defenderSoldiersLost =
-        (defender.soldiers || 0) -
-        (state.players[defender.id].soldiers || 0);
-    } else {
-      // Nothing to raze — loot gold instead
-      const loot = Math.min(defender.gold, 25);
-      state.players[defender.id] = {
-        ...defender,
-        gold: defender.gold - loot,
-        updatedAt: now,
-      };
-      state.players[playerId] = { ...me };
-      state.players[playerId].gold += loot;
-      destroyed = loot > 0 ? `${loot} gold looted` : null;
-    }
     soldiersLost = Math.floor(me.soldiers * 0.4);
     tanksLost = Math.floor((me.tanks || 0) * 0.25);
+    defenderSoldiersLost = Math.min(
+      defender.soldiers || 0,
+      Math.floor(me.soldiers / 2) || 1
+    );
+    if (defender.buildings.length === 0) {
+      lootedGold = Math.min(defender.gold, 25);
+    }
   } else {
     soldiersLost = me.soldiers;
     tanksLost = Math.ceil((me.tanks || 0) / 2);
@@ -903,25 +927,48 @@ export async function attackSector(
       defender.soldiers || 0,
       Math.floor(atk / 20)
     );
-    state.players[defender.id] = {
-      ...state.players[defender.id]!,
-      soldiers: Math.max(
-        0,
-        (defender.soldiers || 0) - defenderSoldiersLost
-      ),
-      lastAttackAt: now,
-      updatedAt: now,
-    };
   }
+
+  state.players[defender.id] = {
+    ...defender,
+    buildings: survivingBuildings,
+    soldiers: Math.max(0, (defender.soldiers || 0) - defenderSoldiersLost),
+    gold: defender.gold - lootedGold,
+    lastAttackAt: now,
+    updatedAt: now,
+  };
 
   const meNow = state.players[playerId]!;
   state.players[playerId] = {
     ...meNow,
     soldiers: Math.max(0, (me.soldiers || 0) - soldiersLost),
     tanks: Math.max(0, (me.tanks || 0) - tanksLost),
+    gold: meNow.gold + lootedGold,
     lastAttackAt: now,
     updatedAt: now,
   };
+
+  const destroyed = destroyedNames.length
+    ? destroyedNames.join(", ")
+    : null;
+  const sector = state.sectors.find((s) => s.id === targetSectorId);
+  const event: GameEvent = {
+    id: `ev_${now.toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+    ts: now,
+    type: "attack",
+    attackerId: playerId,
+    attackerName: me.name,
+    defenderId: defender.id,
+    defenderName: defender.name,
+    sectorId: targetSectorId,
+    sectorName: sector?.name ?? targetSectorId,
+    win,
+    damage: damageDealt,
+    destroyed,
+    lootedGold,
+    defenderSoldiersLost,
+  };
+  state.events = [...(state.events || []), event].slice(-50);
 
   await saveState(state);
   return {
@@ -930,7 +977,10 @@ export async function attackSector(
       win,
       attackPower: atk,
       defensePower: def,
+      damage: damageDealt,
       destroyed,
+      damagedBuildings: damagedNames,
+      lootedGold,
       soldiersLost,
       tanksLost,
       defenderSoldiersLost,

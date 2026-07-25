@@ -406,6 +406,111 @@ button.cameo:not(:disabled):hover {
   }
 }
 
+/* ---- Health bars ---- */
+
+.hp-bar {
+  height: 4px;
+  margin-top: 1px;
+  border-radius: 2px;
+  background: rgba(10, 14, 10, 0.85);
+  border: 1px solid rgba(85, 99, 76, 0.9);
+  overflow: hidden;
+}
+
+.hp-bar-fill {
+  height: 100%;
+  border-radius: 1px;
+  transition: width 0.6s ease;
+}
+
+/* Defender's "you're under attack" banner */
+.attack-alert {
+  border-radius: 6px;
+  border: 1px solid rgba(255, 82, 69, 0.9);
+  background: linear-gradient(180deg, rgba(168, 36, 28, 0.95), rgba(90, 16, 12, 0.95));
+  box-shadow:
+    0 0 0 1px rgba(255, 82, 69, 0.4),
+    0 0 22px rgba(226, 59, 47, 0.55),
+    0 4px 14px rgba(0, 0, 0, 0.6);
+  animation: attack-alert-pulse 0.9s ease-in-out 4;
+}
+
+@keyframes attack-alert-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px rgba(255, 82, 69, 0.4),
+      0 0 22px rgba(226, 59, 47, 0.55),
+      0 4px 14px rgba(0, 0, 0, 0.6);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px rgba(255, 82, 69, 0.9),
+      0 0 34px rgba(226, 59, 47, 0.9),
+      0 4px 14px rgba(0, 0, 0, 0.6);
+  }
+}
+
+/* ---- Attack impact ---- */
+
+.impact-burst {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.impact-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 3px solid rgba(255, 90, 60, 0.9);
+  animation: impact-ring 1.1s ease-out forwards;
+}
+
+.impact-ring-2 {
+  border-color: rgba(255, 200, 90, 0.85);
+  animation-delay: 0.18s;
+}
+
+.impact-flash {
+  font-size: 30px;
+  animation: impact-flash 1.2s ease-out forwards;
+  filter: drop-shadow(0 0 10px rgba(255, 140, 60, 0.9));
+}
+
+@keyframes impact-ring {
+  0% {
+    transform: scale(0.15);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.25);
+    opacity: 0;
+  }
+}
+
+@keyframes impact-flash {
+  0% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  15% {
+    transform: scale(1.35);
+    opacity: 1;
+  }
+  60% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+}
+
 /* Tile currently in placement mode */
 .cameo-active {
   border-color: #8fe098 !important;

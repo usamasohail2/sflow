@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   GameMap,
+  type ImpactAnim,
   type MarchAnim,
   type Placing,
 } from "@/components/GameMap";
@@ -53,7 +54,11 @@ export function PlayShell() {
   const [placing, setPlacing] = useState<Placing | null>(null);
   const [pendingHouse, setPendingHouse] = useState<LatLng | null>(null);
   const [march, setMarch] = useState<MarchAnim | null>(null);
+  const [impact, setImpact] = useState<ImpactAnim | null>(null);
+  const [alert, setAlert] = useState<string | null>(null);
   const identityChecked = useRef(false);
+  const seenEvents = useRef<Set<string>>(new Set());
+  const eventsPrimed = useRef(false);
 
   const IDENT_KEY = "itw_player_id";
 
@@ -63,6 +68,38 @@ export function PlayShell() {
     setSelectedId(
       (cur) => cur ?? data.me?.homeSectorId ?? data.sectors[0]?.id ?? null
     );
+
+    // Surface battles I wasn't watching (I'm the defender, or an attack
+    // resolved in another window)
+    const events = data.events ?? [];
+    if (!eventsPrimed.current) {
+      // Don't replay history on first load
+      for (const e of events) seenEvents.current.add(e.id);
+      eventsPrimed.current = true;
+      return;
+    }
+    for (const e of events) {
+      if (seenEvents.current.has(e.id)) continue;
+      seenEvents.current.add(e.id);
+      if (data.me && e.defenderId === data.me.id) {
+        const parts = [
+          `⚔ ${e.attackerName} attacked ${e.sectorName}!`,
+          e.damage > 0 ? `−${e.damage} hp` : null,
+          e.destroyed ? `${e.destroyed} destroyed` : null,
+          e.defenderSoldiersLost > 0
+            ? `${e.defenderSoldiersLost} soldier(s) lost`
+            : null,
+          e.lootedGold > 0 ? `${e.lootedGold}g looted` : null,
+          !e.win ? "Your defenses held!" : null,
+        ].filter(Boolean);
+        setAlert(parts.join(" · "));
+        window.setTimeout(() => setAlert(null), 6000);
+        if (data.me.house) {
+          setImpact({ at: data.me.house, startedAt: Date.now() });
+          window.setTimeout(() => setImpact(null), 1600);
+        }
+      }
+    }
   }, []);
 
   const rememberIdentity = (id?: string | null) => {
@@ -242,8 +279,7 @@ export function PlayShell() {
         window.setTimeout(() => setError(null), 3200);
         return null;
       }
-      setSnap(data as GameSnapshot);
-      if (data.me) setDisplayGold(data.me.gold);
+      applySnap(data as GameSnapshot);
       return data;
     } catch {
       setError("Network error");
@@ -270,8 +306,7 @@ export function PlayShell() {
       });
       const data = await res.json();
       if (!res.ok) return false;
-      setSnap(data as GameSnapshot);
-      if (data.me) setDisplayGold(data.me.gold);
+      applySnap(data as GameSnapshot);
       const gem = String(data.gem || "resource");
       showToast(
         data.bonus
@@ -352,16 +387,29 @@ export function PlayShell() {
 
   const launchAttack = async () => {
     if (!me?.house || !selected) return;
-    const target = ringCentroid(selected.ring);
+    const targetSector = selected;
+    const target =
+      snap?.players.find((p) => p.homeSectorId === targetSector.id)?.house ??
+      ringCentroid(targetSector.ring);
+    const durationMs = 3200;
     setMarch({
       from: me.house,
       to: target,
       startedAt: Date.now(),
-      durationMs: 3200,
+      durationMs,
     });
-    const data = await act("attack", { sectorId: selected.id });
-    window.setTimeout(() => setMarch(null), 3400);
+    const data = await act("attack", { sectorId: targetSector.id });
     const battle = data?.battle as BattleReport | undefined;
+
+    // Impact lands when the march arrives
+    window.setTimeout(() => {
+      setMarch(null);
+      if (battle) {
+        setImpact({ at: target, startedAt: Date.now() });
+        window.setTimeout(() => setImpact(null), 1600);
+      }
+    }, durationMs);
+
     if (battle) {
       const losses = [
         battle.soldiersLost > 0 ? `${battle.soldiersLost} soldier(s)` : null,
@@ -369,13 +417,32 @@ export function PlayShell() {
       ]
         .filter(Boolean)
         .join(" + ");
+      const dmg = battle.damage > 0 ? `Dealt ${battle.damage} damage` : "";
       if (battle.win) {
         showToast(
-          `Victory! ${battle.destroyed ? `${battle.destroyed} destroyed.` : ""}${losses ? ` Lost ${losses}.` : ""}`
+          [
+            "Victory!",
+            dmg,
+            battle.destroyed ? `${battle.destroyed} destroyed` : null,
+            battle.damagedBuildings.length
+              ? `${battle.damagedBuildings.join(", ")} damaged`
+              : null,
+            battle.lootedGold > 0 ? `+${battle.lootedGold}g loot` : null,
+            losses ? `Lost ${losses}` : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")
         );
       } else {
         showToast(
-          `Repelled! Their defense ${battle.defensePower} beat your ${battle.attackPower}.${losses ? ` Lost ${losses}.` : ""}`
+          [
+            `Repelled! ${battle.defensePower} def vs your ${battle.attackPower} atk`,
+            dmg,
+            battle.destroyed ? `${battle.destroyed} still destroyed` : null,
+            losses ? `Lost ${losses}` : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")
         );
       }
     }
@@ -421,6 +488,7 @@ export function PlayShell() {
           placing={placing}
           previewHouse={pendingHouse}
           march={march}
+          impact={impact}
           onSelect={setSelectedId}
           onPlace={(lat, lng) => void handlePlace(lat, lng)}
           onSpawnFind={(p) => spawnFind(p)}
@@ -618,8 +686,17 @@ export function PlayShell() {
         </div>
       )}
 
+      {/* Under-attack alert (defender) */}
+      {alert && (
+        <div className="pointer-events-none absolute left-1/2 top-14 z-50 w-[min(26rem,calc(100%-1rem))] -translate-x-1/2">
+          <p className="attack-alert px-4 py-2.5 text-center text-xs font-bold text-white">
+            {alert}
+          </p>
+        </div>
+      )}
+
       {/* Toast / error */}
-      {(toast || error) && (
+      {(toast || error) && !alert && (
         <div className="pointer-events-none absolute left-1/2 top-14 z-40 -translate-x-1/2">
           <p
             className={`hud-chip px-4 py-2 text-xs font-semibold ${

@@ -85,6 +85,9 @@ export type Player = {
   villagers: number;
   soldiers: number;
   tanks: number;
+  /** Highest counts reached — garrison health bars show current/peak */
+  peakSoldiers: number;
+  peakTanks: number;
   gold: number;
   /** Lifetime resources farmed — global ranking metric */
   totalFarmed: number;
@@ -109,6 +112,7 @@ export type GameState = {
   spots: ResourceSpot[];
   players: Record<string, Player>;
   invites: Record<string, string>;
+  events: GameEvent[];
   updatedAt: number;
 };
 
@@ -120,6 +124,8 @@ export type PublicPlayer = {
   villagers: number;
   soldiers: number;
   tanks: number;
+  peakSoldiers: number;
+  peakTanks: number;
   gold: number;
   totalFarmed: number;
   buildings: Building[];
@@ -144,9 +150,32 @@ export type BattleReport = {
   win: boolean;
   attackPower: number;
   defensePower: number;
+  /** Total hp damage dealt to enemy buildings */
+  damage: number;
+  /** Names of buildings fully destroyed */
   destroyed: string | null;
+  /** Buildings damaged but still standing */
+  damagedBuildings: string[];
+  lootedGold: number;
   soldiersLost: number;
   tanksLost: number;
+  defenderSoldiersLost: number;
+};
+
+export type GameEvent = {
+  id: string;
+  ts: number;
+  type: "attack";
+  attackerId: string;
+  attackerName: string;
+  defenderId: string;
+  defenderName: string;
+  sectorId: string;
+  sectorName: string;
+  win: boolean;
+  damage: number;
+  destroyed: string | null;
+  lootedGold: number;
   defenderSoldiersLost: number;
 };
 
@@ -155,6 +184,8 @@ export type GameSnapshot = {
   spots: ResourceSpot[];
   players: PublicPlayer[];
   me: Player | null;
+  /** Battle events involving me (attacker or defender), newest last */
+  events: GameEvent[];
   serverNow: number;
   gatherTripMs: number;
   buildingCatalog: BuildingCatalogItem[];

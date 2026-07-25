@@ -48,6 +48,39 @@ export type MarchAnim = {
   durationMs: number;
 };
 
+export type ImpactAnim = {
+  at: LatLng;
+  startedAt: number;
+};
+
+const IMPACT_DURATION_MS = 1400;
+
+function HpBar({
+  hp,
+  maxHp,
+  width = 40,
+}: {
+  hp: number;
+  maxHp: number;
+  width?: number;
+}) {
+  const pct = Math.max(0, Math.min(100, (hp / Math.max(1, maxHp)) * 100));
+  const color =
+    pct > 55 ? "#5a9a63" : pct > 25 ? "#e8cf8a" : "#ff5245";
+  return (
+    <div
+      className="hp-bar"
+      style={{ width }}
+      title={`${hp}/${maxHp} hp`}
+    >
+      <div
+        className="hp-bar-fill"
+        style={{ width: `${pct}%`, background: color }}
+      />
+    </div>
+  );
+}
+
 export type PlacingKind = BuildingType | "house" | "villager";
 
 export type Placing = {
@@ -80,6 +113,7 @@ type Props = {
   /** House chosen but not yet committed (during claim flow) */
   previewHouse: LatLng | null;
   march: MarchAnim | null;
+  impact: ImpactAnim | null;
   onSelect: (id: string) => void;
   onPlace?: (lat: number, lng: number) => void;
   onSpawnFind?: (payload: {
@@ -138,6 +172,7 @@ export function GameMap({
   placing,
   previewHouse,
   march,
+  impact,
   onSelect,
   onPlace,
   onSpawnFind,
@@ -543,21 +578,25 @@ export function GameMap({
         {players
           .filter((p) => p.homeSectorId)
           .flatMap((p) =>
-            p.buildings.map((b) => (
-              <Marker
-                key={b.id}
-                longitude={b.lng}
-                latitude={b.lat}
-                anchor="bottom"
-              >
-                <div className="relative">
-                  <BuildingSprite type={b.type} />
-                  {p.id !== me?.id && (
-                    <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-[var(--signal-bright)] ring-1 ring-[var(--surface)]" />
-                  )}
-                </div>
-              </Marker>
-            ))
+            p.buildings.map((b) => {
+              const maxHp = catalogItem(b.type).hp;
+              return (
+                <Marker
+                  key={b.id}
+                  longitude={b.lng}
+                  latitude={b.lat}
+                  anchor="bottom"
+                >
+                  <div className="relative flex flex-col items-center">
+                    <BuildingSprite type={b.type} />
+                    <HpBar hp={b.hp ?? maxHp} maxHp={maxHp} width={38} />
+                    {p.id !== me?.id && (
+                      <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-[var(--signal-bright)] ring-1 ring-[var(--surface)]" />
+                    )}
+                  </div>
+                </Marker>
+              );
+            })
           )}
 
         {/* Soldiers garrison (mine + rivals) */}
@@ -572,8 +611,13 @@ export function GameMap({
                 latitude={pos.lat}
                 anchor="bottom"
               >
-                <div className="relative">
+                <div className="relative flex flex-col items-center">
                   <SoldierSprite className="h-8 w-8" />
+                  <HpBar
+                    hp={p.soldiers}
+                    maxHp={Math.max(p.peakSoldiers || 0, p.soldiers)}
+                    width={30}
+                  />
                   <span className="absolute -right-1.5 -top-1 rounded-full bg-[var(--surface)] px-1 font-mono text-[9px] text-[#ff9d5a]">
                     ×{p.soldiers}
                   </span>
@@ -594,8 +638,13 @@ export function GameMap({
                 latitude={pos.lat}
                 anchor="bottom"
               >
-                <div className="relative">
+                <div className="relative flex flex-col items-center">
                   <TankSprite className="h-8 w-10" />
+                  <HpBar
+                    hp={p.tanks}
+                    maxHp={Math.max(p.peakTanks || 0, p.tanks)}
+                    width={34}
+                  />
                   <span className="absolute -right-1.5 -top-1 rounded-full bg-[var(--surface)] px-1 font-mono text-[9px] text-[#ff9d5a]">
                     ×{p.tanks}
                   </span>
@@ -691,6 +740,21 @@ export function GameMap({
               <span className="absolute -top-2 left-1/2 -translate-x-1/2 font-mono text-[9px] text-[var(--signal-bright)]">
                 ⚔
               </span>
+            </div>
+          </Marker>
+        )}
+
+        {/* Attack impact explosion */}
+        {impact && now - impact.startedAt < IMPACT_DURATION_MS && (
+          <Marker
+            longitude={impact.at.lng}
+            latitude={impact.at.lat}
+            anchor="center"
+          >
+            <div className="impact-burst">
+              <span className="impact-ring" />
+              <span className="impact-ring impact-ring-2" />
+              <span className="impact-flash">💥</span>
             </div>
           </Marker>
         )}
