@@ -655,6 +655,9 @@ button.cameo:not(:disabled):hover {
   position: absolute;
   top: 2px;
   left: 2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   padding: 0 3px;
   border-radius: 3px;
   background: rgba(10, 14, 10, 0.9);
@@ -662,6 +665,18 @@ button.cameo:not(:disabled):hover {
   font-size: 9px;
   font-weight: 700;
   color: #e8cf8a;
+  line-height: 1.2;
+}
+
+.cameo-cost .gold-coin-icon {
+  flex: 0 0 auto;
+  display: block;
+}
+
+.gold-coin-icon {
+  display: inline-block;
+  vertical-align: -0.15em;
+  flex: 0 0 auto;
 }
 
 .cameo-ready {

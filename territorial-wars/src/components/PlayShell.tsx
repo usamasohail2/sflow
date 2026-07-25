@@ -35,6 +35,7 @@ import {
   type MapBusiness,
 } from "@/lib/businesses";
 import {
+  GoldCoinIcon,
   HouseSprite,
   MillSprite,
   RocketSprite,
@@ -1710,9 +1711,7 @@ export function PlayShell() {
               className="flex h-[31px] items-center gap-1 px-0.5 font-mono text-[11px] font-bold text-[#e8cf8a]"
               title={claimed ? `${Math.floor(displayGold)} gold · +${perTrip}/trip` : `${Math.floor(displayGold)} gold`}
             >
-              <span aria-hidden className="text-[13px] leading-none">
-                {GOLD_COIN}
-              </span>
+              <GoldCoinIcon size={15} />
               <span className="leading-none tabular-nums">
                 {Math.floor(displayGold)}
               </span>
@@ -3099,7 +3098,7 @@ export function PlayShell() {
                   >
                     <RocketSprite className="h-8 w-8 sm:h-9 sm:w-9" />
                     <span className="cameo-cost">
-                      {GOLD_COIN}
+                      <GoldCoinIcon size={10} />
                       {ROCKET_COST}
                     </span>
                     <span className="cameo-label">Rocket</span>
@@ -3151,7 +3150,7 @@ export function PlayShell() {
                           className="h-8 w-9 sm:h-9 sm:w-10"
                         />
                         <span className="cameo-cost">
-                          {GOLD_COIN}
+                          <GoldCoinIcon size={10} />
                           {b.cost}
                         </span>
                         <span className="cameo-label">{shortLabel}</span>

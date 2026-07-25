@@ -289,8 +289,16 @@ export const STARTING = {
   gold: 0,
 } as const;
 
-/** Coin glyph for gold amounts — never use a trailing "g" (reads as kg) */
-export const GOLD_COIN = "🪙";
+/**
+ * Plain-text gold marker for toasts / map labels / API errors.
+ * UI surfaces should prefer `<GoldCoinIcon />` instead.
+ */
+export const GOLD_COIN = "◈";
+
+/** Format a gold amount for plain strings (toasts, errors). */
+export function formatGold(amount: number): string {
+  return `${GOLD_COIN}${amount}`;
+}
 
 export const INVITE_VILLAGER_BONUS = 1;
 /** Villagers granted for reviewing a local business on Google Maps */

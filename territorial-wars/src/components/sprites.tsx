@@ -341,6 +341,30 @@ export function WellSprite({
   );
 }
 
+/**
+ * Gold coin mark for HUD / cost badges.
+ * Uses /icons/gold-coin.svg (original coin art — not the coin emoji).
+ */
+export function GoldCoinIcon({
+  className = "",
+  title = "Gold",
+  size = 14,
+}: SpriteProps & { size?: number }) {
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src="/icons/gold-coin.svg"
+      alt=""
+      title={title}
+      width={size}
+      height={size}
+      className={`gold-coin-icon ${className}`}
+      draggable={false}
+      aria-hidden
+    />
+  );
+}
+
 /** Simple hammer — build / craft affordance. */
 export function HammerSprite({
   className = "",

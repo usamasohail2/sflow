@@ -1663,7 +1663,7 @@ export async function buildBuilding(
   // Accrue pending gold first so affordability reflects reality
   const spots = await getSpots();
   const { player: fresh } = await accruePlayer(me, spots, true);
-  if (fresh.gold < cat.cost) return { error: `Need 🪙${cat.cost}` };
+  if (fresh.gold < cat.cost) return { error: `Need ◈${cat.cost} gold` };
 
   const now = Date.now();
   await setPlayer({
@@ -1695,7 +1695,7 @@ export async function buyRocket(
   const spots = await getSpots();
   const { player: fresh } = await accruePlayer(me, spots, true);
   if (fresh.gold < ROCKET_COST) {
-    return { error: `Need 🪙${ROCKET_COST} to buy a rocket` };
+    return { error: `Need ◈${ROCKET_COST} gold to buy a rocket` };
   }
   const rockets = (fresh.rockets || 0) + 1;
   await setPlayer({
