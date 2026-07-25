@@ -561,6 +561,8 @@ export function PlayShell() {
   >([]);
   const syncingBuildIds = syncingBuilds.map((b) => b.id);
   const syncingBuildTypes = new Set(syncingBuilds.map((b) => b.type));
+  const syncingBuildIdsRef = useRef<string[]>([]);
+  syncingBuildIdsRef.current = syncingBuildIds;
   /** Gem/resource spot ids currently claiming on the server */
   const [claimingSpotIds, setClaimingSpotIds] = useState<string[]>([]);
   const claimingSpotIdsRef = useRef<string[]>([]);
@@ -601,6 +603,8 @@ export function PlayShell() {
   const [reviewReady, setReviewReady] = useState(false);
   /** Own clicker shovel currently open */
   const [shovelId, setShovelId] = useState<string | null>(null);
+  const shovelIdRef = useRef<string | null>(null);
+  shovelIdRef.current = shovelId;
   const [showShovelIntro, setShowShovelIntro] = useState(false);
   const [shovelDigging, setShovelDigging] = useState(false);
   const [shovelFloats, setShovelFloats] = useState<
@@ -649,7 +653,9 @@ export function PlayShell() {
         : data;
     const prevMe = lastGoodMe.current;
     const incoming = next.me;
-    // Guard against a stale poll wiping a just-saved settlement (~3s race)
+    // Guard against a stale poll wiping a just-saved settlement (~3s race).
+    // Still accept the server building list so razes aren't masked by
+    // optimistic digs bumping local updatedAt during the guard window.
     if (
       prevMe?.homeSectorId &&
       prevMe.house &&
@@ -661,9 +667,22 @@ export function PlayShell() {
         !incoming.house ||
         (incoming.updatedAt ?? 0) < (prevMe.updatedAt ?? 0)
       ) {
+        const syncingIds = new Set(syncingBuildIdsRef.current);
+        const buildings =
+          incoming?.homeSectorId && incoming.house
+            ? [
+                ...incoming.buildings,
+                ...prevMe.buildings.filter(
+                  (b) =>
+                    syncingIds.has(b.id) &&
+                    !incoming.buildings.some((s) => s.id === b.id)
+                ),
+              ]
+            : prevMe.buildings;
+        const guardedMe: Player = { ...prevMe, buildings };
         next = {
           ...next,
-          me: prevMe,
+          me: guardedMe,
           players: next.players.map((p) =>
             p.id === prevMe.id
               ? {
@@ -674,7 +693,7 @@ export function PlayShell() {
                   villagerPost: prevMe.villagerPost,
                   villagers: prevMe.villagers,
                   gold: prevMe.gold,
-                  buildings: prevMe.buildings,
+                  buildings,
                 }
               : p
           ),
@@ -775,6 +794,36 @@ export function PlayShell() {
         if (at) {
           setImpact({ at, startedAt: Date.now() });
           window.setTimeout(() => setImpact(null), 1600);
+        }
+        // If a ghost copy survived the settle-guard merge, strip a destroyed building
+        if (e.destroyed && building) {
+          const patchedMe: Player = {
+            ...next.me,
+            buildings: next.me.buildings.filter((b) => b.id !== e.buildingId),
+            updatedAt: Math.max(next.me.updatedAt ?? 0, e.ts),
+          };
+          next = {
+            ...next,
+            me: patchedMe,
+            players: next.players.map((p) =>
+              p.id === patchedMe.id
+                ? { ...p, buildings: patchedMe.buildings }
+                : p
+            ),
+          };
+          lastGoodMe.current = patchedMe;
+        }
+        if (
+          e.destroyed &&
+          shovelIdRef.current &&
+          e.buildingId === shovelIdRef.current
+        ) {
+          setShovelId(null);
+          setShowShovelIntro(false);
+          setShovelDigging(false);
+          setShovelFloats([]);
+          setToast("Your shovel was destroyed");
+          window.setTimeout(() => setToast(null), 3400);
         }
         window.setTimeout(() => {
           setRazeAlert(e);
@@ -1687,15 +1736,6 @@ export function PlayShell() {
     setGemClaimAlert(null);
   }, [gemClaimAlert]);
 
-  // Close digger if the shovel was razed / lost
-  useEffect(() => {
-    if (!shovelId || !me) return;
-    const still = me.buildings.some(
-      (b) => b.id === shovelId && b.type === "shovel"
-    );
-    if (!still) closeShovel();
-  }, [shovelId, me]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // Corner toasts auto-dismiss after 7s
   useEffect(() => {
     if (!razeAlert) return;
@@ -1900,17 +1940,27 @@ export function PlayShell() {
     setShowShovelIntro(false);
   };
 
-  const closeShovel = () => {
+  const closeShovel = useCallback(() => {
     setShovelId(null);
     setShowShovelIntro(false);
     setShovelDigging(false);
-  };
+    setShovelFloats([]);
+  }, []);
+
+  // Close digger if the shovel was razed / lost (poll or local patch)
+  useEffect(() => {
+    if (!shovelId || !me) return;
+    const still = me.buildings.some(
+      (b) => b.id === shovelId && b.type === "shovel" && (b.hp ?? 0) > 0
+    );
+    if (!still) closeShovel();
+  }, [shovelId, me, closeShovel]);
 
   /** Optimistic +1 gold dig — syncs in background without blocking the UI */
   const digShovel = () => {
     if (!shovelId || !me || busyRef.current) return;
     const stillMine = me.buildings.some(
-      (b) => b.id === shovelId && b.type === "shovel"
+      (b) => b.id === shovelId && b.type === "shovel" && (b.hp ?? 0) > 0
     );
     if (!stillMine) {
       closeShovel();
@@ -1926,7 +1976,8 @@ export function PlayShell() {
         ...prev.me,
         gold: prev.me.gold + 1,
         totalFarmed: (prev.me.totalFarmed || 0) + 1,
-        updatedAt: Date.now(),
+        // Keep server updatedAt — optimistic digs must not block raze sync
+        updatedAt: prev.me.updatedAt,
       };
       lastGoodMe.current = nextMe;
       return {
@@ -1971,7 +2022,6 @@ export function PlayShell() {
               ...prev.me,
               gold: Math.max(0, prev.me.gold - 1),
               totalFarmed: Math.max(0, (prev.me.totalFarmed || 0) - 1),
-              updatedAt: Date.now(),
             };
             return {
               ...prev,
@@ -1987,14 +2037,24 @@ export function PlayShell() {
               ),
             };
           });
-          if (data?.error) {
-            setError(String(data.error));
+          const err = String(data?.error || "");
+          if (
+            /shovel|destroyed|missing/i.test(err) &&
+            shovelIdRef.current === buildingId
+          ) {
+            closeShovel();
+          }
+          if (err) {
+            setError(err);
             window.setTimeout(() => setError(null), 3200);
           }
           return;
         }
         // Soft-sync gold if the server is ahead (accrued gather, etc.)
-        const serverGold = (data as GameSnapshot)?.me?.gold;
+        const serverGold =
+          typeof (data as { gold?: number })?.gold === "number"
+            ? (data as { gold: number }).gold
+            : (data as GameSnapshot)?.me?.gold;
         if (typeof serverGold === "number") {
           setDisplayGold((g) => Math.max(g, serverGold));
         }
