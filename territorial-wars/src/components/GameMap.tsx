@@ -30,7 +30,12 @@ import {
   catalogItem,
 } from "@/lib/gameTypes";
 import { pointInRing, wallBandCoordinates } from "@/lib/geo";
-import { distMeters, lerpLatLng, offsetMeters } from "@/lib/mapMath";
+import {
+  distMeters,
+  farmTargetForTrip,
+  lerpLatLng,
+  offsetMeters,
+} from "@/lib/mapMath";
 import { setVillagerWorkLevel, stopVillagerWork } from "@/lib/sound";
 
 /** Hollow perimeter band thickness (meters) */
@@ -41,7 +46,12 @@ const SECTOR_WALL_STACK = [
   { id: "sector-wall-mid", base: 36, height: 72, opacity: 0.4 },
   { id: "sector-wall-high", base: 72, height: 120, opacity: 0.14 },
 ] as const;
-import { gatherPhase } from "@/lib/rules";
+import {
+  GATHER_DIG_END,
+  GATHER_WALK_OUT_END,
+  gatherPhase,
+  gatherTripIndex,
+} from "@/lib/rules";
 import {
   HouseSprite,
   MillSprite,
@@ -166,11 +176,22 @@ function playerAnchor(p: PublicPlayer): LatLng | null {
   return b ? { lat: b.lat, lng: b.lng } : null;
 }
 
-/** Outbound 0–0.45, gather pause 0.45–0.55, return 0.55–1 */
+/** Walk out → dig at farm site → return to base */
 function walkPosition(house: LatLng, target: LatLng, phase: number): LatLng {
-  if (phase < 0.45) return lerpLatLng(house, target, phase / 0.45);
-  if (phase < 0.55) return target;
-  return lerpLatLng(target, house, (phase - 0.55) / 0.45);
+  if (phase < GATHER_WALK_OUT_END) {
+    return lerpLatLng(house, target, phase / GATHER_WALK_OUT_END);
+  }
+  if (phase < GATHER_DIG_END) return target;
+  return lerpLatLng(
+    target,
+    house,
+    (phase - GATHER_DIG_END) / (1 - GATHER_DIG_END)
+  );
+}
+
+function gatherPose(phase: number): "walk" | "dig" {
+  if (phase >= GATHER_WALK_OUT_END && phase < GATHER_DIG_END) return "dig";
+  return "walk";
 }
 
 /** Small circle polygon (meters radius) for footprint rendering */
@@ -427,12 +448,11 @@ export function GameMap({
       )
       .map((p) => {
         const origin = p.villagerPost ?? p.house!;
-        const easy =
-          spots.find((s) => s.sectorId === p.homeSectorId && s.kind === "easy") ??
-          null;
-        const target = easy
-          ? { lat: easy.lat, lng: easy.lng }
-          : offsetMeters(origin, 36, 18);
+        const sector = sectors.find((s) => s.id === p.homeSectorId);
+        const easySpots = spots
+          .filter((s) => s.sectorId === p.homeSectorId && s.kind === "easy")
+          .map((s) => ({ lat: s.lat, lng: s.lng }));
+
         // Shared clock with a per-player offset so loops don't sync perfectly
         let offset = 0;
         for (let i = 0; i < p.id.length; i++) offset += p.id.charCodeAt(i);
@@ -440,31 +460,51 @@ export function GameMap({
           p.id === me?.id && me
             ? gatherPhase(me, now)
             : (((now + offset * 37) % GATHER_TRIP_MS) / GATHER_TRIP_MS);
+        const tripIndex =
+          p.id === me?.id && me
+            ? gatherTripIndex(me, now)
+            : Math.floor((now + offset * 37) / GATHER_TRIP_MS);
+
+        const target = sector
+          ? farmTargetForTrip(
+              sector.ring,
+              origin,
+              easySpots,
+              `${p.id}:${tripIndex}`
+            )
+          : easySpots[tripIndex % Math.max(1, easySpots.length)] ??
+            offsetMeters(origin, 36, 18);
+
+        const pose = gatherPose(phase);
         return {
           id: p.id,
           name: p.name,
           mine: p.id === me?.id,
           villagers: p.villagers,
           pos: walkPosition(origin, target, phase),
+          target,
+          digging: pose === "dig",
+          walking: pose === "walk",
         };
       });
-  }, [players, spots, me, now]);
+  }, [players, spots, sectors, me, now]);
 
   // Villager working audio — only audible up close (zoom + distance falloff)
   useEffect(() => {
     const map = mapRef.current;
-    if (!showDetail || !map || villagerMarkers.length === 0) {
+    const diggers = villagerMarkers.filter((v) => v.digging);
+    if (!showDetail || !map || diggers.length === 0) {
       stopVillagerWork();
       return;
     }
     const c = map.getCenter();
     const center = { lat: c.lat, lng: c.lng };
     let nearest = Infinity;
-    for (const v of villagerMarkers) {
+    for (const v of diggers) {
       const d = distMeters(center, v.pos);
       if (d < nearest) nearest = d;
     }
-    // Audible under ~320m, full volume within 60m — and only when zoomed in
+    // Audible under ~320m, full volume within 60m — only while digging + zoomed in
     const distFactor = Math.max(0, 1 - Math.max(0, nearest - 60) / 260);
     const zoomFactor = Math.max(0, Math.min(1, (zoom - 14.6) / 1.2));
     setVillagerWorkLevel(distFactor * zoomFactor);
@@ -1001,7 +1041,11 @@ export function GameMap({
               >
                 <div
                   className={`relative ${v.mine ? "" : "rival-villager"}`}
-                  title={`${v.name}'s villager`}
+                  title={
+                    v.digging
+                      ? `${v.name}'s villager farming`
+                      : `${v.name}'s villager`
+                  }
                 >
                   <span
                     className={`absolute -top-3.5 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-sm px-1 font-mono text-[8px] ${
@@ -1012,7 +1056,12 @@ export function GameMap({
                   >
                     {v.mine ? "You" : v.name}
                   </span>
-                  <VillagerSprite walking className="h-10 w-10 drop-shadow-md" />
+                  <VillagerSprite
+                    walking={v.walking}
+                    digging={v.digging}
+                    className="h-10 w-10 drop-shadow-md"
+                  />
+                  {v.digging && <span className="villager-dirt" aria-hidden />}
                   {v.villagers > 1 && (
                     <span className="absolute -right-1 -top-1 rounded-full bg-[var(--surface)] px-1 font-mono text-[9px] text-[var(--field-bright)]">
                       ×{v.villagers}

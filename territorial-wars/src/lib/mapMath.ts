@@ -67,6 +67,77 @@ export function distMeters(a: LatLng, b: LatLng): number {
   return Math.hypot(x, y);
 }
 
+/** Stable 32-bit hash for deterministic trip targets */
+export function hashSeed(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function seededUnit(seed: number, salt: number): number {
+  const x = Math.sin(seed * 12.9898 + salt * 78.233) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+/** Deterministic point inside a sector ring (rejection in bbox). */
+export function seededPointInRing(
+  ring: [number, number][],
+  seed: number,
+  attempt = 0
+): LatLng | null {
+  let minLng = Infinity,
+    minLat = Infinity,
+    maxLng = -Infinity,
+    maxLat = -Infinity;
+  for (const [lng, lat] of ring) {
+    minLng = Math.min(minLng, lng);
+    maxLng = Math.max(maxLng, lng);
+    minLat = Math.min(minLat, lat);
+    maxLat = Math.max(maxLat, lat);
+  }
+  for (let i = 0; i < 16; i++) {
+    const u = seededUnit(seed, attempt * 17 + i * 3 + 1);
+    const v = seededUnit(seed, attempt * 17 + i * 3 + 2);
+    const lng = minLng + u * (maxLng - minLng);
+    const lat = minLat + v * (maxLat - minLat);
+    if (pointInRing({ lat, lng }, ring)) return { lat, lng };
+  }
+  return null;
+}
+
+/**
+ * Pick a farm site for this gather trip — cycles easy nodes and
+ * random-looking points elsewhere in the sector so paths vary.
+ */
+export function farmTargetForTrip(
+  ring: [number, number][],
+  origin: LatLng,
+  easySpots: LatLng[],
+  tripKey: string
+): LatLng {
+  const seed = hashSeed(tripKey);
+  const useEasy = easySpots.length > 0 && seededUnit(seed, 0) < 0.55;
+  if (useEasy) {
+    const idx = Math.floor(seededUnit(seed, 1) * easySpots.length);
+    return easySpots[idx] ?? easySpots[0]!;
+  }
+  for (let i = 0; i < 28; i++) {
+    const pt = seededPointInRing(ring, seed, i);
+    if (!pt) continue;
+    const d = distMeters(pt, origin);
+    // Stay in the sector but away from the house post
+    if (d >= 28 && d <= 220) return pt;
+  }
+  // Fallback: fan out around the post at a few bearings
+  const bearing = seededUnit(seed, 9) * 360;
+  const dist = 45 + seededUnit(seed, 10) * 70;
+  const fallback = offsetBearing(origin, bearing, dist);
+  return pointInRing(fallback, ring) ? fallback : offsetMeters(origin, 40, 24);
+}
+
 export function pickRoamGem(): GemType {
   const roll = Math.random();
   if (roll < 0.12) return "diamond";

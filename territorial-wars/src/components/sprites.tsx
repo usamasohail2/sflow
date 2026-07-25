@@ -63,15 +63,16 @@ export function VillagerSprite({
         fill="#3b2a1e"
       />
 
-      {/* pickaxe group — animates when digging */}
-      <g className="villager-tool" transform="translate(22 16)">
-        <rect x="-0.7" y="0" width="1.4" height="9" rx="0.6" fill="#8b5a2b" />
+      {/* shovel — swings when digging */}
+      <g className="villager-tool" transform="translate(21 14)">
+        <rect x="-0.8" y="-1" width="1.6" height="11" rx="0.7" fill="#8b5a2b" />
         <path
-          d="M-4 0.2h8l-1.2 2.4H-2.8z"
-          fill="#c4b089"
-          stroke="#8a7a5a"
-          strokeWidth="0.4"
+          d="M-3.2 9.2 L3.2 9.2 L2.4 13.2 Q0 14.4 -2.4 13.2 Z"
+          fill="#9aa3a0"
+          stroke="#5c6562"
+          strokeWidth="0.35"
         />
+        <rect x="-1.4" y="-2.2" width="2.8" height="1.6" rx="0.5" fill="#6b4e2e" />
       </g>
     </svg>
   );

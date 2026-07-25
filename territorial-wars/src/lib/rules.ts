@@ -77,3 +77,20 @@ export function gatherPhase(player: Player, now = Date.now()): number {
   const last = player.lastGatherAt || player.createdAt;
   return ((now - last) % GATHER_TRIP_MS) / GATHER_TRIP_MS;
 }
+
+/**
+ * Stable id for the current gather trip — advances each loop so farm
+ * destinations change even if lastGatherAt hasn't been polled yet.
+ */
+export function gatherTripIndex(player: Player, now = Date.now()): number {
+  if (!player.homeSectorId) return 0;
+  const last = player.lastGatherAt || player.createdAt;
+  return (
+    Math.floor(last / GATHER_TRIP_MS) +
+    Math.floor(Math.max(0, now - last) / GATHER_TRIP_MS)
+  );
+}
+
+/** Outbound walk → dig at site → return home (share of one trip). */
+export const GATHER_WALK_OUT_END = 0.3;
+export const GATHER_DIG_END = 0.7;

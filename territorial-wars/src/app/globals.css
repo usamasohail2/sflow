@@ -133,12 +133,45 @@ body {
 }
 
 @keyframes villager-dig {
-  0%,
-  100% {
-    transform: rotate(-18deg);
+  0% {
+    transform: rotate(-42deg);
+  }
+  35% {
+    transform: rotate(38deg);
   }
   50% {
-    transform: rotate(28deg);
+    transform: rotate(38deg);
+  }
+  100% {
+    transform: rotate(-42deg);
+  }
+}
+
+@keyframes villager-dig-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(1.5px);
+  }
+  55% {
+    transform: translateY(1.5px);
+  }
+}
+
+@keyframes villager-dirt {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 0) scale(0.4);
+  }
+  30% {
+    opacity: 0.9;
+    transform: translate(-50%, -4px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-30%, -10px) scale(0.7);
   }
 }
 
@@ -161,13 +194,29 @@ body {
   pointer-events: none;
 }
 
+.villager-sprite.is-digging {
+  animation: villager-dig-bob 0.42s ease-in-out infinite;
+}
+
 .villager-sprite.is-digging .villager-tool {
   transform-origin: 0px 2px;
-  animation: villager-dig 0.5s ease-in-out infinite;
+  animation: villager-dig 0.42s ease-in-out infinite;
 }
 
 .villager-sprite.is-walking {
   animation: villager-walk 0.55s ease-in-out infinite;
+}
+
+.villager-dirt {
+  position: absolute;
+  left: 62%;
+  bottom: 4px;
+  width: 7px;
+  height: 5px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #8a6a3a 0%, #5c4030 60%, transparent 70%);
+  pointer-events: none;
+  animation: villager-dirt 0.42s ease-out infinite;
 }
 
 @keyframes villager-walk {
