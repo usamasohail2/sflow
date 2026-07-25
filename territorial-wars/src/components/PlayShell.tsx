@@ -2,17 +2,24 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { GameMap } from "@/components/GameMap";
+import { GameMap, type MarchAnim } from "@/components/GameMap";
 import {
   HouseSprite,
   MillSprite,
+  SoldierSprite,
+  TurretSprite,
   VillagerSprite,
   WarehouseSprite,
   WellSprite,
 } from "@/components/sprites";
 import { ResourceGem } from "@/components/ResourceGem";
-import type { BuildingType, GameSnapshot } from "@/lib/gameTypes";
-import { buildingBonus } from "@/lib/gameTypes";
+import type {
+  BattleReport,
+  BuildingType,
+  GameSnapshot,
+} from "@/lib/gameTypes";
+import { SOLDIER_COST, buildingBonus } from "@/lib/gameTypes";
+import { ringCentroid } from "@/lib/mapMath";
 
 function BuildingThumb({
   type,
@@ -23,6 +30,7 @@ function BuildingThumb({
 }) {
   if (type === "mill") return <MillSprite className={className} />;
   if (type === "warehouse") return <WarehouseSprite className={className} />;
+  if (type === "turret") return <TurretSprite className={className} />;
   return <WellSprite className={className} />;
 }
 
@@ -34,6 +42,9 @@ export function PlayShell() {
   const [toast, setToast] = useState<string | null>(null);
   const [displayGold, setDisplayGold] = useState(0);
   const [showMissions, setShowMissions] = useState(false);
+  const [showRanks, setShowRanks] = useState(false);
+  const [placing, setPlacing] = useState<BuildingType | null>(null);
+  const [march, setMarch] = useState<MarchAnim | null>(null);
 
   const load = useCallback(async () => {
     const invite =
@@ -87,9 +98,11 @@ export function PlayShell() {
     snap?.sectors.find((s) => s.id === me?.homeSectorId)?.name ?? null;
 
   const sectorOwner = useMemo(() => {
-    const map = new Map<string, string>();
+    const map = new Map<string, { id: string; name: string }>();
     for (const p of snap?.players ?? []) {
-      if (p.homeSectorId) map.set(p.homeSectorId, p.name);
+      if (p.homeSectorId) {
+        map.set(p.homeSectorId, { id: p.id, name: p.name });
+      }
     }
     return map;
   }, [snap]);
@@ -100,6 +113,20 @@ export function PlayShell() {
       snap?.spots.some((s) => s.id === id && s.kind === "hidden")
     ).length;
   }, [me, snap]);
+
+  const ranking = useMemo(() => {
+    const rows = (snap?.players ?? [])
+      .filter((p) => p.homeSectorId)
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        sector:
+          snap?.sectors.find((s) => s.id === p.homeSectorId)?.name ?? "—",
+        farmed: p.totalFarmed,
+      }))
+      .sort((a, b) => b.farmed - a.farmed);
+    return rows.slice(0, 10);
+  }, [snap]);
 
   const missionList = useMemo(() => {
     if (!me) return [];
@@ -116,20 +143,25 @@ export function PlayShell() {
       },
       {
         id: "explore",
-        label: "Roam zoomed-in until a gem spawns ahead",
+        label: "Roam zoomed-in until a resource spawns",
         done: gemsFound >= 1,
       },
       {
         id: "build",
-        label: "Build your first structure",
+        label: "Place your first building",
         done: me.buildings.length >= 1,
+      },
+      {
+        id: "army",
+        label: "Recruit a soldier",
+        done: me.soldiers >= 1,
       },
     ];
   }, [me, gemsFound]);
 
   const showToast = (msg: string) => {
     setToast(msg);
-    window.setTimeout(() => setToast(null), 2800);
+    window.setTimeout(() => setToast(null), 3400);
   };
 
   const act = async (action: string, extra: Record<string, unknown> = {}) => {
@@ -145,24 +177,15 @@ export function PlayShell() {
       if (!res.ok) {
         setError(data.error || "Action failed");
         window.setTimeout(() => setError(null), 3200);
-      } else {
-        setSnap(data as GameSnapshot);
-        if (data.me) setDisplayGold(data.me.gold);
-        if (action === "claim_sector") {
-          showToast("Sector claimed — house + villager ready");
-        }
-        if (action === "collect_hidden") {
-          showToast(
-            data.gained ? `Collected +${data.gained} gold` : "Collected"
-          );
-        }
-        if (action === "build") showToast("Building raised");
+        return null;
       }
+      setSnap(data as GameSnapshot);
+      if (data.me) setDisplayGold(data.me.gold);
+      return data;
     } catch {
-      if (action !== "spawn_find") {
-        setError("Network error");
-        window.setTimeout(() => setError(null), 3200);
-      }
+      setError("Network error");
+      window.setTimeout(() => setError(null), 3200);
+      return null;
     } finally {
       setBusy(false);
     }
@@ -186,15 +209,50 @@ export function PlayShell() {
       if (!res.ok) return false;
       setSnap(data as GameSnapshot);
       if (data.me) setDisplayGold(data.me.gold);
-      const gem = String(data.gem || "gem");
+      const gem = String(data.gem || "resource");
       showToast(
         data.bonus
-          ? `${gem[0].toUpperCase()}${gem.slice(1)} sparkles ahead! +${data.bonus}g`
-          : "A gem appeared ahead!"
+          ? `${gem[0].toUpperCase()}${gem.slice(1)} found ahead! +${data.bonus}g`
+          : "A resource appeared ahead!"
       );
       return true;
     } catch {
       return false;
+    }
+  };
+
+  const placeBuilding = async (lat: number, lng: number) => {
+    if (!placing) return;
+    const data = await act("build", { buildingType: placing, lat, lng });
+    if (data) {
+      showToast("Building placed");
+      setPlacing(null);
+    }
+    // On error keep placement mode so they can pick a clear spot
+  };
+
+  const launchAttack = async () => {
+    if (!me?.house || !selected) return;
+    const target = ringCentroid(selected.ring);
+    setMarch({
+      from: me.house,
+      to: target,
+      startedAt: Date.now(),
+      durationMs: 3200,
+    });
+    const data = await act("attack", { sectorId: selected.id });
+    window.setTimeout(() => setMarch(null), 3400);
+    const battle = data?.battle as BattleReport | undefined;
+    if (battle) {
+      if (battle.win) {
+        showToast(
+          `Victory! ${battle.destroyed ? `${battle.destroyed} destroyed.` : ""} Lost ${battle.soldiersLost} soldier(s).`
+        );
+      } else {
+        showToast(
+          `Repelled! Their defense ${battle.defensePower} beat your ${battle.attackPower}. Army lost.`
+        );
+      }
     }
   };
 
@@ -219,6 +277,12 @@ export function PlayShell() {
 
   const missionsDone = missionList.filter((m) => m.done).length;
 
+  const enemySelected =
+    claimed &&
+    selected &&
+    selected.id !== me?.homeSectorId &&
+    sectorOwner.has(selected.id);
+
   return (
     <main className="relative h-[100dvh] w-full overflow-hidden bg-[var(--surface)]">
       {/* Full-bleed map */}
@@ -227,10 +291,16 @@ export function PlayShell() {
           sectors={snap?.sectors ?? []}
           spots={snap?.spots ?? []}
           me={me}
+          players={snap?.players ?? []}
           selectedId={selectedId}
+          placingType={placing}
+          march={march}
           onSelect={setSelectedId}
+          onPlaceBuilding={(lat, lng) => void placeBuilding(lat, lng)}
           onSpawnFind={(p) => spawnFind(p)}
-          onCollectHidden={(spotId) => void act("collect_hidden", { spotId })}
+          onCollectHidden={(spotId) => void act("collect_hidden", { spotId }).then((d) => {
+            if (d?.gained) showToast(`Collected +${d.gained} gold`);
+          })}
           className="h-full w-full"
         />
       </div>
@@ -259,7 +329,20 @@ export function PlayShell() {
           </div>
           <button
             type="button"
-            onClick={() => setShowMissions((v) => !v)}
+            onClick={() => {
+              setShowRanks((v) => !v);
+              setShowMissions(false);
+            }}
+            className="hud-chip px-3 py-1.5 font-mono text-[10px] text-[var(--ink-muted)] hover:text-[var(--sand)]"
+          >
+            🏆 Ranks
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setShowMissions((v) => !v);
+              setShowRanks(false);
+            }}
             className="hud-chip px-3 py-1.5 font-mono text-[10px] text-[var(--ink-muted)] hover:text-[var(--sand)]"
           >
             ◈ {missionsDone}/{missionList.length}
@@ -272,6 +355,41 @@ export function PlayShell() {
           </Link>
         </div>
       </div>
+
+      {/* Ranks dropdown */}
+      {showRanks && (
+        <div className="absolute right-2 top-14 z-30 w-72 hud-panel p-3 sm:right-3">
+          <h2 className="font-mono text-[9px] uppercase tracking-[0.22em] text-[var(--ink-muted)]">
+            Global sector ranking · resources farmed
+          </h2>
+          <ol className="mt-2 space-y-1">
+            {ranking.length === 0 && (
+              <li className="text-[11px] text-[var(--ink-faint)]">
+                No sectors claimed yet
+              </li>
+            )}
+            {ranking.map((r, i) => (
+              <li
+                key={r.id}
+                className={`flex items-center justify-between text-[11px] ${
+                  r.id === me?.id
+                    ? "text-[var(--sand)]"
+                    : "text-[var(--ink-muted)]"
+                }`}
+              >
+                <span>
+                  <span className="font-mono">
+                    {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`}
+                  </span>{" "}
+                  <strong>{r.sector}</strong>{" "}
+                  <span className="text-[var(--ink-faint)]">· {r.name}</span>
+                </span>
+                <span className="font-mono">{r.farmed}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
 
       {/* Missions dropdown */}
       {showMissions && (
@@ -313,7 +431,7 @@ export function PlayShell() {
 
       {/* Toast / error */}
       {(toast || error) && (
-        <div className="pointer-events-none absolute left-1/2 top-14 z-30 -translate-x-1/2">
+        <div className="pointer-events-none absolute left-1/2 top-14 z-40 -translate-x-1/2">
           <p
             className={`hud-chip px-4 py-2 text-xs font-semibold ${
               error ? "text-[var(--signal-bright)]" : "text-[var(--field-bright)]"
@@ -321,6 +439,19 @@ export function PlayShell() {
           >
             {error || toast}
           </p>
+        </div>
+      )}
+
+      {/* Placement cancel */}
+      {placing && (
+        <div className="absolute bottom-24 left-1/2 z-30 -translate-x-1/2 sm:bottom-8">
+          <button
+            type="button"
+            onClick={() => setPlacing(null)}
+            className="hud-chip px-4 py-2 text-xs font-semibold text-[var(--signal-bright)]"
+          >
+            ✕ Cancel placement
+          </button>
         </div>
       )}
 
@@ -333,13 +464,17 @@ export function PlayShell() {
             </p>
             <p className="mt-1 text-[11px] text-[var(--ink-muted)]">
               {sectorOwner.has(selected.id)
-                ? `Claimed by ${sectorOwner.get(selected.id)}`
+                ? `Claimed by ${sectorOwner.get(selected.id)!.name}`
                 : "Open territory — claim it forever. You start with a house and a villager."}
             </p>
             <button
               type="button"
               disabled={busy || !me || sectorOwner.has(selected.id)}
-              onClick={() => void act("claim_sector")}
+              onClick={() =>
+                void act("claim_sector").then((d) => {
+                  if (d) showToast("Sector claimed — house + villager ready");
+                })
+              }
               className="mt-3 w-full rounded-sm bg-[var(--signal)] px-3 py-2.5 text-sm font-bold text-white shadow-[0_2px_8px_rgba(0,0,0,0.5)] disabled:opacity-40"
             >
               ⚑ Claim {selected.name}
@@ -365,7 +500,35 @@ export function PlayShell() {
         </div>
       )}
 
-      {/* ---- Bottom-left: army/village cameos ---- */}
+      {/* ---- Attack panel: enemy sector selected ---- */}
+      {enemySelected && !placing && (
+        <div className="absolute bottom-24 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-xs -translate-x-1/2 sm:bottom-8">
+          <div className="hud-panel p-3 text-center">
+            <p className="font-display text-lg text-[var(--ink)]">
+              {selected!.name}
+            </p>
+            <p className="text-[10px] text-[var(--ink-muted)]">
+              Held by {sectorOwner.get(selected!.id)!.name}
+            </p>
+            <button
+              type="button"
+              disabled={busy || !me || me.soldiers <= 0 || Boolean(march)}
+              onClick={() => void launchAttack()}
+              className="mt-2 w-full rounded-sm bg-[var(--signal)] px-3 py-2 text-sm font-bold text-white disabled:opacity-40"
+            >
+              ⚔ Attack with {me?.soldiers ?? 0} soldier
+              {(me?.soldiers ?? 0) === 1 ? "" : "s"}
+            </button>
+            {me && me.soldiers <= 0 && (
+              <p className="mt-1 text-[9px] text-[var(--ink-faint)]">
+                Recruit soldiers from the army panel first
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ---- Bottom-left: village + army cameos ---- */}
       {claimed && me && (
         <div className="absolute bottom-2 left-2 z-20 sm:bottom-3 sm:left-3">
           <div className="hud-panel flex items-end gap-1.5 p-1.5 sm:gap-2 sm:p-2">
@@ -378,17 +541,31 @@ export function PlayShell() {
               <HouseSprite className="h-9 w-10" />
               <span className="cameo-label">House</span>
             </div>
-            {me.buildings.map((b) => (
-              <div key={b.id} className="cameo" title={b.type}>
-                <BuildingThumb type={b.type} className="h-9 w-10" />
-                <span className="cameo-label">{b.type}</span>
-              </div>
-            ))}
+            <button
+              type="button"
+              className={`cameo ${
+                displayGold >= SOLDIER_COST ? "cameo-blink" : ""
+              }`}
+              disabled={busy || displayGold < SOLDIER_COST}
+              title={`Recruit soldier — ${SOLDIER_COST}g`}
+              onClick={() =>
+                void act("recruit_soldier").then((d) => {
+                  if (d) showToast("Soldier recruited");
+                })
+              }
+            >
+              <SoldierSprite className="h-9 w-9" />
+              {me.soldiers > 0 && (
+                <span className="cameo-badge">×{me.soldiers}</span>
+              )}
+              <span className="cameo-cost">{SOLDIER_COST}g</span>
+              <span className="cameo-label">Soldier</span>
+            </button>
             {gemsFound > 0 && (
-              <div className="cameo" title={`${gemsFound} gem site(s) found`}>
+              <div className="cameo" title={`${gemsFound} resource site(s) found`}>
                 <ResourceGem gem="diamond" size={26} pulse />
                 <span className="cameo-badge">×{gemsFound}</span>
-                <span className="cameo-label">Gems</span>
+                <span className="cameo-label">Finds</span>
               </div>
             )}
           </div>
@@ -400,29 +577,27 @@ export function PlayShell() {
         <div className="absolute bottom-2 right-2 z-20 sm:bottom-3 sm:right-3">
           <div className="hud-panel p-1.5 sm:p-2">
             <p className="px-1 pb-1 text-center font-mono text-[8px] uppercase tracking-[0.24em] text-[var(--ink-faint)]">
-              Build
+              Build · tap then place
             </p>
             <div className="grid grid-cols-2 gap-1.5">
               {(snap?.buildingCatalog ?? []).map((b) => {
-                const owned = me.buildings.some((x) => x.type === b.type);
                 const affordable = displayGold >= b.cost;
+                const active = placing === b.type;
                 return (
                   <button
                     key={b.type}
                     type="button"
-                    className="cameo"
-                    disabled={busy || owned || !affordable}
-                    title={owned ? `${b.name} built` : `${b.name} — ${b.blurb}`}
+                    className={`cameo ${active ? "cameo-active" : ""} ${
+                      affordable && !active ? "cameo-blink" : ""
+                    }`}
+                    disabled={busy || !affordable}
+                    title={`${b.name} — ${b.blurb} · ${b.footprintM}m ground`}
                     onClick={() =>
-                      void act("build", { buildingType: b.type })
+                      setPlacing((cur) => (cur === b.type ? null : b.type))
                     }
                   >
                     <BuildingThumb type={b.type} className="h-9 w-10" />
-                    {owned ? (
-                      <span className="cameo-ready">Ready</span>
-                    ) : (
-                      <span className="cameo-cost">{b.cost}g</span>
-                    )}
+                    <span className="cameo-cost">{b.cost}g</span>
                     <span className="cameo-label">{b.name}</span>
                   </button>
                 );

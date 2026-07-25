@@ -11,7 +11,14 @@ export type Sector = {
 export type ResourceSpotKind = "easy" | "hidden";
 
 /** Visual / rarity of a gather node */
-export type GemType = "amber" | "emerald" | "sapphire" | "ruby" | "diamond";
+export type GemType =
+  | "wood"
+  | "stone"
+  | "amber"
+  | "emerald"
+  | "sapphire"
+  | "ruby"
+  | "diamond";
 
 export type ResourceSpot = {
   id: string;
@@ -34,6 +41,8 @@ export const GEM_META: Record<
   GemType,
   { label: string; yield: number; refillMs: number }
 > = {
+  wood: { label: "Wood", yield: 2, refillMs: 0 },
+  stone: { label: "Stone", yield: 2, refillMs: 0 },
   amber: { label: "Amber", yield: 3, refillMs: 0 },
   emerald: { label: "Emerald", yield: 5, refillMs: 40_000 },
   sapphire: { label: "Sapphire", yield: 7, refillMs: 50_000 },
@@ -52,13 +61,14 @@ export const SPAWN_COOLDOWN_MS = 55_000;
 /** Cap finds spawned in a sector */
 export const MAX_ROAM_FINDS = 10;
 
-export type BuildingType = "mill" | "warehouse" | "well";
+export type BuildingType = "mill" | "warehouse" | "well" | "turret";
 
 export type Building = {
   id: string;
   type: BuildingType;
   lat: number;
   lng: number;
+  hp: number;
   builtAt: number;
 };
 
@@ -71,7 +81,10 @@ export type Player = {
   homeSectorId: string | null;
   house: LatLng | null;
   villagers: number;
+  soldiers: number;
   gold: number;
+  /** Lifetime resources farmed — global ranking metric */
+  totalFarmed: number;
   buildings: Building[];
   /** Hidden spots this player has found */
   discoveredSpotIds: string[];
@@ -81,6 +94,8 @@ export type Player = {
   lastGatherAt: number;
   /** Last time a roam-find gem spawned for this player */
   lastRoamSpawnAt: number;
+  /** Attack cooldown anchor */
+  lastAttackAt: number;
   createdAt: number;
   updatedAt: number;
 };
@@ -100,7 +115,9 @@ export type PublicPlayer = {
   homeSectorId: string | null;
   house: LatLng | null;
   villagers: number;
+  soldiers: number;
   gold: number;
+  totalFarmed: number;
   buildings: Building[];
   discoveredSpotIds: string[];
 };
@@ -112,6 +129,20 @@ export type BuildingCatalogItem = {
   blurb: string;
   /** Extra gold per villager trip */
   tripBonus: number;
+  /** Occupied ground radius in meters — no other building may overlap */
+  footprintM: number;
+  hp: number;
+  /** Defense power contributed when your sector is attacked */
+  defense: number;
+};
+
+export type BattleReport = {
+  win: boolean;
+  attackPower: number;
+  defensePower: number;
+  destroyed: string | null;
+  soldiersLost: number;
+  defenderSoldiersLost: number;
 };
 
 export type GameSnapshot = {
@@ -135,6 +166,12 @@ export const STARTING = {
 
 export const INVITE_VILLAGER_BONUS = 1;
 
+/** House ground radius (m) for overlap checks */
+export const HOUSE_FOOTPRINT_M = 30;
+
+export const SOLDIER_COST = 30;
+export const ATTACK_COOLDOWN_MS = 60_000;
+
 export const BUILDING_CATALOG: BuildingCatalogItem[] = [
   {
     type: "mill",
@@ -142,6 +179,9 @@ export const BUILDING_CATALOG: BuildingCatalogItem[] = [
     cost: 35,
     blurb: "+2 gold each trip",
     tripBonus: 2,
+    footprintM: 34,
+    hp: 120,
+    defense: 0,
   },
   {
     type: "warehouse",
@@ -149,6 +189,9 @@ export const BUILDING_CATALOG: BuildingCatalogItem[] = [
     cost: 55,
     blurb: "+3 gold each trip",
     tripBonus: 3,
+    footprintM: 42,
+    hp: 160,
+    defense: 0,
   },
   {
     type: "well",
@@ -156,18 +199,44 @@ export const BUILDING_CATALOG: BuildingCatalogItem[] = [
     cost: 45,
     blurb: "+2 gold each trip",
     tripBonus: 2,
+    footprintM: 26,
+    hp: 100,
+    defense: 0,
+  },
+  {
+    type: "turret",
+    name: "Guard turret",
+    cost: 60,
+    blurb: "Defends your sector (+25 def)",
+    tripBonus: 0,
+    footprintM: 22,
+    hp: 150,
+    defense: 25,
   },
 ];
 
+export function catalogItem(type: BuildingType): BuildingCatalogItem {
+  return BUILDING_CATALOG.find((b) => b.type === type) ?? BUILDING_CATALOG[0];
+}
+
 export function buildingCost(type: BuildingType): number {
-  return BUILDING_CATALOG.find((b) => b.type === type)?.cost ?? 999;
+  return catalogItem(type).cost;
 }
 
 export function buildingBonus(buildings: Building[]): number {
   let n = 0;
-  for (const b of buildings) {
-    const cat = BUILDING_CATALOG.find((c) => c.type === b.type);
-    if (cat) n += cat.tripBonus;
-  }
+  for (const b of buildings) n += catalogItem(b.type).tripBonus;
   return n;
+}
+
+export function defensePower(p: {
+  soldiers: number;
+  buildings: Building[];
+}): number {
+  const turrets = p.buildings.filter((b) => b.type === "turret").length;
+  return 15 + p.soldiers * 10 + turrets * 25;
+}
+
+export function attackPower(soldiers: number): number {
+  return soldiers * 10;
 }

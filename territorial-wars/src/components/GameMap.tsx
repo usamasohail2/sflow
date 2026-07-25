@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MapboxMap, { Layer, Marker, Source } from "react-map-gl/mapbox";
 import type { MapMouseEvent, MapRef } from "react-map-gl/mapbox";
-import type { FeatureCollection } from "geojson";
+import type { Feature, FeatureCollection, Polygon } from "geojson";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type {
   Building,
+  BuildingType,
   LatLng,
   Player,
+  PublicPlayer,
   ResourceSpot,
   Sector,
 } from "@/lib/gameTypes";
@@ -16,30 +18,45 @@ import {
   EXPLORE_ZOOM,
   GATHER_TRIP_MS,
   GEM_META,
+  HOUSE_FOOTPRINT_M,
   ROAM_METERS_TO_SPAWN,
   ROAM_MIN_EXPLORE_MS,
   SPAWN_COOLDOWN_MS,
+  catalogItem,
 } from "@/lib/gameTypes";
 import { pointInRing } from "@/lib/geo";
-import { distMeters, lerpLatLng } from "@/lib/mapMath";
+import { distMeters, lerpLatLng, offsetMeters } from "@/lib/mapMath";
 import { gatherPhase } from "@/lib/rules";
 import {
   HouseSprite,
   MillSprite,
+  SoldierSprite,
+  TurretSprite,
   VillagerSprite,
   WarehouseSprite,
   WellSprite,
 } from "@/components/sprites";
-import { ResourceGem } from "@/components/ResourceGem";
+import { ResourceNode } from "@/components/ResourceNode";
 
 const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
+
+export type MarchAnim = {
+  from: LatLng;
+  to: LatLng;
+  startedAt: number;
+  durationMs: number;
+};
 
 type Props = {
   sectors: Sector[];
   spots: ResourceSpot[];
   me: Player | null;
+  players: PublicPlayer[];
   selectedId: string | null;
+  placingType: BuildingType | null;
+  march: MarchAnim | null;
   onSelect: (id: string) => void;
+  onPlaceBuilding?: (lat: number, lng: number) => void;
   onSpawnFind?: (payload: {
     lat: number;
     lng: number;
@@ -56,6 +73,8 @@ function BuildingSprite({ type }: { type: Building["type"] }) {
   if (type === "mill") return <MillSprite className="h-9 w-10 drop-shadow-md" />;
   if (type === "warehouse")
     return <WarehouseSprite className="h-9 w-10 drop-shadow-md" />;
+  if (type === "turret")
+    return <TurretSprite className="h-9 w-10 drop-shadow-md" />;
   return <WellSprite className="h-9 w-10 drop-shadow-md" />;
 }
 
@@ -66,12 +85,35 @@ function walkPosition(house: LatLng, target: LatLng, phase: number): LatLng {
   return lerpLatLng(target, house, (phase - 0.55) / 0.45);
 }
 
+/** Small circle polygon (meters radius) for footprint rendering */
+function circleFeature(
+  center: LatLng,
+  radiusM: number,
+  props: Record<string, unknown>
+): Feature<Polygon> {
+  const pts: [number, number][] = [];
+  for (let i = 0; i <= 20; i++) {
+    const a = (i / 20) * Math.PI * 2;
+    const p = offsetMeters(center, Math.cos(a) * radiusM, Math.sin(a) * radiusM);
+    pts.push([p.lng, p.lat]);
+  }
+  return {
+    type: "Feature",
+    properties: props,
+    geometry: { type: "Polygon", coordinates: [pts] },
+  };
+}
+
 export function GameMap({
   sectors,
   spots,
   me,
+  players,
   selectedId,
+  placingType,
+  march,
   onSelect,
+  onPlaceBuilding,
   onSpawnFind,
   onCollectHidden,
   className = "",
@@ -83,6 +125,7 @@ export function GameMap({
   const [exploreMs, setExploreMs] = useState(0);
   const [exploring, setExploring] = useState(false);
   const [spawnFlash, setSpawnFlash] = useState<string | null>(null);
+  const [hover, setHover] = useState<LatLng | null>(null);
   const lastCenter = useRef<LatLng | null>(null);
   const spawning = useRef(false);
   const roamAcc = useRef(0);
@@ -104,23 +147,74 @@ export function GameMap({
     () => ({
       type: "FeatureCollection",
       features: sectors.map((s) => ({
-        ...{
-          type: "Feature" as const,
+        type: "Feature" as const,
+        id: s.id,
+        properties: {
           id: s.id,
-          properties: {
-            id: s.id,
-            name: s.name,
-            mine: me?.homeSectorId === s.id ? 1 : 0,
-          },
-          geometry: {
-            type: "Polygon" as const,
-            coordinates: [s.ring],
-          },
+          name: s.name,
+          mine: me?.homeSectorId === s.id ? 1 : 0,
+        },
+        geometry: {
+          type: "Polygon" as const,
+          coordinates: [s.ring],
         },
       })),
     }),
     [sectors, me]
   );
+
+  // Footprint circles for every settlement on the map (+ placement ghost)
+  const footprints = useMemo<FeatureCollection>(() => {
+    const feats: Feature<Polygon>[] = [];
+    for (const p of players) {
+      if (!p.homeSectorId) continue;
+      const mine = p.id === me?.id ? 1 : 0;
+      if (p.house) {
+        feats.push(
+          circleFeature(p.house, HOUSE_FOOTPRINT_M, { mine, ghost: 0 })
+        );
+      }
+      for (const b of p.buildings) {
+        feats.push(
+          circleFeature(
+            { lat: b.lat, lng: b.lng },
+            catalogItem(b.type).footprintM,
+            { mine, ghost: 0 }
+          )
+        );
+      }
+    }
+    if (placingType && hover && homeSector) {
+      const fp = catalogItem(placingType).footprintM;
+      const inSector = pointInRing(hover, homeSector.ring);
+      let clear = inSector;
+      if (clear) {
+        for (const p of players) {
+          for (const b of p.buildings) {
+            if (
+              distMeters(hover, { lat: b.lat, lng: b.lng }) <
+              fp + catalogItem(b.type).footprintM
+            ) {
+              clear = false;
+              break;
+            }
+          }
+          if (
+            clear &&
+            p.house &&
+            distMeters(hover, p.house) < fp + HOUSE_FOOTPRINT_M
+          ) {
+            clear = false;
+          }
+          if (!clear) break;
+        }
+      }
+      feats.push(
+        circleFeature(hover, fp, { mine: 1, ghost: 1, ok: clear ? 1 : 0 })
+      );
+    }
+    return { type: "FeatureCollection", features: feats };
+  }, [players, me, placingType, hover, homeSector]);
 
   const mySpots = useMemo(() => {
     if (!me?.homeSectorId) return [];
@@ -138,6 +232,14 @@ export function GameMap({
     me?.house && easyTarget
       ? walkPosition(me.house, easyTarget, phase)
       : null;
+
+  // March animation position
+  const marchPos = useMemo(() => {
+    if (!march) return null;
+    const t = Math.min(1, (now - march.startedAt) / march.durationMs);
+    if (t >= 1) return null;
+    return lerpLatLng(march.from, march.to, t);
+  }, [march, now]);
 
   const trySpawn = useCallback(
     async (
@@ -164,18 +266,16 @@ export function GameMap({
           exploreMs: explored,
         });
         if (!ok) {
-          // Brief pause so we don't hammer the API every pan frame
           localCooldownUntil.current = Date.now() + 4000;
           return;
         }
-        setSpawnFlash("A gem appeared ahead!");
+        setSpawnFlash("A resource appeared ahead!");
         window.setTimeout(() => setSpawnFlash(null), 2600);
         roamAcc.current = 0;
         exploreAcc.current = 0;
         setRoamMeters(0);
         setExploreMs(0);
         lastExploreTick.current = Date.now();
-        // Match server cooldown so the next find takes real roaming again
         localCooldownUntil.current = Date.now() + SPAWN_COOLDOWN_MS;
       } finally {
         spawning.current = false;
@@ -215,7 +315,6 @@ export function GameMap({
       const t = Date.now();
       if (lastExploreTick.current != null) {
         const dt = Math.min(2000, t - lastExploreTick.current);
-        // Only count time while actually moving the map a bit
         if (lastCenter.current) {
           const step = distMeters(lastCenter.current, center);
           if (step > 2.5 && step < 90) {
@@ -233,13 +332,7 @@ export function GameMap({
         roamAcc.current >= ROAM_METERS_TO_SPAWN &&
         exploreAcc.current >= ROAM_MIN_EXPLORE_MS
       ) {
-        void trySpawn(
-          center,
-          z,
-          b,
-          roamAcc.current,
-          exploreAcc.current
-        );
+        void trySpawn(center, z, b, roamAcc.current, exploreAcc.current);
       }
     },
     [homeSector, me, trySpawn]
@@ -273,8 +366,18 @@ export function GameMap({
         }}
         mapStyle="mapbox://styles/mapbox/dark-v11"
         interactiveLayerIds={["sector-fill"]}
+        cursor={placingType ? "crosshair" : "grab"}
         onMove={onMove}
+        onMouseMove={(e: MapMouseEvent) => {
+          if (placingType) {
+            setHover({ lat: e.lngLat.lat, lng: e.lngLat.lng });
+          }
+        }}
         onClick={(e: MapMouseEvent) => {
+          if (placingType && onPlaceBuilding) {
+            onPlaceBuilding(e.lngLat.lat, e.lngLat.lng);
+            return;
+          }
           const id = e.features?.[0]?.properties?.id;
           if (typeof id === "string") onSelect(id);
         }}
@@ -321,28 +424,116 @@ export function GameMap({
           />
         </Source>
 
-        {me?.house && (
-          <Marker
-            longitude={me.house.lng}
-            latitude={me.house.lat}
-            anchor="bottom"
-          >
-            <HouseSprite className="h-10 w-11 drop-shadow-md" />
-          </Marker>
+        {/* Building footprints (visible when zoomed in a bit) */}
+        {zoom >= 13.4 && (
+          <Source id="footprints" type="geojson" data={footprints}>
+            <Layer
+              id="footprint-fill"
+              type="fill"
+              paint={{
+                "fill-color": [
+                  "case",
+                  ["==", ["get", "ghost"], 1],
+                  ["case", ["==", ["get", "ok"], 1], "#5a9a63", "#e23b2f"],
+                  ["==", ["get", "mine"], 1],
+                  "#5a9a63",
+                  "#e23b2f",
+                ] as never,
+                "fill-opacity": [
+                  "case",
+                  ["==", ["get", "ghost"], 1],
+                  0.3,
+                  0.1,
+                ] as never,
+              }}
+            />
+            <Layer
+              id="footprint-line"
+              type="line"
+              paint={{
+                "line-color": [
+                  "case",
+                  ["==", ["get", "ghost"], 1],
+                  ["case", ["==", ["get", "ok"], 1], "#8fe098", "#ff5245"],
+                  ["==", ["get", "mine"], 1],
+                  "#5a9a63",
+                  "#e23b2f",
+                ] as never,
+                "line-width": [
+                  "case",
+                  ["==", ["get", "ghost"], 1],
+                  2,
+                  1,
+                ] as never,
+                "line-dasharray": [2, 1.5] as never,
+              }}
+            />
+          </Source>
         )}
 
-        {me?.buildings.map((b) => (
-          <Marker
-            key={b.id}
-            longitude={b.lng}
-            latitude={b.lat}
-            anchor="bottom"
-          >
-            <BuildingSprite type={b.type} />
-          </Marker>
-        ))}
+        {/* All settlements: houses + buildings (mine and rivals) */}
+        {players
+          .filter((p) => p.homeSectorId && p.house)
+          .map((p) => (
+            <Marker
+              key={`house-${p.id}`}
+              longitude={p.house!.lng}
+              latitude={p.house!.lat}
+              anchor="bottom"
+            >
+              <div className="relative">
+                <HouseSprite className="h-10 w-11 drop-shadow-md" />
+                {p.id !== me?.id && (
+                  <span className="absolute -top-2 left-1/2 -translate-x-1/2 rounded-sm bg-[rgba(10,14,10,0.85)] px-1 font-mono text-[8px] text-[var(--signal-bright)]">
+                    {p.name}
+                  </span>
+                )}
+              </div>
+            </Marker>
+          ))}
+        {players
+          .filter((p) => p.homeSectorId)
+          .flatMap((p) =>
+            p.buildings.map((b) => (
+              <Marker
+                key={b.id}
+                longitude={b.lng}
+                latitude={b.lat}
+                anchor="bottom"
+              >
+                <div className="relative">
+                  <BuildingSprite type={b.type} />
+                  {p.id !== me?.id && (
+                    <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-[var(--signal-bright)] ring-1 ring-[var(--surface)]" />
+                  )}
+                </div>
+              </Marker>
+            ))
+          )}
 
-        {/* Easy gems near house — always visible in your sector */}
+        {/* Soldiers garrison (mine + rivals) */}
+        {players
+          .filter((p) => p.homeSectorId && p.house && p.soldiers > 0)
+          .map((p) => {
+            const pos = offsetMeters(p.house!, 26, -12);
+            return (
+              <Marker
+                key={`army-${p.id}`}
+                longitude={pos.lng}
+                latitude={pos.lat}
+                anchor="bottom"
+              >
+                <div className="relative">
+                  <SoldierSprite className="h-8 w-8" />
+                  <span className="absolute -right-1.5 -top-1 rounded-full bg-[var(--surface)] px-1 font-mono text-[9px] text-[#ff9d5a]">
+                    ×{p.soldiers}
+                  </span>
+                </div>
+              </Marker>
+            );
+          })}
+
+        {/* Easy resources near house — trees & rocks */}
         {mySpots
           .filter((s) => s.kind === "easy")
           .map((s) => (
@@ -350,9 +541,9 @@ export function GameMap({
               key={s.id}
               longitude={s.lng}
               latitude={s.lat}
-              anchor="center"
+              anchor="bottom"
             >
-              <ResourceGem gem={s.gem || "amber"} size={28} pulse />
+              <ResourceNode gem={s.gem || "wood"} size={30} pulse />
             </Marker>
           ))}
 
@@ -368,12 +559,8 @@ export function GameMap({
                 longitude={s.lng}
                 latitude={s.lat}
                 anchor="center"
-                onClick={(e) => {
-                  e.originalEvent.stopPropagation();
-                  if (ready) onCollectHidden?.(s.id);
-                }}
               >
-                <ResourceGem
+                <ResourceNode
                   gem={gem}
                   size={ready ? 40 : 32}
                   depleted={!ready}
@@ -391,6 +578,7 @@ export function GameMap({
             );
           })}
 
+        {/* Walking villager */}
         {villagerPos && me && me.villagers > 0 && (
           <Marker
             longitude={villagerPos.lng}
@@ -407,9 +595,36 @@ export function GameMap({
             </div>
           </Marker>
         )}
+
+        {/* Marching army */}
+        {marchPos && (
+          <Marker
+            longitude={marchPos.lng}
+            latitude={marchPos.lat}
+            anchor="bottom"
+          >
+            <div className="relative">
+              <SoldierSprite className="h-9 w-9" />
+              <span className="absolute -top-2 left-1/2 -translate-x-1/2 font-mono text-[9px] text-[var(--signal-bright)]">
+                ⚔
+              </span>
+            </div>
+          </Marker>
+        )}
       </MapboxMap>
 
-      {me?.homeSectorId && (
+      {/* Placement banner */}
+      {placingType && (
+        <div className="pointer-events-none absolute left-1/2 top-14 z-10 -translate-x-1/2">
+          <p className="hud-chip px-4 py-2 text-center text-xs font-semibold text-[var(--sand)]">
+            Tap inside your sector to place the{" "}
+            {catalogItem(placingType).name.toLowerCase()} — green ring = clear
+            ground
+          </p>
+        </div>
+      )}
+
+      {me?.homeSectorId && !placingType && (
         <div className="pointer-events-none absolute bottom-24 left-1/2 z-10 w-[min(22rem,calc(100%-1rem))] -translate-x-1/2 space-y-2 sm:bottom-4">
           {spawnFlash && (
             <p className="hud-chip px-3 py-2 text-center text-xs font-semibold text-[var(--field-bright)]">
@@ -418,13 +633,13 @@ export function GameMap({
           )}
           {zoom < EXPLORE_ZOOM ? (
             <p className="hud-chip px-3 py-1.5 text-center font-mono text-[9px] text-[var(--ink-muted)]">
-              Zoom into {homeSector?.name ?? "your sector"} & roam for gems ·
-              trip {Math.round(GATHER_TRIP_MS / 1000)}s
+              Zoom into {homeSector?.name ?? "your sector"} & roam for
+              resources · trip {Math.round(GATHER_TRIP_MS / 1000)}s
             </p>
           ) : exploring ? (
             <div className="hud-chip px-3 py-1.5">
               <p className="text-center font-mono text-[9px] text-[var(--sand)]">
-                Exploring — gems appear ahead as you roam
+                Exploring — resources appear ahead as you roam
               </p>
               <div className="mx-auto mt-1 h-1.5 max-w-xs overflow-hidden rounded-full bg-[var(--wash)]">
                 <div
@@ -435,7 +650,7 @@ export function GameMap({
             </div>
           ) : (
             <p className="hud-chip px-3 py-1.5 text-center font-mono text-[9px] text-[var(--ink-muted)]">
-              Pan into your sector while zoomed in to hunt gems
+              Pan into your sector while zoomed in to hunt resources
             </p>
           )}
         </div>

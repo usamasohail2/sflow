@@ -56,9 +56,11 @@ export function accrueGather(
       };
     });
 
+    const gained = goldPerTrip * trips + hiddenGain;
     nextPlayers[id] = {
       ...p,
-      gold: p.gold + goldPerTrip * trips + hiddenGain,
+      gold: p.gold + gained,
+      totalFarmed: (p.totalFarmed || 0) + gained,
       lastGatherAt: last + trips * GATHER_TRIP_MS,
       updatedAt: now,
     };

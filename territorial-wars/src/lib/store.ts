@@ -1,17 +1,23 @@
 import { Redis } from "@upstash/redis";
 import {
+  ATTACK_COOLDOWN_MS,
   BUILDING_CATALOG,
   EXPLORE_ZOOM,
   GATHER_TRIP_MS,
   GEM_META,
+  HOUSE_FOOTPRINT_M,
   INVITE_VILLAGER_BONUS,
   MAX_ROAM_FINDS,
   ROAM_METERS_TO_SPAWN,
   ROAM_MIN_EXPLORE_MS,
+  SOLDIER_COST,
   SPAWN_COOLDOWN_MS,
   STARTING,
+  attackPower,
   buildingBonus,
-  buildingCost,
+  catalogItem,
+  defensePower,
+  type BattleReport,
   type BuildingType,
   type GameSnapshot,
   type GameState,
@@ -27,7 +33,6 @@ import {
   distMeters,
   offsetBearing,
   pickRoamGem,
-  randomPointInRing,
   ringCentroid,
   seedSpotsForSector,
 } from "@/lib/mapMath";
@@ -55,17 +60,21 @@ function emptyState(): GameState {
 }
 
 function normalizeSpot(s: ResourceSpot): ResourceSpot {
-  // Easy house nodes are always amber ore — never fancy starter gems
+  // Easy house nodes are wood & stone; roam finds keep their gem type
   const gem: GemType =
     s.kind === "easy"
-      ? "amber"
+      ? s.gem === "wood" || s.gem === "stone"
+        ? s.gem
+        : s.id.endsWith("_easy_0")
+          ? "wood"
+          : "stone"
       : s.gem && s.gem in GEM_META
         ? s.gem
         : "emerald";
   return {
     ...s,
     gem,
-    yield: s.kind === "easy" ? GEM_META.amber.yield : s.yield || GEM_META[gem].yield,
+    yield: s.kind === "easy" ? GEM_META[gem].yield : s.yield || GEM_META[gem].yield,
     refillMs: s.kind === "easy" ? 0 : (s.refillMs ?? GEM_META[gem].refillMs),
   };
 }
@@ -89,6 +98,13 @@ function migrateLegacy(raw: unknown): GameState {
     const players = (o.players as Record<string, Player>) ?? {};
     for (const p of Object.values(players)) {
       if (p.lastRoamSpawnAt == null) p.lastRoamSpawnAt = 0;
+      if (p.lastAttackAt == null) p.lastAttackAt = 0;
+      if (p.soldiers == null) p.soldiers = 0;
+      if (p.totalFarmed == null) p.totalFarmed = p.gold || 0;
+      p.buildings = (p.buildings || []).map((b) => ({
+        ...b,
+        hp: b.hp ?? catalogItem(b.type).hp,
+      }));
     }
     const spots = (Array.isArray(o.spots) ? (o.spots as ResourceSpot[]) : []).map(
       normalizeSpot
@@ -168,7 +184,9 @@ function publicPlayer(p: Player): PublicPlayer {
     homeSectorId: p.homeSectorId,
     house: p.house,
     villagers: p.villagers,
+    soldiers: p.soldiers || 0,
     gold: p.gold,
+    totalFarmed: p.totalFarmed || 0,
     buildings: p.buildings,
     discoveredSpotIds: p.discoveredSpotIds,
   };
@@ -240,13 +258,16 @@ export async function ensurePlayer(
       homeSectorId: null,
       house: null,
       villagers: 0,
+      soldiers: 0,
       gold: STARTING.gold,
+      totalFarmed: 0,
       buildings: [],
       discoveredSpotIds: [],
       inviteCode,
       invitedBy,
       lastGatherAt: now,
       lastRoamSpawnAt: 0,
+      lastAttackAt: 0,
       createdAt: now,
       updatedAt: now,
     };
@@ -322,11 +343,14 @@ export async function claimSector(
     homeSectorId: sectorId,
     house,
     villagers: STARTING.villagers,
+    soldiers: 0,
     gold: STARTING.gold,
+    totalFarmed: 0,
     buildings: [],
     discoveredSpotIds: easyIds,
     lastGatherAt: now,
     lastRoamSpawnAt: 0,
+    lastAttackAt: 0,
     updatedAt: now,
   };
 
@@ -445,6 +469,7 @@ export async function spawnRoamFind(
     ...me,
     discoveredSpotIds: [...me.discoveredSpotIds, spotId],
     gold: me.gold + bonus,
+    totalFarmed: (me.totalFarmed || 0) + bonus,
     lastRoamSpawnAt: now,
     updatedAt: now,
   };
@@ -477,6 +502,7 @@ export async function discoverSpot(
     ...me,
     discoveredSpotIds: [...me.discoveredSpotIds, spotId],
     gold: me.gold + bonus,
+    totalFarmed: (me.totalFarmed || 0) + bonus,
     updatedAt: now,
   };
   // Start refill timer after find bonus
@@ -510,6 +536,7 @@ export async function collectHidden(
   state.players[playerId] = {
     ...me,
     gold: me.gold + spot.yield,
+    totalFarmed: (me.totalFarmed || 0) + spot.yield,
     updatedAt: now,
   };
   state.spots = state.spots.map((s) =>
@@ -537,34 +564,68 @@ export async function renamePlayer(
 
 export async function buildBuilding(
   playerId: string,
-  type: BuildingType
+  type: BuildingType,
+  lat?: number,
+  lng?: number
 ): Promise<{ ok: true } | { error: string }> {
   const { state } = await loadAccruedState();
   const me = state.players[playerId];
   if (!me?.homeSectorId || !me.house) return { error: "Claim a sector first" };
-  if (!BUILDING_CATALOG.some((b) => b.type === type)) {
-    return { error: "Unknown building" };
-  }
-  if (me.buildings.some((b) => b.type === type)) {
-    return { error: "You already built that" };
-  }
-  const cost = buildingCost(type);
-  if (me.gold < cost) return { error: `Need ${cost} gold` };
+  const cat = BUILDING_CATALOG.find((b) => b.type === type);
+  if (!cat) return { error: "Unknown building" };
 
   const sector = state.sectors.find((s) => s.id === me.homeSectorId)!;
-  const pos = randomPointInRing(sector.ring) ?? me.house;
-  const now = Date.now();
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return { error: "Tap a spot inside your sector to place it" };
+  }
+  const pos = { lat: lat!, lng: lng! };
+  if (!pointInRing(pos, sector.ring)) {
+    return { error: "Place it inside your own sector" };
+  }
 
+  // Ground collision vs every building and house on the map
+  for (const p of Object.values(state.players)) {
+    for (const b of p.buildings) {
+      const otherFp = catalogItem(b.type).footprintM;
+      if (
+        distMeters(pos, { lat: b.lat, lng: b.lng }) <
+        cat.footprintM + otherFp
+      ) {
+        return {
+          error:
+            p.id === playerId
+              ? "Too close to your other building"
+              : `Too close to ${p.name}'s building`,
+        };
+      }
+    }
+    if (p.house) {
+      if (distMeters(pos, p.house) < cat.footprintM + HOUSE_FOOTPRINT_M) {
+        return {
+          error:
+            p.id === playerId
+              ? "Too close to your house"
+              : `Too close to ${p.name}'s house`,
+        };
+      }
+    }
+  }
+
+  const cost = cat.cost;
+  if (me.gold < cost) return { error: `Need ${cost} gold` };
+
+  const now = Date.now();
   state.players[playerId] = {
     ...me,
     gold: me.gold - cost,
     buildings: [
       ...me.buildings,
       {
-        id: `b_${now.toString(36)}`,
+        id: `b_${now.toString(36)}_${Math.random().toString(36).slice(2, 5)}`,
         type,
         lat: pos.lat,
         lng: pos.lng,
+        hp: cat.hp,
         builtAt: now,
       },
     ],
@@ -572,6 +633,132 @@ export async function buildBuilding(
   };
   await saveState(state);
   return { ok: true };
+}
+
+export async function recruitSoldier(
+  playerId: string
+): Promise<{ ok: true } | { error: string }> {
+  const { state } = await loadAccruedState();
+  const me = state.players[playerId];
+  if (!me?.homeSectorId) return { error: "Claim a sector first" };
+  if (me.gold < SOLDIER_COST) {
+    return { error: `Need ${SOLDIER_COST} gold to recruit a soldier` };
+  }
+  state.players[playerId] = {
+    ...me,
+    gold: me.gold - SOLDIER_COST,
+    soldiers: (me.soldiers || 0) + 1,
+    updatedAt: Date.now(),
+  };
+  await saveState(state);
+  return { ok: true };
+}
+
+export async function attackSector(
+  playerId: string,
+  targetSectorId: string
+): Promise<{ ok: true; battle: BattleReport } | { error: string }> {
+  const { state } = await loadAccruedState();
+  const me = state.players[playerId];
+  if (!me?.homeSectorId) return { error: "Claim a sector first" };
+  if ((me.soldiers || 0) <= 0) {
+    return { error: "Recruit soldiers before attacking" };
+  }
+  if (targetSectorId === me.homeSectorId) {
+    return { error: "That's your own sector" };
+  }
+  const now = Date.now();
+  if (me.lastAttackAt && now - me.lastAttackAt < ATTACK_COOLDOWN_MS) {
+    const wait = Math.ceil(
+      (ATTACK_COOLDOWN_MS - (now - me.lastAttackAt)) / 1000
+    );
+    return { error: `Army regrouping — ${wait}s until next attack` };
+  }
+
+  const defender = Object.values(state.players).find(
+    (p) => p.homeSectorId === targetSectorId
+  );
+  if (!defender) return { error: "Nobody holds that sector" };
+
+  const atk = attackPower(me.soldiers);
+  const def = defensePower(defender);
+  const win = atk > def;
+
+  let destroyed: string | null = null;
+  let soldiersLost = 0;
+  let defenderSoldiersLost = 0;
+
+  if (win) {
+    // Turrets die first, then the newest building
+    const targets = [...defender.buildings].sort((a, b) => {
+      if (a.type === "turret" && b.type !== "turret") return -1;
+      if (b.type === "turret" && a.type !== "turret") return 1;
+      return b.builtAt - a.builtAt;
+    });
+    const victim = targets[0] ?? null;
+    if (victim) {
+      destroyed = catalogItem(victim.type).name;
+      state.players[defender.id] = {
+        ...defender,
+        buildings: defender.buildings.filter((b) => b.id !== victim.id),
+        soldiers: Math.max(
+          0,
+          (defender.soldiers || 0) - Math.floor(me.soldiers / 2)
+        ),
+        updatedAt: now,
+      };
+      defenderSoldiersLost =
+        (defender.soldiers || 0) -
+        (state.players[defender.id].soldiers || 0);
+    } else {
+      // Nothing to raze — loot gold instead
+      const loot = Math.min(defender.gold, 25);
+      state.players[defender.id] = {
+        ...defender,
+        gold: defender.gold - loot,
+        updatedAt: now,
+      };
+      state.players[playerId] = { ...me };
+      state.players[playerId].gold += loot;
+      destroyed = loot > 0 ? `${loot} gold looted` : null;
+    }
+    soldiersLost = Math.floor(me.soldiers * 0.4);
+  } else {
+    soldiersLost = me.soldiers;
+    defenderSoldiersLost = Math.min(
+      defender.soldiers || 0,
+      Math.floor(atk / 20)
+    );
+    state.players[defender.id] = {
+      ...state.players[defender.id]!,
+      soldiers: Math.max(
+        0,
+        (defender.soldiers || 0) - defenderSoldiersLost
+      ),
+      updatedAt: now,
+    };
+  }
+
+  const meNow = state.players[playerId]!;
+  state.players[playerId] = {
+    ...meNow,
+    soldiers: Math.max(0, (me.soldiers || 0) - soldiersLost),
+    lastAttackAt: now,
+    updatedAt: now,
+  };
+
+  await saveState(state);
+  return {
+    ok: true,
+    battle: {
+      win,
+      attackPower: atk,
+      defensePower: def,
+      destroyed,
+      soldiersLost,
+      defenderSoldiersLost,
+    },
+  };
 }
 
 export { buildingBonus, publicPlayer };

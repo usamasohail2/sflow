@@ -8,6 +8,18 @@ const PALETTE: Record<
   GemType,
   { a: string; b: string; c: string; glow: string }
 > = {
+  wood: {
+    a: "#a9743f",
+    b: "#6b4228",
+    c: "#d9b07c",
+    glow: "rgba(169,116,63,0.5)",
+  },
+  stone: {
+    a: "#9aa392",
+    b: "#5d6a63",
+    c: "#cdd4c5",
+    glow: "rgba(154,163,146,0.5)",
+  },
   amber: {
     a: "#f6c453",
     b: "#e89a1a",

@@ -3,12 +3,14 @@ import { NextResponse } from "next/server";
 import type { BuildingType } from "@/lib/gameTypes";
 import { AUTH_DISABLED } from "@/lib/devMode";
 import {
+  attackSector,
   buildBuilding,
   claimSector,
   collectHidden,
   discoverSpot,
   ensurePlayer,
   getSnapshot,
+  recruitSoldier,
   renamePlayer,
   spawnRoamFind,
 } from "@/lib/store";
@@ -121,6 +123,7 @@ export async function POST(req: Request) {
     gained?: number;
     gem?: string;
     spotId?: string;
+    battle?: unknown;
   };
 
   if (body.action === "claim_sector") {
@@ -175,7 +178,22 @@ export async function POST(req: Request) {
         setCookie
       );
     }
-    result = await buildBuilding(id, body.buildingType);
+    result = await buildBuilding(
+      id,
+      body.buildingType,
+      Number(body.lat),
+      Number(body.lng)
+    );
+  } else if (body.action === "recruit_soldier") {
+    result = await recruitSoldier(id);
+  } else if (body.action === "attack") {
+    if (!body.sectorId) {
+      return withGuestCookie(
+        NextResponse.json({ error: "Pick a target sector" }, { status: 400 }),
+        setCookie
+      );
+    }
+    result = await attackSector(id, body.sectorId);
   } else if (body.action === "rename") {
     result = await renamePlayer(id, String(body.name || ""));
   } else {
@@ -201,6 +219,7 @@ export async function POST(req: Request) {
       gained: "gained" in result ? result.gained : undefined,
       gem: "gem" in result ? result.gem : undefined,
       spotId: "spotId" in result ? result.spotId : undefined,
+      battle: "battle" in result ? result.battle : undefined,
     }),
     setCookie
   );

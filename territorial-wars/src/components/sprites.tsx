@@ -77,6 +77,165 @@ export function VillagerSprite({
   );
 }
 
+/** Chibi soldier with helmet and rifle. */
+export function SoldierSprite({
+  className = "",
+  title = "Soldier",
+}: SpriteProps) {
+  return (
+    <svg
+      className={`villager-sprite ${className}`}
+      viewBox="0 0 32 32"
+      width="44"
+      height="44"
+      role="img"
+      aria-label={title}
+    >
+      <title>{title}</title>
+      <ellipse cx="16" cy="29.5" rx="7" ry="1.6" fill="rgba(0,0,0,0.35)" />
+      {/* boots */}
+      <rect x="11" y="25" width="4" height="3" rx="1" fill="#2f2a22" />
+      <rect x="17" y="25" width="4" height="3" rx="1" fill="#2f2a22" />
+      {/* legs */}
+      <rect x="12" y="21" width="3" height="5" rx="1" fill="#4a5550" />
+      <rect x="17" y="21" width="3" height="5" rx="1" fill="#4a5550" />
+      {/* body armor */}
+      <rect x="11" y="14" width="10" height="9" rx="3" fill="#5d6a63" />
+      <rect x="13" y="16" width="6" height="5" rx="1.5" fill="#77857c" />
+      {/* belt */}
+      <rect x="11" y="21" width="10" height="1.6" fill="#2f2a22" />
+      {/* head */}
+      <circle cx="16" cy="10" r="5" fill="#f3c7a1" />
+      {/* helmet */}
+      <path d="M10.6 9.4 a5.6 5.6 0 0 1 10.8 0 l-0.4 1.6 h-10 z" fill="#3d5c46" />
+      <rect x="10.4" y="10.4" width="11.2" height="1.4" rx="0.7" fill="#2c4234" />
+      {/* eyes */}
+      <circle cx="14.3" cy="12" r="0.8" fill="#2a241c" />
+      <circle cx="17.7" cy="12" r="0.8" fill="#2a241c" />
+      {/* rifle */}
+      <g transform="translate(22 15) rotate(18)">
+        <rect x="-1" y="0" width="2" height="9" rx="0.6" fill="#5c4030" />
+        <rect x="-0.6" y="-3" width="1.2" height="4" fill="#3a3a3a" />
+      </g>
+    </svg>
+  );
+}
+
+/** Guard turret tower with cannon. */
+export function TurretSprite({
+  className = "",
+  title = "Guard turret",
+}: SpriteProps) {
+  return (
+    <svg
+      className={`house-sprite ${className}`}
+      viewBox="0 0 36 32"
+      width="52"
+      height="46"
+      role="img"
+      aria-label={title}
+    >
+      <title>{title}</title>
+      <ellipse cx="18" cy="30" rx="8" ry="1.8" fill="rgba(0,0,0,0.35)" />
+      {/* base */}
+      <path d="M12 28 L13.5 18 H22.5 L24 28 Z" fill="#5d6a63" />
+      <path d="M12 28 L13.5 18 H18 V28 Z" fill="#4a5550" />
+      {/* platform */}
+      <rect x="11.5" y="16" width="13" height="3" rx="1" fill="#77857c" />
+      {/* dome */}
+      <path d="M13.5 16 a4.5 4.5 0 0 1 9 0 Z" fill="#3d5c46" />
+      {/* cannon */}
+      <g transform="translate(18 12.5) rotate(-24)">
+        <rect x="0" y="-1.1" width="10" height="2.2" rx="1" fill="#2f3a34" />
+        <rect x="9" y="-1.5" width="2" height="3" rx="0.8" fill="#202823" />
+      </g>
+      {/* light */}
+      <circle cx="18" cy="14.4" r="0.9" fill="#ff5245">
+        <animate
+          attributeName="opacity"
+          values="1;0.25;1"
+          dur="1.6s"
+          repeatCount="indefinite"
+        />
+      </circle>
+      {/* rivets */}
+      <circle cx="14" cy="22" r="0.5" fill="#8f9c93" />
+      <circle cx="21.5" cy="24" r="0.5" fill="#8f9c93" />
+    </svg>
+  );
+}
+
+/** Pine tree cluster — wood resource. */
+export function TreeSprite({
+  className = "",
+  title = "Wood",
+}: SpriteProps) {
+  return (
+    <svg
+      className={`house-sprite ${className}`}
+      viewBox="0 0 36 32"
+      width="46"
+      height="42"
+      role="img"
+      aria-label={title}
+    >
+      <title>{title}</title>
+      <ellipse cx="18" cy="30" rx="9" ry="1.8" fill="rgba(0,0,0,0.35)" />
+      {/* big pine */}
+      <rect x="16.6" y="22" width="2.8" height="6" rx="1" fill="#6b4228" />
+      <path d="M18 4 L25 14 H21.5 L26 21 H10 L14.5 14 H11 Z" fill="#2f6b3d" />
+      <path d="M18 4 L25 14 H21.5 L26 21 H18 Z" fill="#3d8a50" />
+      {/* small pine */}
+      <rect x="8.2" y="24" width="2" height="4" rx="0.8" fill="#6b4228" />
+      <path d="M9.2 14 L14 21.5 H11.8 L15 26 H3.5 L6.6 21.5 H4.5 Z" fill="#2f6b3d" />
+      {/* logs */}
+      <g transform="translate(25 25)">
+        <rect x="0" y="0" width="8" height="2.6" rx="1.3" fill="#8b5a2b" />
+        <circle cx="1.3" cy="1.3" r="1.1" fill="#c99b62" />
+        <rect x="1" y="-2.4" width="8" height="2.6" rx="1.3" fill="#7a4d24" />
+        <circle cx="2.3" cy="-1.1" r="1.1" fill="#c99b62" />
+      </g>
+    </svg>
+  );
+}
+
+/** Rock pile — stone resource. */
+export function StoneSprite({
+  className = "",
+  title = "Stone",
+}: SpriteProps) {
+  return (
+    <svg
+      className={`house-sprite ${className}`}
+      viewBox="0 0 36 32"
+      width="44"
+      height="40"
+      role="img"
+      aria-label={title}
+    >
+      <title>{title}</title>
+      <ellipse cx="18" cy="29" rx="10" ry="1.9" fill="rgba(0,0,0,0.35)" />
+      {/* boulders */}
+      <path d="M9 27 L11 18 L18 15 L24 18.5 L27 24 L24.5 27.5 Z" fill="#77857c" />
+      <path d="M9 27 L11 18 L18 15 L18.5 27 Z" fill="#5d6a63" />
+      <path d="M18 15 L24 18.5 L27 24 L21 22 Z" fill="#8f9c93" />
+      {/* small rock */}
+      <path d="M6 28 L7.5 24.5 L11.5 23.8 L13 27 L11 28.6 Z" fill="#8f9c93" />
+      <path d="M6 28 L7.5 24.5 L9.5 24.2 L9 28.2 Z" fill="#6d7a71" />
+      {/* right pebble */}
+      <path d="M26 28 L27.5 25.5 L30.5 25.8 L31 28.2 Z" fill="#6d7a71" />
+      {/* cracks */}
+      <path
+        d="M14 20 l2.5 2 M20 18 l1.5 2.5"
+        stroke="#4a5550"
+        strokeWidth="0.7"
+        strokeLinecap="round"
+        fill="none"
+      />
+    </svg>
+  );
+}
+
 /** Grain mill with turning sails. */
 export function MillSprite({
   className = "",

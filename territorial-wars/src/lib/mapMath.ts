@@ -87,39 +87,34 @@ export function seedSpotsForSector(
   const others = existing.filter((s) => s.sectorId !== sector.id);
   const mine = existing.filter((s) => s.sectorId === sector.id);
   if (mine.some((s) => s.kind === "easy")) {
-    // Drop legacy pre-placed hiddens; force starter nodes to amber only
+    // Drop legacy pre-placed hiddens; starter nodes become wood/stone
     const cleaned = mine
       .filter((s) => s.kind === "easy" || Boolean(s.ownerId))
-      .map((s) =>
-        s.kind === "easy"
-          ? {
-              ...s,
-              gem: "amber" as GemType,
-              yield: GEM_META.amber.yield,
-              refillMs: 0,
-            }
-          : s
-      );
+      .map((s) => {
+        if (s.kind !== "easy") return s;
+        const gem: GemType = s.id.endsWith("_easy_0") ? "wood" : "stone";
+        return { ...s, gem, yield: GEM_META[gem].yield, refillMs: 0 };
+      });
     return [...others, ...cleaned];
   }
 
   const easy: ResourceSpot[] = [];
-  // Starter ore by the house — warm amber only (no fancy blue/green gems yet)
-  const easyPlan: { e: number; n: number }[] = [
-    { e: 38, n: 22 },
-    { e: -32, n: 28 },
+  // Starter nodes by the house — a wood grove and a stone pile
+  const easyPlan: { e: number; n: number; gem: GemType }[] = [
+    { e: 42, n: 24, gem: "wood" },
+    { e: -36, n: 30, gem: "stone" },
   ];
-  easyPlan.forEach(({ e, n }, i) => {
+  easyPlan.forEach(({ e, n, gem }, i) => {
     let p = offsetMeters(house, e, n);
     if (!pointInRing(p, sector.ring)) p = house;
     easy.push({
       id: `${sector.id}_easy_${i}`,
       sectorId: sector.id,
       kind: "easy",
-      gem: "amber",
+      gem,
       lat: p.lat,
       lng: p.lng,
-      yield: GEM_META.amber.yield,
+      yield: GEM_META[gem].yield,
       refillMs: 0,
       availableAt: 0,
     });
