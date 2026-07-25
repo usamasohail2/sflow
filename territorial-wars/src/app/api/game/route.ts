@@ -108,7 +108,31 @@ export async function POST(req: Request) {
     zoom?: number;
     roamMeters?: number;
     exploreMs?: number;
+    targetId?: string;
   };
+
+  // Dev/test helper: hop between guest accounts (auth is disabled)
+  if (body.action === "switch_player") {
+    if (!AUTH_DISABLED) {
+      return NextResponse.json(
+        { error: "Player switching only works in guest mode" },
+        { status: 403 }
+      );
+    }
+    const target =
+      typeof body.targetId === "string" && body.targetId.startsWith("guest_")
+        ? body.targetId
+        : newGuestId();
+    const short = target.slice(-4).toUpperCase();
+    await ensurePlayer(
+      target,
+      `Settler ${short}`,
+      `${target}@guest.local`,
+      null
+    );
+    const snap = await getSnapshot(target);
+    return withGuestCookie(NextResponse.json({ ok: true, ...snap }), target);
+  }
 
   await ensurePlayer(
     identity.id,

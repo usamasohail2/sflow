@@ -389,10 +389,26 @@ export function GameMap({
           longitude: 73.045,
           latitude: 33.71,
           zoom: 12.2,
-          pitch: 50,
+          pitch: 55,
           bearing: -28,
         }}
-        mapStyle="mapbox://styles/mapbox/dark-v11"
+        mapStyle="mapbox://styles/mapbox/standard"
+        onLoad={(e) => {
+          // Dusk atmosphere; Standard style ships 3D buildings by default
+          const m = e.target as unknown as {
+            setConfigProperty: (
+              scope: string,
+              key: string,
+              value: unknown
+            ) => void;
+          };
+          try {
+            m.setConfigProperty("basemap", "lightPreset", "dusk");
+            m.setConfigProperty("basemap", "show3dObjects", true);
+          } catch {
+            /* older style fallback — ignore */
+          }
+        }}
         interactiveLayerIds={["sector-fill"]}
         cursor={placing ? "crosshair" : "grab"}
         onMove={onMove}
@@ -415,6 +431,7 @@ export function GameMap({
           <Layer
             id="sector-fill"
             type="fill"
+            slot="top"
             paint={{
               "fill-color": [
                 "case",
@@ -430,6 +447,7 @@ export function GameMap({
           <Layer
             id="sector-line"
             type="line"
+            slot="top"
             paint={{
               "line-color": exploring ? "#7ec8ff" : "#e8ebe4",
               "line-width": exploring ? 2 : 2.5,
@@ -438,6 +456,7 @@ export function GameMap({
           <Layer
             id="sector-label"
             type="symbol"
+            slot="top"
             layout={{
               "text-field": ["get", "name"],
               "text-size": 13,
@@ -458,6 +477,7 @@ export function GameMap({
             <Layer
               id="footprint-fill"
               type="fill"
+              slot="top"
               paint={{
                 "fill-color": [
                   "case",
@@ -478,6 +498,7 @@ export function GameMap({
             <Layer
               id="footprint-line"
               type="line"
+              slot="top"
               paint={{
                 "line-color": [
                   "case",

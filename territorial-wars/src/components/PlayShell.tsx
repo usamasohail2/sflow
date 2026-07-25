@@ -49,6 +49,7 @@ export function PlayShell() {
   const [displayGold, setDisplayGold] = useState(0);
   const [showMissions, setShowMissions] = useState(false);
   const [showRanks, setShowRanks] = useState(false);
+  const [showPlayers, setShowPlayers] = useState(false);
   const [placing, setPlacing] = useState<Placing | null>(null);
   const [pendingHouse, setPendingHouse] = useState<LatLng | null>(null);
   const [march, setMarch] = useState<MarchAnim | null>(null);
@@ -278,6 +279,21 @@ export function PlayShell() {
     setPendingHouse(null);
   };
 
+  const switchPlayer = async (targetId?: string) => {
+    const data = await act("switch_player", targetId ? { targetId } : {});
+    if (data) {
+      setShowPlayers(false);
+      setPlacing(null);
+      setPendingHouse(null);
+      setMarch(null);
+      const nextMe = (data as GameSnapshot).me;
+      setSelectedId(
+        nextMe?.homeSectorId || (data as GameSnapshot).sectors[0]?.id || null
+      );
+      showToast(`Now playing as ${nextMe?.name ?? "new settler"}`);
+    }
+  };
+
   const launchAttack = async () => {
     if (!me?.house || !selected) return;
     const target = ringCentroid(selected.ring);
@@ -386,6 +402,7 @@ export function PlayShell() {
             onClick={() => {
               setShowRanks((v) => !v);
               setShowMissions(false);
+              setShowPlayers(false);
             }}
             className="hud-chip px-3 py-1.5 font-mono text-[10px] text-[var(--ink-muted)] hover:text-[var(--sand)]"
           >
@@ -396,10 +413,23 @@ export function PlayShell() {
             onClick={() => {
               setShowMissions((v) => !v);
               setShowRanks(false);
+              setShowPlayers(false);
             }}
             className="hud-chip px-3 py-1.5 font-mono text-[10px] text-[var(--ink-muted)] hover:text-[var(--sand)]"
           >
             ◈ {missionsDone}/{missionList.length}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setShowPlayers((v) => !v);
+              setShowRanks(false);
+              setShowMissions(false);
+            }}
+            className="hud-chip px-3 py-1.5 font-mono text-[10px] text-[var(--ink-muted)] hover:text-[var(--sand)]"
+            title="Switch player (testing)"
+          >
+            👤 {me?.name?.replace("Settler ", "") ?? "…"}
           </button>
           <Link
             href="/edit"
@@ -409,6 +439,55 @@ export function PlayShell() {
           </Link>
         </div>
       </div>
+
+      {/* Player switcher (testing) */}
+      {showPlayers && (
+        <div className="absolute right-2 top-14 z-30 w-72 hud-panel p-3 sm:right-3">
+          <h2 className="font-mono text-[9px] uppercase tracking-[0.22em] text-[var(--ink-muted)]">
+            Switch player · test accounts
+          </h2>
+          <ul className="mt-2 max-h-64 space-y-1 overflow-y-auto">
+            {(snap?.players ?? [])
+              .filter((p) => p.id.startsWith("guest_"))
+              .map((p) => (
+                <li key={p.id}>
+                  <button
+                    type="button"
+                    disabled={busy || p.id === me?.id}
+                    onClick={() => void switchPlayer(p.id)}
+                    className={`flex w-full items-center justify-between rounded-sm border px-2 py-1.5 text-left text-[11px] ${
+                      p.id === me?.id
+                        ? "border-[var(--sand)] text-[var(--sand)]"
+                        : "border-[var(--line)] text-[var(--ink-muted)] hover:border-[var(--sand)]"
+                    }`}
+                  >
+                    <span>
+                      {p.name}
+                      {p.id === me?.id ? " (you)" : ""}
+                      <span className="block text-[9px] text-[var(--ink-faint)]">
+                        {snap?.sectors.find((s) => s.id === p.homeSectorId)
+                          ?.name ?? "no sector"}{" "}
+                        · {p.gold}g · {p.soldiers}⚔ {p.tanks}🛡
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+          </ul>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void switchPlayer()}
+            className="mt-2 w-full rounded-sm bg-[var(--field)] px-2 py-1.5 text-xs font-semibold text-white"
+          >
+            ＋ New test player
+          </button>
+          <p className="mt-1.5 text-[9px] leading-snug text-[var(--ink-faint)]">
+            Open a second browser window and pick a different player there to
+            fight yourself.
+          </p>
+        </div>
+      )}
 
       {/* Ranks dropdown */}
       {showRanks && (
