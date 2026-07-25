@@ -1,4 +1,6 @@
+import { createHash } from "crypto";
 import { Redis } from "@upstash/redis";
+import { head, put } from "@vercel/blob";
 import {
   ATTACK_COOLDOWN_MS,
   BUILDING_CATALOG,
@@ -80,7 +82,7 @@ function redis(): Redis | null {
 }
 
 /* ------------------------------------------------------------------ */
-/* In-memory fallback (local dev without Redis)                        */
+/* In-memory store, durably backed by Vercel Blob when Redis is absent */
 /* ------------------------------------------------------------------ */
 
 type MemStore = {
@@ -90,7 +92,11 @@ type MemStore = {
   lists: Map<string, string[]>;
 };
 
-const g = globalThis as unknown as { __itwMem?: MemStore };
+const g = globalThis as unknown as {
+  __itwMem?: MemStore;
+  __itwBlobHydratedAt?: number;
+  __itwBlobDirty?: boolean;
+};
 function mem(): MemStore {
   if (!g.__itwMem) {
     g.__itwMem = {
@@ -101,6 +107,97 @@ function mem(): MemStore {
     };
   }
   return g.__itwMem;
+}
+
+const BLOB_HYDRATE_TTL_MS = 1_500;
+
+function blobToken(): string | null {
+  return process.env.BLOB_READ_WRITE_TOKEN || null;
+}
+
+function blobActive(): boolean {
+  return !redis() && Boolean(blobToken());
+}
+
+/** Unguessable state path (blob store URLs are public) */
+function blobStatePath(): string {
+  const secret = process.env.AUTH_SECRET || "itw-fallback";
+  return `itw/state-${createHash("sha256").update(secret).digest("hex").slice(0, 32)}.json`;
+}
+
+function markDirty(): void {
+  g.__itwBlobDirty = true;
+}
+
+type SerializedState = {
+  json: Record<string, unknown>;
+  sets: Record<string, string[]>;
+  hashes: Record<string, Record<string, string>>;
+  lists: Record<string, string[]>;
+};
+
+/** Pull the state document into memory (TTL-cached per lambda) */
+async function hydrateFromBlob(): Promise<void> {
+  if (!blobActive()) return;
+  const now = Date.now();
+  if (now - (g.__itwBlobHydratedAt ?? 0) < BLOB_HYDRATE_TTL_MS) return;
+  g.__itwBlobHydratedAt = now;
+  try {
+    const info = await head(blobStatePath(), { token: blobToken()! });
+    // Unique query param defeats CDN caching of overwritten blobs
+    const res = await fetch(`${info.url}?ts=${now}`, { cache: "no-store" });
+    if (!res.ok) return;
+    const data = (await res.json()) as SerializedState;
+    const m = mem();
+    m.json = new Map(Object.entries(data.json ?? {}));
+    m.sets = new Map(
+      Object.entries(data.sets ?? {}).map(([k, v]) => [k, new Set(v)])
+    );
+    m.hashes = new Map(
+      Object.entries(data.hashes ?? {}).map(([k, v]) => [
+        k,
+        new Map(Object.entries(v)),
+      ])
+    );
+    m.lists = new Map(Object.entries(data.lists ?? {}));
+    g.__itwBlobDirty = false;
+  } catch {
+    // Missing blob = first boot; keep the (possibly seeded) memory state
+  }
+}
+
+/** Persist memory state to Blob if anything changed this request */
+export async function flushStore(): Promise<void> {
+  if (!blobActive() || !g.__itwBlobDirty) return;
+  g.__itwBlobDirty = false;
+  const m = mem();
+  const data: SerializedState = {
+    json: Object.fromEntries(m.json),
+    sets: Object.fromEntries(
+      Array.from(m.sets.entries()).map(([k, v]) => [k, Array.from(v)])
+    ),
+    hashes: Object.fromEntries(
+      Array.from(m.hashes.entries()).map(([k, v]) => [
+        k,
+        Object.fromEntries(v),
+      ])
+    ),
+    lists: Object.fromEntries(m.lists),
+  };
+  try {
+    await put(blobStatePath(), JSON.stringify(data), {
+      access: "public",
+      token: blobToken()!,
+      allowOverwrite: true,
+      addRandomSuffix: false,
+      cacheControlMaxAge: 0,
+      contentType: "application/json",
+    });
+    g.__itwBlobHydratedAt = Date.now();
+  } catch (err) {
+    g.__itwBlobDirty = true;
+    console.error("Blob state flush failed:", err);
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -121,6 +218,7 @@ async function setJSON(key: string, value: unknown): Promise<void> {
     return;
   }
   mem().json.set(key, structuredClone(value));
+  markDirty();
 }
 
 async function mgetJSON<T>(keys: string[]): Promise<(T | null)[]> {
@@ -145,6 +243,7 @@ async function sAdd(key: string, member: string): Promise<void> {
   const s = mem().sets.get(key) ?? new Set<string>();
   s.add(member);
   mem().sets.set(key, s);
+  markDirty();
 }
 
 async function sMembers(key: string): Promise<string[]> {
@@ -168,6 +267,7 @@ async function hSet(key: string, field: string, value: string): Promise<void> {
   const h = mem().hashes.get(key) ?? new Map<string, string>();
   h.set(field, value);
   mem().hashes.set(key, h);
+  markDirty();
 }
 
 async function lPushTrim(key: string, value: string, max: number): Promise<void> {
@@ -180,6 +280,7 @@ async function lPushTrim(key: string, value: string, max: number): Promise<void>
   const l = mem().lists.get(key) ?? [];
   l.unshift(value);
   mem().lists.set(key, l.slice(0, max));
+  markDirty();
 }
 
 async function lRangeAll(key: string, max: number): Promise<string[]> {
@@ -197,6 +298,7 @@ async function setNX(key: string, value: string): Promise<boolean> {
   }
   if (mem().json.has(key)) return false;
   mem().json.set(key, value);
+  markDirty();
   return true;
 }
 
@@ -273,6 +375,8 @@ export async function saveSectors(sectors: Sector[]): Promise<void> {
   const ids = new Set(sectors.map((s) => s.id));
   const spots = await getSpots();
   await setSpots(spots.filter((s) => ids.has(s.sectorId)));
+  // Sector edits must never be lost — write through immediately
+  await flushStore();
 }
 
 async function getSpots(): Promise<ResourceSpot[]> {
@@ -335,6 +439,8 @@ export function makeInviteCode(seed: string): string {
 let bootPromise: Promise<void> | null = null;
 
 async function bootstrap(): Promise<void> {
+  // Fresh lambdas (and stale caches) pull durable state first
+  await hydrateFromBlob();
   if (!bootPromise) bootPromise = doBootstrap();
   await bootPromise;
 }
@@ -684,6 +790,9 @@ export async function getSnapshot(meId?: string | null): Promise<GameSnapshot> {
         .filter((e) => e.attackerId === me!.id || e.defenderId === me!.id)
         .slice(-12)
     : [];
+
+  // Persist any accrual/seed/bootstrap writes made during this request
+  await flushStore();
 
   return {
     sectors,
