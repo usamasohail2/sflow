@@ -1310,7 +1310,12 @@ export function PlayShell() {
                         r.mine ? "is-mine" : ""
                       }`}
                     >
-                      <span className="sector-board-rank">{r.rank}</span>
+                      <span
+                        className="sector-board-rank"
+                        title={r.rank === 1 ? "Top sector" : undefined}
+                      >
+                        {r.rank === 1 ? "👑" : r.rank}
+                      </span>
                       <span className="sector-board-name">{r.name}</span>
                       <span className="sector-board-score">
                         {GOLD_COIN} {r.farmed}
@@ -1596,7 +1601,7 @@ export function PlayShell() {
                     <span className="min-w-0">
                       <span className="font-mono text-[var(--ink-faint)]">
                         {i === 0
-                          ? "🥇"
+                          ? "👑"
                           : i === 1
                             ? "🥈"
                             : i === 2

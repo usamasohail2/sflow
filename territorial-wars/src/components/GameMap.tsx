@@ -508,11 +508,41 @@ export function GameMap({
     return map;
   }, [sectors, players]);
 
+  /** Highest-economy sector (king of the map) */
+  const topSectorId = useMemo(() => {
+    let bestId: string | null = null;
+    let best = -1;
+    for (const s of sectors) {
+      const n = sectorEconomy.get(s.id) || 0;
+      if (n > best) {
+        best = n;
+        bestId = s.id;
+      }
+    }
+    return best > 0 ? bestId : null;
+  }, [sectors, sectorEconomy]);
+
+  /** Highest totalFarmed settler */
+  const topPlayerId = useMemo(() => {
+    let bestId: string | null = null;
+    let best = -1;
+    for (const p of players) {
+      if (!p.homeSectorId) continue;
+      const n = p.totalFarmed || 0;
+      if (n > best) {
+        best = n;
+        bestId = p.id;
+      }
+    }
+    return best > 0 ? bestId : null;
+  }, [players]);
+
   const fc = useMemo<FeatureCollection>(
     () => ({
       type: "FeatureCollection",
       features: sectors.map((s) => {
         const farmed = sectorEconomy.get(s.id) || 0;
+        const isKing = topSectorId === s.id;
         return {
           type: "Feature" as const,
           id: s.id,
@@ -521,7 +551,10 @@ export function GameMap({
             name: s.name,
             mine: me?.homeSectorId === s.id ? 1 : 0,
             economy: farmed,
-            overviewLabel: `${s.name}\n${GOLD_COIN} ${formatEconomy(farmed)}`,
+            king: isKing ? 1 : 0,
+            overviewLabel: isKing
+              ? `👑 ${s.name}\n${GOLD_COIN} ${formatEconomy(farmed)}`
+              : `${s.name}\n${GOLD_COIN} ${formatEconomy(farmed)}`,
           },
           geometry: {
             type: "Polygon" as const,
@@ -530,7 +563,7 @@ export function GameMap({
         };
       }),
     }),
-    [sectors, me, sectorEconomy]
+    [sectors, me, sectorEconomy, topSectorId]
   );
 
   /** Single perimeter line per sector (no hollow band → no double edges) */
@@ -1085,6 +1118,7 @@ export function GameMap({
               if (!at) return null;
               const relation = playerRelation(p, me);
               const canTarget = relation === "enemy";
+              const isKing = topPlayerId === p.id;
               return (
                 <Marker
                   key={`pin-${p.id}`}
@@ -1095,24 +1129,43 @@ export function GameMap({
                   <button
                     type="button"
                     className={`player-pin player-pin-dot-only is-${relation} ${
-                      selectedPlayerId === p.id ? "is-selected" : ""
-                    }`}
+                      isKing ? "is-king" : ""
+                    } ${selectedPlayerId === p.id ? "is-selected" : ""}`}
                     onClick={(e) => {
                       e.stopPropagation();
                       if (canTarget) onSelectPlayer?.(p.id);
                       else onSelectPlayer?.(null);
                     }}
                     title={
-                      relation === "self"
-                        ? "You"
-                        : relation === "ally"
-                          ? `${p.name} (ally — same sector)`
-                          : `Tap to target ${p.name}`
+                      isKing
+                        ? relation === "self"
+                          ? "You — top settler"
+                          : `${p.name} — top settler`
+                        : relation === "self"
+                          ? "You"
+                          : relation === "ally"
+                            ? `${p.name} (ally — same sector)`
+                            : `Tap to target ${p.name}`
                     }
-                    aria-label={relation === "self" ? "You" : p.name}
+                    aria-label={
+                      isKing
+                        ? relation === "self"
+                          ? "You, top settler"
+                          : `${p.name}, top settler`
+                        : relation === "self"
+                          ? "You"
+                          : p.name
+                    }
                   >
-                    {relation === "self" && (
-                      <span className="player-pin-name">You</span>
+                    {isKing && (
+                      <span className="player-pin-crown" aria-hidden>
+                        👑
+                      </span>
+                    )}
+                    {(relation === "self" || isKing) && (
+                      <span className="player-pin-name">
+                        {relation === "self" ? "You" : p.name}
+                      </span>
                     )}
                     <span className="player-pin-dot" />
                   </button>
@@ -1175,52 +1228,64 @@ export function GameMap({
 
             {players
               .filter((p) => p.homeSectorId && p.house)
-              .map((p) => (
-                <Marker
-                  key={`house-${p.id}`}
-                  longitude={p.house!.lng}
-                  latitude={p.house!.lat}
-                  anchor="bottom"
-                >
-                  <button
-                    type="button"
-                    className={`relative flex flex-col items-center bg-transparent p-0 ${
-                      selectedPlayerId === p.id
-                        ? "ring-2 ring-[var(--sand)] rounded-sm"
-                        : ""
-                    }`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (
-                        p.id !== me?.id &&
-                        p.homeSectorId &&
-                        me?.homeSectorId &&
-                        p.homeSectorId !== me.homeSectorId
-                      ) {
-                        onSelectPlayer?.(p.id);
-                      } else {
-                        onSelectPlayer?.(null);
-                      }
-                    }}
-                    title={
-                      p.id === me?.id
-                        ? "Your house"
-                        : p.homeSectorId &&
-                            me?.homeSectorId &&
-                            p.homeSectorId === me.homeSectorId
-                          ? `${p.name} (same sector — can't attack)`
-                          : `Tap to target ${p.name}`
-                    }
+              .map((p) => {
+                const isKing = topPlayerId === p.id;
+                return (
+                  <Marker
+                    key={`house-${p.id}`}
+                    longitude={p.house!.lng}
+                    latitude={p.house!.lat}
+                    anchor="bottom"
                   >
-                    <HouseSprite className="h-10 w-11 drop-shadow-md" />
-                    <HpBar
-                      hp={p.houseHp ?? HOUSE_MAX_HP}
-                      maxHp={HOUSE_MAX_HP}
-                      width={38}
-                    />
-                  </button>
-                </Marker>
-              ))}
+                    <button
+                      type="button"
+                      className={`relative flex flex-col items-center bg-transparent p-0 ${
+                        selectedPlayerId === p.id
+                          ? "ring-2 ring-[var(--sand)] rounded-sm"
+                          : ""
+                      }`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (
+                          p.id !== me?.id &&
+                          p.homeSectorId &&
+                          me?.homeSectorId &&
+                          p.homeSectorId !== me.homeSectorId
+                        ) {
+                          onSelectPlayer?.(p.id);
+                        } else {
+                          onSelectPlayer?.(null);
+                        }
+                      }}
+                      title={
+                        isKing
+                          ? p.id === me?.id
+                            ? "Your house — top settler"
+                            : `${p.name}'s house — top settler`
+                          : p.id === me?.id
+                            ? "Your house"
+                            : p.homeSectorId &&
+                                me?.homeSectorId &&
+                                p.homeSectorId === me.homeSectorId
+                              ? `${p.name} (same sector — can't attack)`
+                              : `Tap to target ${p.name}`
+                      }
+                    >
+                      {isKing && (
+                        <span className="house-king-crown" aria-hidden>
+                          👑
+                        </span>
+                      )}
+                      <HouseSprite className="h-10 w-11 drop-shadow-md" />
+                      <HpBar
+                        hp={p.houseHp ?? HOUSE_MAX_HP}
+                        maxHp={HOUSE_MAX_HP}
+                        width={38}
+                      />
+                    </button>
+                  </Marker>
+                );
+              })}
 
             {players
               .filter((p) => p.homeSectorId)
@@ -1368,6 +1433,7 @@ export function GameMap({
                           : "bg-[rgba(10,14,10,0.9)] text-[var(--signal-bright)] ring-1 ring-[var(--signal)]"
                     }`}
                   >
+                    {topPlayerId === v.id ? "👑 " : ""}
                     {v.relation === "self" ? "You" : v.name}
                   </span>
                   <VillagerSprite

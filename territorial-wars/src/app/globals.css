@@ -680,6 +680,49 @@ button.cameo:not(:disabled):hover {
   text-overflow: ellipsis;
 }
 
+.player-pin-crown {
+  font-size: 11px;
+  line-height: 1;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.65));
+  animation: king-crown-bob-pin 1.6s ease-in-out infinite;
+}
+
+.player-pin.is-king .player-pin-name {
+  color: #f0c84a;
+}
+
+.house-king-crown {
+  position: absolute;
+  top: -0.85rem;
+  left: 50%;
+  z-index: 2;
+  font-size: 14px;
+  line-height: 1;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.7));
+  animation: king-crown-bob-house 1.6s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes king-crown-bob-pin {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes king-crown-bob-house {
+  0%,
+  100% {
+    transform: translateX(-50%) translateY(0);
+  }
+  50% {
+    transform: translateX(-50%) translateY(-2px);
+  }
+}
+
 .player-pin.is-self .player-pin-name {
   color: #7ec8ff;
 }
