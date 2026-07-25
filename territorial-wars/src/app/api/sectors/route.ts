@@ -6,13 +6,17 @@ import { AUTH_DISABLED } from "@/lib/devMode";
 import { getSectors, saveSectors, storageBackend } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export async function GET() {
   const sectors = await getSectors();
-  return NextResponse.json({
-    sectors,
-    storageBackend: storageBackend(),
-  });
+  return NextResponse.json(
+    {
+      sectors,
+      storageBackend: storageBackend(),
+    },
+    { headers: { "Cache-Control": "no-store" } }
+  );
 }
 
 export async function PUT(req: Request) {
@@ -56,6 +60,16 @@ export async function PUT(req: Request) {
     })
     .filter(Boolean) as Sector[];
 
-  await saveSectors(sectors);
-  return NextResponse.json({ sectors });
+  try {
+    await saveSectors(sectors);
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Save failed" },
+      { status: 400 }
+    );
+  }
+  return NextResponse.json(
+    { sectors, storageBackend: storageBackend() },
+    { headers: { "Cache-Control": "no-store" } }
+  );
 }

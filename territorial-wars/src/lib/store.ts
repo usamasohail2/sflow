@@ -611,6 +611,15 @@ export async function getSectors(): Promise<Sector[]> {
 
 export async function saveSectors(sectors: Sector[]): Promise<void> {
   await bootstrap();
+  // Never allow an empty editor save to wipe the map
+  if (sectors.length === 0) {
+    const existing = (await getJSON<Sector[]>(K_SECTORS)) ?? [];
+    if (existing.length > 0) {
+      throw new Error(
+        "Refusing to save 0 sectors — reload the editor and try again"
+      );
+    }
+  }
   await setJSON(K_SECTORS, sectors);
   const ids = new Set(sectors.map((s) => s.id));
   const spots = await getSpots();
