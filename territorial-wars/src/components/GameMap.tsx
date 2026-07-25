@@ -1966,7 +1966,7 @@ export function GameMap({
       {me?.homeSectorId && showDetail && !placing && !spawnFlash && (
         <div className="pointer-events-none absolute bottom-[7.75rem] left-1/2 z-10 w-[min(17rem,calc(100%-7rem))] -translate-x-1/2 sm:bottom-[8.75rem] sm:w-[min(19rem,calc(100%-20rem))]">
           <p className="hud-chip px-2.5 py-1.5 text-center text-[10px] font-semibold text-[var(--sand)] sm:px-3 sm:text-[11px]">
-            Tap a local business label — review for +1 villager
+            Tap a local business — leave a review, earn a villager!
           </p>
         </div>
       )}
