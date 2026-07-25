@@ -561,6 +561,10 @@ export function PlayShell() {
   const [claimingSpotIds, setClaimingSpotIds] = useState<string[]>([]);
   const claimingSpotIdsRef = useRef<string[]>([]);
   const [pendingHouse, setPendingHouse] = useState<LatLng | null>(null);
+  /** Sector chosen for settle — tiles drive house → villager placement */
+  const [settleSector, setSettleSector] = useState<Placing["sector"] | null>(
+    null
+  );
   const [march, setMarch] = useState<MarchAnim | null>(null);
   const [impact, setImpact] = useState<ImpactAnim | null>(null);
   const [battleSummary, setBattleSummary] = useState<BattleSummary | null>(
@@ -1415,10 +1419,15 @@ export function PlayShell() {
     if (!isBuildingPlace && busyRef.current) return;
 
     if (placing.kind === "house") {
-      // Stash the house, then ask for the villager
+      // Stash the house; settle flow waits for the Villager tile next
       setPendingHouse({ lat, lng });
-      setPlacing({ kind: "villager", sector: placing.sector });
-      showToast("House set — now place your villager nearby");
+      if (settleSector) {
+        setPlacing(null);
+        showToast("House set — tap Villager, then place them on the map");
+      } else {
+        setPlacing({ kind: "villager", sector: placing.sector });
+        showToast("House set — now place your villager nearby");
+      }
       return;
     }
 
@@ -1511,6 +1520,7 @@ export function PlayShell() {
         );
         setPlacing(null);
         setPendingHouse(null);
+        setSettleSector(null);
         setGpsFix(null);
         setPickingPin(false);
         if (settlingAzad) setAzadMode(true);
@@ -1621,7 +1631,11 @@ export function PlayShell() {
   const cancelPlacement = () => {
     setPlacing(null);
     setPendingHouse(null);
+    if (!claimed) setSettleSector(null);
   };
+
+  /** First-time settle: bottom tiles drive house → villager one by one */
+  const isSettlePlacing = Boolean(settleSector && !claimed);
 
   const switchPlayer = async (targetId?: string) => {
     // Force re-prime of battle events for the next identity
@@ -2054,6 +2068,7 @@ export function PlayShell() {
     setShowWalkthrough(false);
     setPlacing(null);
     setPendingHouse(null);
+    setSettleSector(null);
     setGpsFix(null);
     setLiveLocation(null);
     setAzadMode(false);
@@ -2100,6 +2115,7 @@ export function PlayShell() {
     setShowWalkthrough(false);
     setPlacing(null);
     setPendingHouse(null);
+    setSettleSector(null);
     setGpsFix(null);
     setLiveLocation(null);
     setAzadMode(false);
@@ -2204,7 +2220,8 @@ export function PlayShell() {
             /* Location setup is self-guided; tips open after settle */
           }}
           guidePulse={
-            placing?.kind === "house" || placing?.kind === "villager"
+            Boolean(settleSector) &&
+            (placing?.kind === "house" || placing?.kind === "villager")
           }
           syncingBuildingIds={syncingBuildIds}
           presencePeers={presencePeers}
@@ -3377,8 +3394,8 @@ export function PlayShell() {
         </div>
       )}
 
-      {/* Placement cancel */}
-      {placing && !savingLabel && (
+      {/* Building placement cancel (not settle house/villager — those use the dock) */}
+      {placing && !savingLabel && !isSettlePlacing && (
         <div className="absolute bottom-36 left-1/2 z-30 -translate-x-1/2 sm:bottom-8">
           <button
             type="button"
@@ -3391,8 +3408,90 @@ export function PlayShell() {
         </div>
       )}
 
+      {/* Settle placement dock — house then villager, one blinking tile at a time */}
+      {isSettlePlacing && settleSector && !savingLabel && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 sm:px-3">
+          <div className="pointer-events-auto mx-auto w-full max-w-sm">
+            <div className="hud-panel p-2.5">
+              <p className="text-center font-mono text-[9px] uppercase tracking-[0.18em] text-[var(--ink-faint)]">
+                {!pendingHouse
+                  ? "Step 1 — place your house"
+                  : "Step 2 — place your villager"}
+              </p>
+              <p className="mt-0.5 text-center text-[11px] text-[var(--ink-muted)]">
+                {!pendingHouse
+                  ? placing?.kind === "house"
+                    ? "Now tap the map to plant your house"
+                    : "Tap the blinking House tile, then tap the map"
+                  : placing?.kind === "villager"
+                    ? "Now tap the map to station your villager"
+                    : "Tap the blinking Villager tile, then tap the map"}
+              </p>
+              <div className="mt-2 flex items-stretch justify-center gap-2">
+                <button
+                  type="button"
+                  data-guide="guide-settle-house"
+                  disabled={busy || Boolean(pendingHouse)}
+                  onClick={() => {
+                    if (pendingHouse || !settleSector) return;
+                    setPlacing({ kind: "house", sector: settleSector });
+                    showToast("Tap the map to plant your house");
+                  }}
+                  className={`cameo cameo-dock min-w-[5.5rem] flex-1 ${
+                    !pendingHouse ? "cameo-blink is-guide-hot" : ""
+                  } ${pendingHouse ? "opacity-70" : ""}`}
+                  title={
+                    pendingHouse
+                      ? "House placed"
+                      : "Select house, then tap the map"
+                  }
+                >
+                  <HouseSprite className="h-9 w-10 sm:h-10 sm:w-11" />
+                  <span className="cameo-label">
+                    {pendingHouse ? "House ✓" : "House"}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  data-guide="guide-settle-villager"
+                  disabled={busy || !pendingHouse}
+                  onClick={() => {
+                    if (!settleSector) return;
+                    if (!pendingHouse) {
+                      showToast("Place your house first");
+                      return;
+                    }
+                    setPlacing({ kind: "villager", sector: settleSector });
+                    showToast("Tap the map to station your villager");
+                  }}
+                  className={`cameo cameo-dock min-w-[5.5rem] flex-1 ${
+                    pendingHouse ? "cameo-blink is-guide-hot" : "opacity-40"
+                  }`}
+                  title={
+                    pendingHouse
+                      ? "Select villager, then tap the map"
+                      : "Place your house first"
+                  }
+                >
+                  <VillagerSprite walking className="h-9 w-9 sm:h-10 sm:w-10" />
+                  <span className="cameo-label">Villager</span>
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={cancelPlacement}
+                disabled={busy}
+                className="mt-2 w-full text-center font-mono text-[10px] text-[var(--signal-bright)] hover:underline disabled:opacity-40"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ---- Settle prompt (no home yet) — GPS or pick sector ---- */}
-      {!claimed && !placing && me && (
+      {!claimed && !placing && !settleSector && me && (
         <div className="absolute bottom-28 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-sm -translate-x-1/2 sm:bottom-8">
           <div className="hud-panel p-4 text-center">
             <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-[var(--ink-faint)]">
@@ -3549,12 +3648,9 @@ export function PlayShell() {
                       return;
                     }
                     setManualMode(false);
-                    setPlacing({ kind: "house", sector });
-                    showToast(
-                      azadMode
-                        ? "Tap near your pin to place your house"
-                        : "Tap the map to place your house"
-                    );
+                    setPlacing(null);
+                    setSettleSector(sector);
+                    showToast("Tap House below, then plant it on the map");
                   }}
                   className="mt-3 w-full rounded-sm bg-[var(--signal)] px-3 py-2.5 text-sm font-bold text-white shadow-[0_2px_8px_rgba(0,0,0,0.5)] disabled:opacity-40"
                 >

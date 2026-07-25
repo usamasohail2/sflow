@@ -659,12 +659,20 @@ export function GameMap({
     });
   }, [userLocation, introActive]);
 
-  // Fly the camera to a selected sector (leaderboard / settled home)
-  // Skip while unsettled if a GPS pin is showing — pin is the truth.
+  // Fly to a sector only on explicit picks — never yank the camera after
+  // the player has already planted their house/villager in place.
+  const lastSectorFocusFlown = useRef(sectorFocus);
   useEffect(() => {
     if (introActive) return;
     if (!selectedId) return;
+    const focusBumped = sectorFocus !== lastSectorFocusFlown.current;
+    lastSectorFocusFlown.current = sectorFocus;
+
+    // Settled: only fly when the player taps the leaderboard (sectorFocus)
+    if (me?.homeSectorId && !focusBumped) return;
+    // Unsettled with a pin: stay on the pin, not the sector centroid
     if (!me?.homeSectorId && userLocation) return;
+
     const sector = sectors.find((s) => s.id === selectedId);
     if (!sector) return;
     const map = mapRef.current;
@@ -682,7 +690,6 @@ export function GameMap({
       duration: 1100,
       essential: true,
     });
-    // sectorFocus lets the parent re-fly when the same sector is tapped again
   }, [selectedId, sectorFocus, introActive, me?.homeSectorId, userLocation]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Re-center on GPS when parent bumps userLocationFocus
@@ -1232,7 +1239,7 @@ export function GameMap({
               featuresetHits = (
                 e.target as unknown as {
                   queryRenderedFeatures: (
-                    point: mapboxgl.PointLike,
+                    point: { x: number; y: number },
                     opts?: {
                       target?: { featuresetId: string; importId: string };
                     }
