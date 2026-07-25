@@ -274,10 +274,10 @@ export function MillSprite({
   );
 }
 
-/** Stone warehouse with crates. */
+/** Village storefront — awning, shop window, goods on display. */
 export function WarehouseSprite({
   className = "",
-  title = "Warehouse",
+  title = "Village store",
 }: SpriteProps) {
   return (
     <svg
@@ -290,19 +290,47 @@ export function WarehouseSprite({
     >
       <title>{title}</title>
       <ellipse cx="18" cy="30" rx="11" ry="1.8" fill="rgba(0,0,0,0.35)" />
-      {/* body */}
-      <rect x="6" y="13" width="24" height="15" rx="1" fill="#9aa392" />
-      <rect x="6" y="13" width="24" height="3" fill="#7f8877" />
-      {/* roof */}
-      <path d="M4 14 L18 6 L32 14 Z" fill="#4a5550" />
-      <path d="M6 13.4 L18 7.6 L30 13.4 Z" fill="#5d6a63" />
+      {/* facade */}
+      <rect x="5" y="12" width="26" height="16" rx="1.2" fill="#e8d5b5" />
+      <rect x="5" y="12" width="26" height="3.2" fill="#d4c09a" />
+      {/* flat cornice */}
+      <rect x="4" y="10.2" width="28" height="2.4" rx="0.6" fill="#8a4f35" />
+      <rect x="4.5" y="10.5" width="27" height="1" fill="#c45a3a" opacity="0.55" />
+      {/* striped awning */}
+      <path d="M6 14.5 H30 L28.5 18.5 H7.5 Z" fill="#e23b2f" />
+      <path d="M9.5 14.5 H13.5 L12.6 18.5 H8.8 Z" fill="#f4f1ea" />
+      <path d="M17 14.5 H21 L20.1 18.5 H16.3 Z" fill="#f4f1ea" />
+      <path d="M24.5 14.5 H28.5 L27.4 18.5 H23.6 Z" fill="#f4f1ea" />
+      <path
+        d="M6 14.5 H30"
+        stroke="#8a3a2a"
+        strokeWidth="0.5"
+        fill="none"
+      />
+      {/* shop window */}
+      <rect x="7.5" y="19" width="11" height="7.5" rx="0.6" fill="#7ec8ff" />
+      <rect
+        x="7.5"
+        y="19"
+        width="11"
+        height="7.5"
+        rx="0.6"
+        fill="none"
+        stroke="#6b4228"
+        strokeWidth="0.7"
+      />
+      <path d="M13 19 v7.5 M7.5 22.7 h11" stroke="#c4a86a" strokeWidth="0.45" />
+      {/* goods in window */}
+      <rect x="9" y="23.2" width="2.2" height="2.4" rx="0.3" fill="#c45a3a" />
+      <rect x="12" y="23.6" width="2" height="2" rx="0.3" fill="#e8cf8a" />
+      <circle cx="16.2" cy="24.6" r="1.1" fill="#6fbf73" />
       {/* door */}
-      <rect x="14" y="18" width="8" height="10" rx="0.8" fill="#3d4a3f" />
-      <path d="M14 18h8M18 18v10" stroke="#2a342c" strokeWidth="0.7" />
-      {/* crates */}
-      <rect x="7.5" y="23" width="4.5" height="5" fill="#c4a86a" />
-      <path d="M7.5 25.5h4.5M9.7 23v5" stroke="#8a7a5a" strokeWidth="0.5" />
-      <rect x="24" y="24" width="4" height="4" fill="#c4a86a" />
+      <rect x="21.5" y="19" width="7" height="9" rx="0.7" fill="#6b4228" />
+      <circle cx="26.8" cy="23.6" r="0.55" fill="#e8cf8a" />
+      {/* hanging sign */}
+      <rect x="22.5" y="11.5" width="0.7" height="2.2" fill="#5c4030" />
+      <rect x="20.2" y="13.2" width="5.2" height="2.6" rx="0.4" fill="#3d5c46" />
+      <rect x="20.5" y="13.5" width="4.6" height="2" rx="0.3" fill="#6fbf73" />
     </svg>
   );
 }

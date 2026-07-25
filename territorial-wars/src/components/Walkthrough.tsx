@@ -134,7 +134,7 @@ function tipFor(
     },
     "tips-build": {
       title: "Build & arm",
-      body: "Use Build to place mills and turrets. Stock rockets in Arsenal — you pick how many to fire on a raid.",
+      body: "Use Build to place mills, wells, and a store. Stock rockets in Arsenal — you pick how many to fire on a raid.",
       target: null,
       blocking: true,
       cta: "Next",

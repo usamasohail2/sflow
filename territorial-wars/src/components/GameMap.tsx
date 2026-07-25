@@ -93,7 +93,6 @@ import {
   MillSprite,
   RocketSprite,
   ShovelSprite,
-  TurretSprite,
   VillagerSprite,
   WarehouseSprite,
   WellSprite,
@@ -239,8 +238,6 @@ function BuildingSprite({ type }: { type: Building["type"] }) {
   if (type === "mill") return <MillSprite className="h-9 w-10 drop-shadow-md" />;
   if (type === "warehouse")
     return <WarehouseSprite className="h-9 w-10 drop-shadow-md" />;
-  if (type === "turret")
-    return <TurretSprite className="h-9 w-10 drop-shadow-md" />;
   if (type === "shovel")
     return <ShovelSprite className="h-9 w-10 drop-shadow-md" />;
   return <WellSprite className="h-9 w-10 drop-shadow-md" />;

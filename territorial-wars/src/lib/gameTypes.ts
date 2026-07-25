@@ -101,12 +101,7 @@ export const SPAWN_COOLDOWN_MS = 22_000;
 /** Cap finds spawned in a sector */
 export const MAX_ROAM_FINDS = 14;
 
-export type BuildingType =
-  | "mill"
-  | "warehouse"
-  | "well"
-  | "turret"
-  | "shovel";
+export type BuildingType = "mill" | "warehouse" | "well" | "shovel";
 
 export type Building = {
   id: string;
@@ -407,7 +402,8 @@ export const HOUSE_MAX_HP = 5;
 
 /** Gold to stock one rocket in your arsenal */
 export const ROCKET_COST = 35;
-export const ATTACK_COOLDOWN_MS = 60_000;
+/** Arsenal reload after firing rockets (raids + ally clears) */
+export const ATTACK_COOLDOWN_MS = 90_000;
 /** Min time between same-sector building razes */
 export const RAZE_COOLDOWN_MS = 20_000;
 
@@ -428,7 +424,7 @@ export const BUILDING_CATALOG: BuildingCatalogItem[] = [
   },
   {
     type: "warehouse",
-    name: "Warehouse",
+    name: "Village store",
     cost: 55,
     blurb: "+3 gold each trip",
     tripBonus: 3,
@@ -447,16 +443,6 @@ export const BUILDING_CATALOG: BuildingCatalogItem[] = [
     defense: 0,
   },
   {
-    type: "turret",
-    name: "Guard turret",
-    cost: 60,
-    blurb: "Defends your sector (+2 def)",
-    tripBonus: 0,
-    footprintM: 22,
-    hp: 4,
-    defense: 2,
-  },
-  {
     type: "shovel",
     name: "Clicker shovel",
     cost: 20,
@@ -468,8 +454,10 @@ export const BUILDING_CATALOG: BuildingCatalogItem[] = [
   },
 ];
 
-export function catalogItem(type: BuildingType): BuildingCatalogItem {
-  return BUILDING_CATALOG.find((b) => b.type === type) ?? BUILDING_CATALOG[0];
+export function catalogItem(type: BuildingType | string): BuildingCatalogItem {
+  return (
+    BUILDING_CATALOG.find((b) => b.type === type) ?? BUILDING_CATALOG[0]!
+  );
 }
 
 export function buildingCost(type: BuildingType): number {
@@ -485,7 +473,7 @@ export function buildingBonus(buildings: Building[]): number {
 /**
  * Simple combat:
  *  Attack = rockets×1 (munitions you fire — expended after the raid)
- *  Defense = house(1 if standing) + turrets×2
+ *  Defense = house(1 if standing)
  */
 export function attackPower(rockets: number): number {
   return Math.max(0, rockets);
@@ -497,8 +485,7 @@ export function defensePower(p: {
   houseHp?: number;
 }): number {
   const houseUp = Boolean(p.house) && (p.houseHp ?? 0) > 0;
-  const turrets = p.buildings.filter((b) => b.type === "turret").length;
-  return (houseUp ? 1 : 0) + turrets * 2;
+  return houseUp ? 1 : 0;
 }
 
 /** Human-readable breakdown for HUD / battle reports */
@@ -513,10 +500,5 @@ export function defenseBreakdown(p: {
   houseHp?: number;
 }): string {
   const houseUp = Boolean(p.house) && (p.houseHp ?? 0) > 0;
-  const turrets = p.buildings.filter((b) => b.type === "turret").length;
-  const parts = [
-    houseUp ? "house" : null,
-    turrets > 0 ? `${turrets} turret${turrets === 1 ? "" : "s"}` : null,
-  ].filter(Boolean);
-  return parts.length ? parts.join(" + ") : "no defense";
+  return houseUp ? "house" : "no defense";
 }

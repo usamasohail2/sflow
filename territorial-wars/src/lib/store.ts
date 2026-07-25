@@ -2134,12 +2134,10 @@ export async function attackSector(
   const destroyedNames: string[] = [];
   const damagedNames: string[] = [];
 
-  // Turrets first, then other buildings, house last
-  const targets = [...defender.buildings].sort((a, b) => {
-    if (a.type === "turret" && b.type !== "turret") return -1;
-    if (b.type === "turret" && a.type !== "turret") return 1;
-    return b.builtAt - a.builtAt;
-  });
+  // Newer buildings first, house last
+  const targets = [...defender.buildings].sort(
+    (a, b) => b.builtAt - a.builtAt
+  );
   const survivingBuildings = targets
     .map((b) => {
       if (remaining <= 0) return b;

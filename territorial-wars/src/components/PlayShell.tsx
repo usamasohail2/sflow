@@ -40,7 +40,6 @@ import {
   MillSprite,
   RocketSprite,
   ShovelSprite,
-  TurretSprite,
   VillagerSprite,
   WarehouseSprite,
   WellSprite,
@@ -169,7 +168,6 @@ function BuildingThumb({
 }) {
   if (type === "mill") return <MillSprite className={className} />;
   if (type === "warehouse") return <WarehouseSprite className={className} />;
-  if (type === "turret") return <TurretSprite className={className} />;
   if (type === "shovel") return <ShovelSprite className={className} />;
   return <WellSprite className={className} />;
 }
@@ -4131,17 +4129,15 @@ export function PlayShell() {
                       ? makeAzadPlacementSector(me.house)
                       : snap?.sectors.find((s) => s.id === me.homeSectorId);
                     const shortLabel =
-                      b.type === "turret"
-                        ? "Turret"
-                        : b.type === "warehouse"
-                          ? "Store"
-                          : b.type === "mill"
-                            ? "Mill"
-                            : b.type === "well"
-                              ? "Well"
-                              : b.type === "shovel"
-                                ? "Shovel"
-                                : b.name;
+                      b.type === "warehouse"
+                        ? "Store"
+                        : b.type === "mill"
+                          ? "Mill"
+                          : b.type === "well"
+                            ? "Well"
+                            : b.type === "shovel"
+                              ? "Shovel"
+                              : b.name;
                     return (
                       <button
                         key={b.type}
