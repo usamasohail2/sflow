@@ -8,6 +8,7 @@ import {
   beginTutorialTest,
   buildBuilding,
   buyRocket,
+  claimBusinessReview,
   claimSector,
   collectHidden,
   discoverSpot,
@@ -134,6 +135,9 @@ export async function POST(req: Request) {
     rockets?: number;
     /** Same-sector building to raze */
     buildingId?: string;
+    /** Google Maps business review reward */
+    placeKey?: string;
+    placeName?: string;
   };
 
   // Dev/test helper: hop between guest accounts (auth is disabled)
@@ -322,6 +326,24 @@ export async function POST(req: Request) {
     result = await razeBuilding(id, targetPlayerId, buildingId);
   } else if (body.action === "rename") {
     result = await renamePlayer(id, String(body.name || ""));
+  } else if (body.action === "claim_business_review") {
+    if (
+      !body.placeKey ||
+      !body.placeName ||
+      !Number.isFinite(body.lat) ||
+      !Number.isFinite(body.lng)
+    ) {
+      return withGuestCookie(
+        NextResponse.json({ error: "Pick a business first" }, { status: 400 }),
+        setCookie
+      );
+    }
+    result = await claimBusinessReview(id, {
+      placeKey: String(body.placeKey),
+      name: String(body.placeName),
+      lat: Number(body.lat),
+      lng: Number(body.lng),
+    });
   } else if (body.action === "begin_tutorial_test") {
     result = await beginTutorialTest(id);
   } else if (body.action === "end_tutorial_test") {

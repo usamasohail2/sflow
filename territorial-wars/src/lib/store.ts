@@ -10,6 +10,7 @@ import {
   HOUSE_FOOTPRINT_M,
   HOUSE_MAX_HP,
   INVITE_VILLAGER_BONUS,
+  REVIEW_VILLAGER_BONUS,
   MAX_ROAM_FINDS,
   RAZE_COOLDOWN_MS,
   ROAM_METERS_TO_SPAWN,
@@ -37,7 +38,6 @@ import { pointInOrNearRing, pointInRing } from "@/lib/geo";
 import {
   distMeters,
   offsetBearing,
-  offsetMeters,
   pickRoamGem,
   ringCentroid,
   seedSpotsForSector,
@@ -640,6 +640,7 @@ function normalizePlayer(raw: Player): Player {
   delete p.peakTanks;
   if (p.totalFarmed == null) p.totalFarmed = p.gold || 0;
   if (p.villagerPost === undefined) p.villagerPost = null;
+  if (!Array.isArray(p.reviewedPlaceIds)) p.reviewedPlaceIds = [];
   // Clamp building HP to the simplified scale (migrates old 100+ HP values)
   p.buildings = (p.buildings || []).map((b) => {
     const max = catalogItem(b.type).hp;
@@ -1003,6 +1004,7 @@ export async function ensurePlayer(
       totalFarmed: 0,
       buildings: [],
       discoveredSpotIds: [],
+      reviewedPlaceIds: [],
       inviteCode,
       invitedBy,
       lastGatherAt: now,
@@ -1142,6 +1144,7 @@ export async function beginTutorialTest(
     totalFarmed: 0,
     buildings: [],
     discoveredSpotIds: [],
+    reviewedPlaceIds: [],
     lastGatherAt: now,
     lastRoamSpawnAt: 0,
     lastAttackAt: 0,
@@ -1549,6 +1552,55 @@ export async function renamePlayer(
   if (!me) return { error: "Player missing" };
   await setPlayer({ ...me, name: trimmed, updatedAt: Date.now() });
   return { ok: true };
+}
+
+/**
+ * Reward +1 villager for reviewing a local business on Google Maps.
+ * Honor-system claim — one reward per place key, must be inside home sector.
+ */
+export async function claimBusinessReview(
+  playerId: string,
+  input: {
+    placeKey: string;
+    name: string;
+    lat: number;
+    lng: number;
+  }
+): Promise<{ ok: true; bonus: number } | { error: string }> {
+  await bootstrap();
+  const me = await getPlayer(playerId);
+  if (!me?.homeSectorId || !me.house) {
+    return { error: "Settle and place your house first" };
+  }
+
+  const placeKey = input.placeKey.trim().slice(0, 120);
+  const name = input.name.trim().slice(0, 80);
+  if (!placeKey || name.length < 2) return { error: "Invalid business" };
+  if (!Number.isFinite(input.lat) || !Number.isFinite(input.lng)) {
+    return { error: "Invalid location" };
+  }
+
+  const sectors = await getSectors();
+  const sector = sectors.find((s) => s.id === me.homeSectorId);
+  if (!sector) return { error: "Sector missing" };
+  if (!pointInOrNearRing({ lat: input.lat, lng: input.lng }, sector.ring, 40)) {
+    return { error: "That business is outside your sector" };
+  }
+
+  const reviewed = me.reviewedPlaceIds || [];
+  if (reviewed.includes(placeKey)) {
+    return { error: "You already claimed a villager for this place" };
+  }
+
+  const now = Date.now();
+  await setPlayer({
+    ...me,
+    villagers: (me.villagers || 0) + REVIEW_VILLAGER_BONUS,
+    reviewedPlaceIds: [...reviewed, placeKey],
+    updatedAt: now,
+  });
+  await flushStore();
+  return { ok: true, bonus: REVIEW_VILLAGER_BONUS };
 }
 
 export async function buildBuilding(

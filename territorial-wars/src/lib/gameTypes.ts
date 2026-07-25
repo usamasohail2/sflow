@@ -130,6 +130,8 @@ export type Player = {
   buildings: Building[];
   /** Hidden spots this player has found */
   discoveredSpotIds: string[];
+  /** Google Maps businesses reviewed for +villager rewards */
+  reviewedPlaceIds: string[];
   inviteCode: string;
   invitedBy: string | null;
   /** Anchor for gather accrual */
@@ -287,6 +289,8 @@ export const STARTING = {
 export const GOLD_COIN = "🪙";
 
 export const INVITE_VILLAGER_BONUS = 1;
+/** Villagers granted for reviewing a local business on Google Maps */
+export const REVIEW_VILLAGER_BONUS = 1;
 
 /** House ground radius (m) for overlap checks */
 export const HOUSE_FOOTPRINT_M = 30;

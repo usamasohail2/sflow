@@ -18,7 +18,14 @@ import {
 } from "@/components/Walkthrough";
 import { useMapPresence } from "@/hooks/useMapPresence";
 import type { LatLng } from "@/lib/gameTypes";
-import { INVITE_VILLAGER_BONUS } from "@/lib/gameTypes";
+import {
+  INVITE_VILLAGER_BONUS,
+  REVIEW_VILLAGER_BONUS,
+} from "@/lib/gameTypes";
+import {
+  googleMapsReviewUrl,
+  type MapBusiness,
+} from "@/lib/businesses";
 import {
   HouseSprite,
   MillSprite,
@@ -318,6 +325,9 @@ export function PlayShell() {
   const [locationFocus, setLocationFocus] = useState(0);
   /** Bump to re-fly the map when the same sector is picked again */
   const [sectorFocus, setSectorFocus] = useState(0);
+  const [reviewBiz, setReviewBiz] = useState<MapBusiness | null>(null);
+  const [reviewOpenedAt, setReviewOpenedAt] = useState<number | null>(null);
+  const [reviewReady, setReviewReady] = useState(false);
   const [musicOn, setMusicOn] = useState(false);
   const gpsWatchStarted = useRef(false);
   const identityChecked = useRef(false);
@@ -738,6 +748,11 @@ export function PlayShell() {
         id: "invite",
         label: "Invite a friend (+1 villager)",
         done: (snap?.inviteCount ?? 0) >= 1,
+      },
+      {
+        id: "review",
+        label: `Review a local business (+${REVIEW_VILLAGER_BONUS} villager)`,
+        done: (me.reviewedPlaceIds?.length ?? 0) >= 1,
       },
     ];
   }, [me, gemsFound, snap?.inviteCount]);
@@ -1163,6 +1178,22 @@ export function PlayShell() {
     return () => window.clearTimeout(t);
   }, [battleSummary, dismissBattle]);
 
+  // Enable "I left a review" after Maps has been open ~15s
+  useEffect(() => {
+    if (!reviewBiz || reviewOpenedAt == null) {
+      setReviewReady(false);
+      return;
+    }
+    const left = 15_000 - (Date.now() - reviewOpenedAt);
+    if (left <= 0) {
+      setReviewReady(true);
+      return;
+    }
+    setReviewReady(false);
+    const t = window.setTimeout(() => setReviewReady(true), left);
+    return () => window.clearTimeout(t);
+  }, [reviewBiz, reviewOpenedAt]);
+
   const launchAttack = async () => {
     if (!me?.house || !enemyPlayer) return;
     const b0 = enemyPlayer.buildings[0];
@@ -1435,6 +1466,13 @@ export function PlayShell() {
               showToast(`Collected +${GOLD_COIN}${d.gained}`);
             }
           })}
+          onSelectBusiness={(biz) => {
+            setReviewBiz(biz);
+            setReviewOpenedAt(null);
+            setReviewReady(false);
+            setSelectedPlayerId(null);
+            setRazeTarget(null);
+          }}
           onIntroComplete={() => {
             if (walkthroughArmed.current) return;
             walkthroughArmed.current = true;
@@ -2254,6 +2292,107 @@ export function PlayShell() {
             <div className="mx-auto mt-3 h-1 w-32 overflow-hidden rounded-full bg-[var(--wash)]">
               <div className="h-full w-1/2 animate-pulse bg-[var(--sand)]" />
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Google Maps business review → +villager */}
+      {reviewBiz && claimed && (
+        <div
+          className="absolute inset-x-2 bottom-[max(6.5rem,calc(env(safe-area-inset-bottom)+5.5rem))] z-30 sm:inset-x-auto sm:bottom-auto sm:left-3 sm:top-[max(4.5rem,calc(env(safe-area-inset-top)+3.75rem))] sm:w-[min(20rem,calc(100%-1.5rem))]"
+        >
+          <div className="hud-panel pointer-events-auto p-3.5">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="font-mono text-[8px] uppercase tracking-[0.2em] text-[var(--sand)]">
+                  Local business
+                </p>
+                <p className="truncate font-display text-lg text-[var(--ink)]">
+                  {reviewBiz.name}
+                </p>
+                {reviewBiz.address && (
+                  <p className="mt-0.5 line-clamp-2 text-[10px] text-[var(--ink-muted)]">
+                    {reviewBiz.address}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setReviewBiz(null);
+                  setReviewOpenedAt(null);
+                  setReviewReady(false);
+                }}
+                className="shrink-0 font-mono text-[14px] text-[var(--ink-faint)] hover:text-[var(--sand)]"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="mt-2 text-[11px] leading-snug text-[var(--ink-muted)]">
+              Leave a Google Maps review for this place in your sector and earn{" "}
+              <span className="text-[var(--sand)]">
+                +{REVIEW_VILLAGER_BONUS} villager
+              </span>
+              .
+            </p>
+            {me?.reviewedPlaceIds?.includes(reviewBiz.placeKey) ? (
+              <p className="mt-3 rounded-sm border border-[var(--field)] bg-[var(--wash)] px-2.5 py-2 text-center text-[11px] text-[var(--field-bright)]">
+                Already claimed — thanks for supporting local
+              </p>
+            ) : (
+              <div className="mt-3 flex flex-col gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.open(
+                      googleMapsReviewUrl(reviewBiz),
+                      "_blank",
+                      "noopener,noreferrer"
+                    );
+                    setReviewOpenedAt(Date.now());
+                  }}
+                  className="w-full rounded-sm bg-[var(--field)] px-3 py-2.5 text-sm font-bold text-white"
+                >
+                  Open in Google Maps
+                </button>
+                <button
+                  type="button"
+                  disabled={busy || !reviewReady}
+                  onClick={() => {
+                    void act("claim_business_review", {
+                      placeKey: reviewBiz.placeKey,
+                      placeName: reviewBiz.name,
+                      lat: reviewBiz.lat,
+                      lng: reviewBiz.lng,
+                    }).then((d) => {
+                      if (!d) return;
+                      playRecruitSound();
+                      showToast(
+                        `Review claimed — +${REVIEW_VILLAGER_BONUS} villager!`
+                      );
+                      setReviewBiz(null);
+                      setReviewOpenedAt(null);
+                      setReviewReady(false);
+                    });
+                  }}
+                  className="w-full rounded-sm border border-[var(--line-strong)] bg-[var(--wash)] px-3 py-2 text-xs font-semibold text-[var(--sand)] disabled:opacity-40"
+                  title={
+                    reviewOpenedAt == null
+                      ? "Open Google Maps and leave a review first"
+                      : reviewReady
+                        ? "Claim your villager"
+                        : "Finish your review, then claim"
+                  }
+                >
+                  {reviewOpenedAt == null
+                    ? "I left a review — claim villager"
+                    : reviewReady
+                      ? `Claim +${REVIEW_VILLAGER_BONUS} villager`
+                      : "Leave your review…"}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -40,7 +40,12 @@ import {
   SPAWN_COOLDOWN_MS,
   catalogItem,
 } from "@/lib/gameTypes";
-import { closeRing, pointInRing, wallBandCoordinates } from "@/lib/geo";
+import {
+  closeRing,
+  pointInOrNearRing,
+  pointInRing,
+  wallBandCoordinates,
+} from "@/lib/geo";
 
 /** Thin extruded wall band — lines stay on the single perimeter */
 const SECTOR_WALL_M = 16;
@@ -91,6 +96,7 @@ import {
 } from "@/components/sprites";
 import { ResourceNode } from "@/components/ResourceNode";
 import { ViewerMarkers } from "@/components/ViewerMarkers";
+import { findNearbyBusiness } from "@/lib/businesses";
 import type { PresencePeer } from "@/lib/presenceTypes";
 
 const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
@@ -204,6 +210,14 @@ type Props = {
     exploreMs: number;
   }) => boolean | Promise<boolean>;
   onCollectHidden?: (spotId: string) => void;
+  /** Tap a Mapbox POI / business inside the home sector */
+  onSelectBusiness?: (business: {
+    placeKey: string;
+    name: string;
+    address?: string;
+    lat: number;
+    lng: number;
+  }) => void;
   /** Fires once when the globe → sector intro finishes */
   onIntroComplete?: () => void;
   /** Pulsing map beacon during guided house/villager placement */
@@ -295,6 +309,7 @@ export function GameMap({
   onPlace,
   onSpawnFind,
   onCollectHidden,
+  onSelectBusiness,
   onIntroComplete,
   guidePulse = false,
   syncingBuildingIds = [],
@@ -1029,6 +1044,34 @@ export function GameMap({
           }
           const id = e.features?.[0]?.properties?.id;
           if (typeof id === "string") onSelect(id);
+
+          // Tap a nearby business in your sector → Google review reward sheet
+          if (
+            onSelectBusiness &&
+            me?.homeSectorId &&
+            homeSector &&
+            showDetail &&
+            pointInOrNearRing(
+              { lat: e.lngLat.lat, lng: e.lngLat.lng },
+              homeSector.ring,
+              25
+            )
+          ) {
+            const at = { lat: e.lngLat.lat, lng: e.lngLat.lng };
+            void findNearbyBusiness(at, TOKEN).then((biz) => {
+              if (!biz) return;
+              if (
+                !pointInOrNearRing(
+                  { lat: biz.lat, lng: biz.lng },
+                  homeSector.ring,
+                  40
+                )
+              ) {
+                return;
+              }
+              onSelectBusiness(biz);
+            });
+          }
         }}
         style={{ width: "100%", height: "100%" }}
       >
@@ -1663,38 +1706,11 @@ export function GameMap({
         </div>
       )}
 
-      {me?.homeSectorId && !placing && (
-        <div className="pointer-events-none absolute bottom-[7.75rem] left-1/2 z-10 w-[min(16.5rem,calc(100%-7rem))] -translate-x-1/2 space-y-1.5 sm:bottom-[8.75rem] sm:w-[min(18rem,calc(100%-20rem))]">
-          {spawnFlash && (
-            <p className="hud-chip px-2.5 py-1.5 text-center text-[11px] font-semibold text-[var(--field-bright)] sm:px-3 sm:text-xs">
-              {spawnFlash}
-            </p>
-          )}
-          {!showDetail ? (
-            <p className="hud-chip px-2.5 py-1.5 text-center font-mono text-[8px] text-[var(--ink-muted)] sm:text-[9px]">
-              Overview — zoom in for streets
-            </p>
-          ) : zoom < EXPLORE_ZOOM ? (
-            <p className="hud-chip px-2.5 py-1.5 text-center font-mono text-[8px] text-[var(--ink-muted)] sm:text-[9px]">
-              Zoom in & roam for resources
-            </p>
-          ) : exploring ? (
-            <div className="hud-chip px-2.5 py-1.5 sm:px-3">
-              <p className="text-center font-mono text-[8px] text-[var(--sand)] sm:text-[9px]">
-                Exploring — roam for finds
-              </p>
-              <div className="mx-auto mt-1 h-1.5 max-w-[10rem] overflow-hidden rounded-full bg-[var(--wash)]">
-                <div
-                  className="h-full bg-[var(--sand)] transition-[width] duration-150"
-                  style={{ width: `${huntPct}%` }}
-                />
-              </div>
-            </div>
-          ) : (
-            <p className="hud-chip px-2.5 py-1.5 text-center font-mono text-[8px] text-[var(--ink-muted)] sm:text-[9px]">
-              Pan into your sector to hunt
-            </p>
-          )}
+      {me?.homeSectorId && !placing && spawnFlash && (
+        <div className="pointer-events-none absolute bottom-[7.75rem] left-1/2 z-10 w-[min(16.5rem,calc(100%-7rem))] -translate-x-1/2 sm:bottom-[8.75rem] sm:w-[min(18rem,calc(100%-20rem))]">
+          <p className="hud-chip px-2.5 py-1.5 text-center text-[11px] font-semibold text-[var(--field-bright)] sm:px-3 sm:text-xs">
+            {spawnFlash}
+          </p>
         </div>
       )}
     </div>
