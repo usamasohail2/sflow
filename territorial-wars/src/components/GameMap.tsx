@@ -236,7 +236,10 @@ export function GameMap({
     if (!map) return;
     map.flyTo({
       center: [userLocation.lng, userLocation.lat],
-      zoom: Math.max(map.getZoom(), 14.2),
+      zoom: Math.min(
+        PLAY_MAX_ZOOM,
+        Math.max(map.getZoom(), PLAY_ZOOM)
+      ),
       duration: 1200,
       essential: true,
     });
@@ -249,7 +252,10 @@ export function GameMap({
     if (!map) return;
     map.easeTo({
       center: [userLocation.lng, userLocation.lat],
-      zoom: Math.max(map.getZoom(), 14),
+      zoom: Math.min(
+        PLAY_MAX_ZOOM,
+        Math.max(map.getZoom(), PLAY_ZOOM)
+      ),
       duration: 800,
     });
   }, [selectedId, userLocationFocus]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -529,10 +535,12 @@ export function GameMap({
         initialViewState={{
           longitude: 73.045,
           latitude: 33.71,
-          zoom: 12.2,
+          zoom: PLAY_ZOOM,
           pitch: 55,
           bearing: -28,
         }}
+        minZoom={PLAY_MIN_ZOOM}
+        maxZoom={PLAY_MAX_ZOOM}
         mapStyle="mapbox://styles/mapbox/standard"
         onLoad={(e) => {
           // Dusk atmosphere; Standard style ships 3D buildings by default
@@ -732,15 +740,6 @@ export function GameMap({
                   maxHp={HOUSE_MAX_HP}
                   width={38}
                 />
-                <span
-                  className={`absolute -top-2 left-1/2 -translate-x-1/2 rounded-sm px-1 font-mono text-[8px] ${
-                    p.id === me?.id
-                      ? "bg-[rgba(10,14,10,0.85)] text-[var(--field-bright)]"
-                      : "bg-[rgba(10,14,10,0.85)] text-[var(--signal-bright)]"
-                  }`}
-                >
-                  {p.id === me?.id ? "You" : p.name}
-                </span>
               </button>
             </Marker>
           ))}
@@ -879,21 +878,21 @@ export function GameMap({
               className={`relative ${v.mine ? "" : "rival-villager"}`}
               title={`${v.name}'s villager`}
             >
+              <span
+                className={`absolute -top-3.5 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-sm px-1 font-mono text-[8px] ${
+                  v.mine
+                    ? "bg-[rgba(10,14,10,0.85)] text-[var(--field-bright)]"
+                    : "bg-[rgba(10,14,10,0.9)] text-[var(--signal-bright)] ring-1 ring-[var(--signal)]"
+                }`}
+              >
+                {v.mine ? "You" : v.name}
+              </span>
               <VillagerSprite walking className="h-10 w-10 drop-shadow-md" />
               {v.villagers > 1 && (
                 <span className="absolute -right-1 -top-1 rounded-full bg-[var(--surface)] px-1 font-mono text-[9px] text-[var(--field-bright)]">
                   ×{v.villagers}
                 </span>
               )}
-              <span
-                className={`absolute -bottom-3.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-sm px-1 font-mono text-[8px] ${
-                  v.mine
-                    ? "bg-[rgba(10,14,10,0.85)] text-[var(--field-bright)]"
-                    : "bg-[rgba(10,14,10,0.9)] text-[var(--signal-bright)] ring-1 ring-[var(--signal)]"
-                }`}
-              >
-                {v.mine ? "You" : v.name.split(" ")[0]}
-              </span>
             </div>
           </Marker>
         ))}

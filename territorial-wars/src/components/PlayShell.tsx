@@ -798,15 +798,6 @@ export function PlayShell() {
   const settlersHere = selected
     ? settlersBySector.get(selected.id) ?? []
     : [];
-  /** Only show attack targets in other sectors — neighbors are allies */
-  const viewingEnemySector = Boolean(
-    claimed && selected && me?.homeSectorId && selected.id !== me.homeSectorId
-  );
-  const rivalsHere = viewingEnemySector
-    ? settlersHere.filter(
-        (p) => p.id !== me?.id && p.homeSectorId !== me?.homeSectorId
-      )
-    : [];
   const canAttackEnemy = Boolean(
     enemyPlayer &&
       me?.homeSectorId &&
@@ -814,6 +805,7 @@ export function PlayShell() {
       enemyPlayer.homeSectorId &&
       enemyPlayer.homeSectorId !== me.homeSectorId
   );
+  /** Attack modal only after tapping an enemy house */
   const enemySelected = claimed && canAttackEnemy;
 
   // Google auth required — gate the game until signed in
@@ -859,9 +851,8 @@ export function PlayShell() {
           impact={impact}
           onSelect={(id) => {
             setSelectedId(id);
-            if (!me?.homeSectorId || id === me.homeSectorId) {
-              setSelectedPlayerId(null);
-            }
+            // Sector taps never open attack UI — only houses do
+            setSelectedPlayerId(null);
           }}
           onSelectPlayer={(id) => {
             if (!id) {
@@ -1376,46 +1367,7 @@ export function PlayShell() {
         </div>
       )}
 
-      {/* ---- Attack picker: only when viewing another sector ---- */}
-      {viewingEnemySector &&
-        selected &&
-        !placing &&
-        !needsHouseRebuild &&
-        !enemySelected &&
-        rivalsHere.length > 0 && (
-        <div
-          className={`absolute left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-xs -translate-x-1/2 sm:bottom-8 ${
-            buildOpen ? "bottom-56" : "bottom-28"
-          }`}
-        >
-          <div className="hud-panel p-3 text-center">
-            <p className="font-display text-lg text-[var(--ink)]">
-              {selected.name}
-            </p>
-            <p className="text-[10px] text-[var(--ink-muted)]">
-              Enemy sector — tap a house, or pick a rival below
-            </p>
-            <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto text-left">
-              {rivalsHere.map((p) => (
-                <li key={p.id}>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedPlayerId(p.id)}
-                    className="flex w-full items-center justify-between rounded-sm border border-[var(--line)] px-2 py-1.5 text-[11px] text-[var(--ink-muted)] hover:border-[var(--sand)] hover:text-[var(--sand)]"
-                  >
-                    <span>{p.name}</span>
-                    <span className="font-mono text-[9px]">
-                      {p.soldiers}⚔ {p.tanks}🛡
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      )}
-
-      {/* ---- Attack panel: rival settler selected ---- */}
+      {/* ---- Attack panel: only after tapping an enemy house ---- */}
       {enemySelected && enemyPlayer && !placing && !needsHouseRebuild && (
         <div
           className={`absolute left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-xs -translate-x-1/2 sm:bottom-8 ${
