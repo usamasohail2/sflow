@@ -798,8 +798,23 @@ export function PlayShell() {
   const settlersHere = selected
     ? settlersBySector.get(selected.id) ?? []
     : [];
-  const rivalsHere = settlersHere.filter((p) => p.id !== me?.id);
-  const enemySelected = claimed && Boolean(enemyPlayer && enemyPlayer.id !== me?.id);
+  /** Only show attack targets in other sectors — neighbors are allies */
+  const viewingEnemySector = Boolean(
+    claimed && selected && me?.homeSectorId && selected.id !== me.homeSectorId
+  );
+  const rivalsHere = viewingEnemySector
+    ? settlersHere.filter(
+        (p) => p.id !== me?.id && p.homeSectorId !== me?.homeSectorId
+      )
+    : [];
+  const canAttackEnemy = Boolean(
+    enemyPlayer &&
+      me?.homeSectorId &&
+      enemyPlayer.id !== me.id &&
+      enemyPlayer.homeSectorId &&
+      enemyPlayer.homeSectorId !== me.homeSectorId
+  );
+  const enemySelected = claimed && canAttackEnemy;
 
   // Google auth required — gate the game until signed in
   if (snap && !snap.authDisabled && !me) {
@@ -843,7 +858,19 @@ export function PlayShell() {
           march={march}
           impact={impact}
           onSelect={setSelectedId}
-          onSelectPlayer={setSelectedPlayerId}
+          onSelectPlayer={(id) => {
+            const target = snap?.players.find((p) => p.id === id);
+            if (
+              target?.homeSectorId &&
+              me?.homeSectorId &&
+              target.homeSectorId === me.homeSectorId
+            ) {
+              setSelectedPlayerId(null);
+              showToast("Can't attack settlers in your own sector");
+              return;
+            }
+            setSelectedPlayerId(id);
+          }}
           onPlace={(lat, lng) => void handlePlace(lat, lng)}
           onSpawnFind={(p) => spawnFind(p)}
           onCollectHidden={(spotId) => void act("collect_hidden", { spotId }).then((d) => {
@@ -1332,8 +1359,13 @@ export function PlayShell() {
         </div>
       )}
 
-      {/* ---- Sector settlers / attack target picker ---- */}
-      {claimed && selected && !placing && !needsHouseRebuild && !enemySelected && rivalsHere.length > 0 && (
+      {/* ---- Attack picker: only when viewing another sector ---- */}
+      {viewingEnemySector &&
+        selected &&
+        !placing &&
+        !needsHouseRebuild &&
+        !enemySelected &&
+        rivalsHere.length > 0 && (
         <div
           className={`absolute left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-xs -translate-x-1/2 sm:bottom-8 ${
             buildOpen ? "bottom-56" : "bottom-28"
@@ -1344,7 +1376,7 @@ export function PlayShell() {
               {selected.name}
             </p>
             <p className="text-[10px] text-[var(--ink-muted)]">
-              Tap a house on the map, or pick a rival below
+              Enemy sector — tap a house, or pick a rival below
             </p>
             <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto text-left">
               {rivalsHere.map((p) => (

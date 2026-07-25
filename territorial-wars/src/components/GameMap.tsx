@@ -120,8 +120,8 @@ type Props = {
   march: MarchAnim | null;
   impact: ImpactAnim | null;
   onSelect: (id: string) => void;
-  /** Tap another settler's house to target them */
-  onSelectPlayer?: (playerId: string) => void;
+  /** Tap another settler's house to target them (null clears) */
+  onSelectPlayer?: (playerId: string | null) => void;
   selectedPlayerId?: string | null;
   onPlace?: (lat: number, lng: number) => void;
   onSpawnFind?: (payload: {
@@ -637,12 +637,26 @@ export function GameMap({
                 onClick={(e) => {
                   e.stopPropagation();
                   if (p.homeSectorId) onSelect(p.homeSectorId);
-                  if (p.id !== me?.id) onSelectPlayer?.(p.id);
+                  // Same-sector settlers are neighbors — not attack targets
+                  if (
+                    p.id !== me?.id &&
+                    p.homeSectorId &&
+                    me?.homeSectorId &&
+                    p.homeSectorId !== me.homeSectorId
+                  ) {
+                    onSelectPlayer?.(p.id);
+                  } else {
+                    onSelectPlayer?.(null);
+                  }
                 }}
                 title={
                   p.id === me?.id
                     ? "Your house"
-                    : `Tap to target ${p.name}`
+                    : p.homeSectorId &&
+                        me?.homeSectorId &&
+                        p.homeSectorId === me.homeSectorId
+                      ? `${p.name} (same sector — can't attack)`
+                      : `Tap to target ${p.name}`
                 }
               >
                 <HouseSprite className="h-10 w-11 drop-shadow-md" />

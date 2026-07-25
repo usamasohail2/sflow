@@ -1203,6 +1203,9 @@ export async function attackSector(
   if (!defender?.homeSectorId) {
     return { error: "That settler has no village" };
   }
+  if (defender.homeSectorId === me.homeSectorId) {
+    return { error: "Can't attack settlers in your own sector" };
+  }
   const targetSectorId = defender.homeSectorId;
 
   const atk = attackPower(me.soldiers, me.tanks || 0);
