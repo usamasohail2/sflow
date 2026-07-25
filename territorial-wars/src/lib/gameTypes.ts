@@ -240,6 +240,9 @@ export const STARTING = {
   gold: 0,
 } as const;
 
+/** Coin glyph for gold amounts — never use a trailing "g" (reads as kg) */
+export const GOLD_COIN = "🪙";
+
 export const INVITE_VILLAGER_BONUS = 1;
 
 /** House ground radius (m) for overlap checks */

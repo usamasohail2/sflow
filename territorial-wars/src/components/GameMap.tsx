@@ -24,6 +24,7 @@ import {
   INTRO_FLY_MS,
   INTRO_GLOBE_ZOOM,
   INTRO_TITLE_HOLD_MS,
+  GOLD_COIN,
   PLAY_BEARING,
   PLAY_MAX_ZOOM,
   PLAY_MIN_ZOOM,
@@ -497,7 +498,7 @@ export function GameMap({
             name: s.name,
             mine: me?.homeSectorId === s.id ? 1 : 0,
             economy: farmed,
-            overviewLabel: `${s.name}\n${formatEconomy(farmed)}g`,
+            overviewLabel: `${s.name}\n${GOLD_COIN} ${formatEconomy(farmed)}`,
           },
           geometry: {
             type: "Polygon" as const,

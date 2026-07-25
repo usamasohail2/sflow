@@ -1533,7 +1533,7 @@ export async function buildBuilding(
   // Accrue pending gold first so affordability reflects reality
   const spots = await getSpots();
   const { player: fresh } = await accruePlayer(me, spots, true);
-  if (fresh.gold < cat.cost) return { error: `Need ${cat.cost} gold` };
+  if (fresh.gold < cat.cost) return { error: `Need 🪙${cat.cost}` };
 
   const now = Date.now();
   await setPlayer({

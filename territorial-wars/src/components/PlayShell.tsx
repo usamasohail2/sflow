@@ -34,6 +34,7 @@ import type {
   Player,
 } from "@/lib/gameTypes";
 import {
+  GOLD_COIN,
   HOUSE_MAX_HP,
   ROCKET_COST,
   attackPower,
@@ -698,7 +699,7 @@ export function PlayShell() {
       const gem = String(data.gem || "resource");
       showToast(
         data.bonus
-          ? `${gem[0].toUpperCase()}${gem.slice(1)} found ahead! +${data.bonus}g`
+          ? `${gem[0].toUpperCase()}${gem.slice(1)} found ahead! +${GOLD_COIN}${data.bonus}`
           : "A resource appeared ahead!"
       );
       return true;
@@ -1127,7 +1128,7 @@ export function PlayShell() {
           onCollectHidden={(spotId) => void act("collect_hidden", { spotId }).then((d) => {
             if (d?.gained) {
               playCoinSound();
-              showToast(`Collected +${d.gained} gold`);
+              showToast(`Collected +${GOLD_COIN}${d.gained}`);
             }
           })}
           onIntroComplete={() => {
@@ -1165,7 +1166,7 @@ export function PlayShell() {
               title={claimed ? `${Math.floor(displayGold)} gold · +${perTrip}/trip` : `${Math.floor(displayGold)} gold`}
             >
               <span aria-hidden className="text-[13px] leading-none">
-                ⛃
+                {GOLD_COIN}
               </span>
               <span className="leading-none tabular-nums">
                 {Math.floor(displayGold)}
@@ -1267,7 +1268,9 @@ export function PlayShell() {
                     >
                       <span className="sector-board-rank">{r.rank}</span>
                       <span className="sector-board-name">{r.name}</span>
-                      <span className="sector-board-score">{r.farmed}</span>
+                      <span className="sector-board-score">
+                        {GOLD_COIN} {r.farmed}
+                      </span>
                     </li>
                   );
                 })}
@@ -1395,7 +1398,9 @@ export function PlayShell() {
                   <p className="mt-0.5 font-mono text-[9px] text-[var(--ink-faint)]">
                     {new Date(e.ts).toLocaleTimeString()}
                     {e.destroyed ? ` · destroyed ${e.destroyed}` : ""}
-                    {e.lootedGold > 0 ? ` · ${e.lootedGold}g loot` : ""}
+                    {e.lootedGold > 0
+                      ? ` · ${GOLD_COIN}${e.lootedGold} loot`
+                      : ""}
                   </p>
                   <button
                     type="button"
@@ -1452,7 +1457,7 @@ export function PlayShell() {
                       <span className="block text-[9px] text-[var(--ink-faint)]">
                         {snap?.sectors.find((s) => s.id === p.homeSectorId)
                           ?.name ?? "no sector"}{" "}
-                        · {p.gold}g · {p.rockets || 0}🚀
+                        · {GOLD_COIN} {p.gold} · {p.rockets || 0}🚀
                       </span>
                     </span>
                   </button>
@@ -1540,7 +1545,7 @@ export function PlayShell() {
                       </span>
                     </span>
                     <span className="shrink-0 font-mono font-semibold text-[#e8cf8a]">
-                      {r.farmed}
+                      {GOLD_COIN} {r.farmed}
                     </span>
                   </li>
                 );
@@ -1781,8 +1786,8 @@ export function PlayShell() {
               <div className="battle-stat">
                 <span className="battle-stat-val">
                   {battleSummary.lootedGold > 0
-                    ? `+${battleSummary.lootedGold}`
-                    : "0"}
+                    ? `+${GOLD_COIN}${battleSummary.lootedGold}`
+                    : `${GOLD_COIN}0`}
                 </span>
                 <span className="battle-stat-lbl">Gold</span>
               </div>
@@ -2160,7 +2165,10 @@ export function PlayShell() {
                       }
                     >
                       <BuildingThumb type={b.type} className="h-9 w-10" />
-                      <span className="cameo-cost">{b.cost}g</span>
+                      <span className="cameo-cost">
+                        {GOLD_COIN}
+                        {b.cost}
+                      </span>
                       <span className="cameo-label">{b.name}</span>
                     </button>
                   );
@@ -2232,7 +2240,7 @@ export function PlayShell() {
                   title={
                     !me.house
                       ? "Rebuild your house first"
-                      : `Buy rocket — ${ROCKET_COST}g · +1 attack (expended when you fire)`
+                      : `Buy rocket — ${GOLD_COIN}${ROCKET_COST} · +1 attack (expended when you fire)`
                   }
                   onClick={() =>
                     void act("buy_rocket").then((d) => {
@@ -2244,7 +2252,10 @@ export function PlayShell() {
                   }
                 >
                   <RocketSprite className="h-9 w-9" />
-                  <span className="cameo-cost">{ROCKET_COST}g</span>
+                  <span className="cameo-cost">
+                    {GOLD_COIN}
+                    {ROCKET_COST}
+                  </span>
                   <span className="cameo-label">Buy +1</span>
                 </button>
 
