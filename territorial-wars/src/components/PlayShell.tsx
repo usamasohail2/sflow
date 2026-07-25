@@ -3451,6 +3451,14 @@ export function PlayShell() {
                 >
                   Choose a sector on the map
                 </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void resetMyProgress()}
+                  className="mt-2 text-[10px] font-mono text-[var(--signal-bright)] underline decoration-dotted underline-offset-2 hover:text-white disabled:opacity-40"
+                >
+                  Clear my village data
+                </button>
               </>
             )}
 
