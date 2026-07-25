@@ -101,7 +101,12 @@ export const SPAWN_COOLDOWN_MS = 22_000;
 /** Cap finds spawned in a sector */
 export const MAX_ROAM_FINDS = 14;
 
-export type BuildingType = "mill" | "warehouse" | "well" | "turret";
+export type BuildingType =
+  | "mill"
+  | "warehouse"
+  | "well"
+  | "turret"
+  | "shovel";
 
 export type Building = {
   id: string;
@@ -149,6 +154,8 @@ export type Player = {
   lastAttackAt: number;
   /** Same-sector raze cooldown anchor */
   lastRazeAt: number;
+  /** Soft pace limit for clicker-shovel taps (server-only) */
+  lastShovelClickAt?: number;
   createdAt: number;
   updatedAt: number;
 };
@@ -440,6 +447,16 @@ export const BUILDING_CATALOG: BuildingCatalogItem[] = [
     footprintM: 22,
     hp: 4,
     defense: 2,
+  },
+  {
+    type: "shovel",
+    name: "Clicker shovel",
+    cost: 20,
+    blurb: "Tap for +1 gold each click",
+    tripBonus: 0,
+    footprintM: 20,
+    hp: 2,
+    defense: 0,
   },
 ];
 

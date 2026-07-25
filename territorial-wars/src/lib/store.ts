@@ -1892,6 +1892,49 @@ export async function buildBuilding(
   return { ok: true };
 }
 
+/** Manual dig — each click on your shovel building grants +1 gold. */
+export async function clickShovel(
+  playerId: string,
+  buildingId: string
+): Promise<{ ok: true; gold: number; totalFarmed: number } | { error: string }> {
+  await bootstrap();
+  const me = await getPlayer(playerId);
+  if (!me?.homeSectorId) return { error: "Settle first" };
+  if (!me.house) return { error: "Rebuild your house first" };
+  if (!buildingId) return { error: "Missing shovel" };
+
+  const shovel = me.buildings.find(
+    (b) => b.id === buildingId && b.type === "shovel"
+  );
+  if (!shovel) return { error: "Shovel missing — place one near your house" };
+  if ((shovel.hp ?? 0) <= 0) return { error: "That shovel is destroyed" };
+
+  // Soft rate limit (~25 taps/sec) — still feels instant for humans
+  const now = Date.now();
+  const last = me.lastShovelClickAt;
+  if (typeof last === "number" && now - last < 40) {
+    return {
+      ok: true,
+      gold: me.gold,
+      totalFarmed: me.totalFarmed || 0,
+    };
+  }
+
+  const spots = await getSpots();
+  const { player: fresh } = await accruePlayer(me, spots, true);
+  const nextGold = fresh.gold + 1;
+  const nextFarmed = (fresh.totalFarmed || 0) + 1;
+  await setPlayer({
+    ...fresh,
+    gold: nextGold,
+    totalFarmed: nextFarmed,
+    lastShovelClickAt: now,
+    updatedAt: now,
+  });
+
+  return { ok: true, gold: nextGold, totalFarmed: nextFarmed };
+}
+
 export async function buyRocket(
   playerId: string
 ): Promise<{ ok: true } | { error: string }> {

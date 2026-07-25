@@ -39,6 +39,7 @@ import {
   HouseSprite,
   MillSprite,
   RocketSprite,
+  ShovelSprite,
   TurretSprite,
   VillagerSprite,
   WarehouseSprite,
@@ -169,7 +170,26 @@ function BuildingThumb({
   if (type === "mill") return <MillSprite className={className} />;
   if (type === "warehouse") return <WarehouseSprite className={className} />;
   if (type === "turret") return <TurretSprite className={className} />;
+  if (type === "shovel") return <ShovelSprite className={className} />;
   return <WellSprite className={className} />;
+}
+
+const SHOVEL_INTRO_KEY = "itw_shovel_intro_v1";
+
+function readShovelIntroDone(): boolean {
+  try {
+    return window.localStorage.getItem(SHOVEL_INTRO_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function markShovelIntroDone(): void {
+  try {
+    window.localStorage.setItem(SHOVEL_INTRO_KEY, "1");
+  } catch {
+    /* ignore */
+  }
 }
 
 function destroyedCountFrom(destroyed: string | null): number {
@@ -557,6 +577,14 @@ export function PlayShell() {
   const [reviewBiz, setReviewBiz] = useState<MapBusiness | null>(null);
   const [reviewOpenedAt, setReviewOpenedAt] = useState<number | null>(null);
   const [reviewReady, setReviewReady] = useState(false);
+  /** Own clicker shovel currently open */
+  const [shovelId, setShovelId] = useState<string | null>(null);
+  const [showShovelIntro, setShowShovelIntro] = useState(false);
+  const [shovelDigging, setShovelDigging] = useState(false);
+  const [shovelFloats, setShovelFloats] = useState<
+    { id: number; x: number }[]
+  >([]);
+  const shovelFloatSeq = useRef(0);
   const [musicOn, setMusicOn] = useState(false);
   const gpsWatchStarted = useRef(false);
   const identityChecked = useRef(false);
@@ -1547,7 +1575,11 @@ export function PlayShell() {
       setDisplayGold((g) => g + cat.cost);
       return;
     }
-    showToast("Building synced");
+    showToast(
+      kind === "shovel"
+        ? "Shovel ready — tap it on the map to dig for gold"
+        : "Building synced"
+    );
   };
 
   const cancelPlacement = () => {
@@ -1600,6 +1632,15 @@ export function PlayShell() {
     }
     setGemClaimAlert(null);
   }, [gemClaimAlert]);
+
+  // Close digger if the shovel was razed / lost
+  useEffect(() => {
+    if (!shovelId || !me) return;
+    const still = me.buildings.some(
+      (b) => b.id === shovelId && b.type === "shovel"
+    );
+    if (!still) closeShovel();
+  }, [shovelId, me]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Corner toasts auto-dismiss after 7s
   useEffect(() => {
@@ -1750,6 +1791,124 @@ export function PlayShell() {
     showToast(`Cleared ${ownerName}'s ${name} — ground is free`);
   };
 
+  const openShovel = (buildingId: string) => {
+    setSelectedPlayerId(null);
+    setRazeTarget(null);
+    setShovelId(buildingId);
+    if (!readShovelIntroDone()) {
+      setShowShovelIntro(true);
+    }
+  };
+
+  const dismissShovelIntro = () => {
+    markShovelIntroDone();
+    setShowShovelIntro(false);
+  };
+
+  const closeShovel = () => {
+    setShovelId(null);
+    setShowShovelIntro(false);
+    setShovelDigging(false);
+  };
+
+  /** Optimistic +1 gold dig — syncs in background without blocking the UI */
+  const digShovel = () => {
+    if (!shovelId || !me || busyRef.current) return;
+    const stillMine = me.buildings.some(
+      (b) => b.id === shovelId && b.type === "shovel"
+    );
+    if (!stillMine) {
+      closeShovel();
+      setError("Shovel missing — place another one");
+      window.setTimeout(() => setError(null), 3200);
+      return;
+    }
+
+    setDisplayGold((g) => g + 1);
+    setSnap((prev) => {
+      if (!prev?.me) return prev;
+      const nextMe: Player = {
+        ...prev.me,
+        gold: prev.me.gold + 1,
+        totalFarmed: (prev.me.totalFarmed || 0) + 1,
+        updatedAt: Date.now(),
+      };
+      lastGoodMe.current = nextMe;
+      return {
+        ...prev,
+        me: nextMe,
+        players: prev.players.map((p) =>
+          p.id === nextMe.id
+            ? {
+                ...p,
+                gold: nextMe.gold,
+                totalFarmed: nextMe.totalFarmed,
+              }
+            : p
+        ),
+      };
+    });
+
+    playCoinSound();
+    setShovelDigging(true);
+    window.setTimeout(() => setShovelDigging(false), 180);
+    const fid = ++shovelFloatSeq.current;
+    const x = 36 + Math.random() * 28;
+    setShovelFloats((list) => [...list.slice(-8), { id: fid, x }]);
+    window.setTimeout(() => {
+      setShovelFloats((list) => list.filter((f) => f.id !== fid));
+    }, 700);
+
+    const buildingId = shovelId;
+    void fetch("/api/game", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "click_shovel", buildingId }),
+    })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          // Roll back the optimistic +1
+          setDisplayGold((g) => Math.max(0, g - 1));
+          setSnap((prev) => {
+            if (!prev?.me) return prev;
+            const nextMe: Player = {
+              ...prev.me,
+              gold: Math.max(0, prev.me.gold - 1),
+              totalFarmed: Math.max(0, (prev.me.totalFarmed || 0) - 1),
+              updatedAt: Date.now(),
+            };
+            return {
+              ...prev,
+              me: nextMe,
+              players: prev.players.map((p) =>
+                p.id === nextMe.id
+                  ? {
+                      ...p,
+                      gold: nextMe.gold,
+                      totalFarmed: nextMe.totalFarmed,
+                    }
+                  : p
+              ),
+            };
+          });
+          if (data?.error) {
+            setError(String(data.error));
+            window.setTimeout(() => setError(null), 3200);
+          }
+          return;
+        }
+        // Soft-sync gold if the server is ahead (accrued gather, etc.)
+        const serverGold = (data as GameSnapshot)?.me?.gold;
+        if (typeof serverGold === "number") {
+          setDisplayGold((g) => Math.max(g, serverGold));
+        }
+      })
+      .catch(() => {
+        /* keep optimistic gold — next poll will reconcile */
+      });
+  };
+
   // Google auth required — gate the game until signed in
   if (snap && !snap.authDisabled && !me) {
     return (
@@ -1885,6 +2044,7 @@ export function PlayShell() {
           }}
           onSelectPlayer={(id) => {
             setRazeTarget(null);
+            setShovelId(null);
             if (!id) {
               setSelectedPlayerId(null);
               return;
@@ -1906,7 +2066,9 @@ export function PlayShell() {
           onSelectRaze={(target) => {
             setSelectedPlayerId(null);
             setRazeTarget(target);
+            setShovelId(null);
           }}
+          onSelectShovel={openShovel}
           selectedRazeBuildingId={razeTarget?.buildingId ?? null}
           onPlace={(lat, lng) => void handlePlace(lat, lng)}
           onSpawnFind={(p) => spawnFind(p)}
@@ -2933,6 +3095,100 @@ export function PlayShell() {
         </div>
       )}
 
+      {/* First-time shovel explain */}
+      {showShovelIntro && shovelId && (
+        <div className="absolute inset-0 z-[55] flex items-end justify-center bg-black/55 p-3 sm:items-center">
+          <div
+            className="hud-panel w-full max-w-sm p-4 text-center"
+            role="dialog"
+            aria-label="Clicker shovel"
+          >
+            <div className="mx-auto mb-2 flex justify-center">
+              <ShovelSprite className="h-16 w-16" />
+            </div>
+            <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-[var(--ink-faint)]">
+              New building
+            </p>
+            <h2 className="mt-1 font-display text-2xl text-[var(--ink)]">
+              Clicker shovel
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-[var(--ink-muted)]">
+              Tap the shovel to dig.{" "}
+              <strong className="text-[var(--sand)]">Each click gives +1 gold</strong>
+              — no wait, no trip. Plant it near your house and mash when you need a
+              quick stash.
+            </p>
+            <button
+              type="button"
+              onClick={dismissShovelIntro}
+              className="mt-4 w-full rounded-sm bg-[var(--signal)] px-3 py-2.5 text-sm font-bold text-white"
+            >
+              Got it — start digging
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Clicker shovel dig panel */}
+      {shovelId && !showShovelIntro && (
+        <div className="absolute inset-x-0 bottom-0 z-[50] flex justify-center p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pointer-events-none">
+          <div
+            className="shovel-panel pointer-events-auto hud-panel w-full max-w-sm p-3 text-center"
+            role="dialog"
+            aria-label="Dig for gold"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="text-left">
+                <p className="font-mono text-[8px] uppercase tracking-[0.2em] text-[var(--ink-faint)]">
+                  Clicker shovel
+                </p>
+                <p className="font-display text-lg text-[var(--ink)]">
+                  Dig for gold
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeShovel}
+                className="font-mono text-[14px] text-[var(--ink-faint)] hover:text-[var(--sand)]"
+                aria-label="Close shovel"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="mt-0.5 text-left text-[11px] text-[var(--ink-muted)]">
+              Each tap = +1 <GoldCoinIcon size={11} className="inline-block align-[-2px]" />
+            </p>
+            <div className="relative mx-auto mt-2 flex h-36 w-full max-w-[14rem] items-center justify-center">
+              {shovelFloats.map((f) => (
+                <span
+                  key={f.id}
+                  className="shovel-float"
+                  style={{ left: `${f.x}%` }}
+                >
+                  +1
+                </span>
+              ))}
+              <button
+                type="button"
+                data-nohover="1"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  digShovel();
+                }}
+                className={`shovel-dig-btn ${shovelDigging ? "is-digging" : ""}`}
+                aria-label="Dig — gain one gold"
+              >
+                <ShovelSprite
+                  digging={shovelDigging}
+                  className="h-20 w-20 sm:h-24 sm:w-24"
+                />
+                <span className="shovel-dig-label">DIG</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Toast / error */}
       {(toast || error) && !battleSummary && !savingLabel && (
         <div className="pointer-events-none absolute left-1/2 top-14 z-40 -translate-x-1/2">
@@ -3665,7 +3921,9 @@ export function PlayShell() {
                             ? "Mill"
                             : b.type === "well"
                               ? "Well"
-                              : b.name;
+                              : b.type === "shovel"
+                                ? "Shovel"
+                                : b.name;
                     return (
                       <button
                         key={b.type}

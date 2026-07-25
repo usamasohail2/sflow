@@ -307,6 +307,52 @@ export function WarehouseSprite({
   );
 }
 
+/** Dig-site shovel — clicker gold building. */
+export function ShovelSprite({
+  className = "",
+  title = "Clicker shovel",
+  digging = false,
+}: SpriteProps & { digging?: boolean }) {
+  return (
+    <svg
+      className={`house-sprite shovel-sprite ${digging ? "is-digging" : ""} ${className}`}
+      viewBox="0 0 36 32"
+      width="52"
+      height="46"
+      role="img"
+      aria-label={title}
+    >
+      <title>{title}</title>
+      <ellipse cx="18" cy="30" rx="10" ry="1.8" fill="rgba(0,0,0,0.35)" />
+      {/* dirt mound */}
+      <path
+        d="M6 27 C8 22 12 20 18 19.5 C24 20 28 22 30 27 C26 29 22 29.5 18 29.5 C14 29.5 10 29 6 27 Z"
+        fill="#8b5a2b"
+      />
+      <path
+        d="M9 26 C12 22.8 15 21.2 18 20.8 C21 21.4 23.5 23 25.5 25.5 C22 27.2 19 27.6 16 27.4 C13 27.2 10.5 26.6 9 26 Z"
+        fill="#a67c52"
+      />
+      {/* sparkles / gold flecks */}
+      <circle cx="12" cy="24" r="0.9" fill="#e8cf8a" />
+      <circle cx="22.5" cy="23.2" r="0.7" fill="#e8cf8a" />
+      <circle cx="17" cy="25.5" r="0.55" fill="#f3e0a8" />
+      {/* shovel planted in the mound */}
+      <g className="shovel-tool" transform="translate(20 8) rotate(18)">
+        <rect x="-1" y="0" width="2" height="14" rx="0.8" fill="#8b5a2b" />
+        <rect x="-0.5" y="1" width="0.7" height="11" rx="0.3" fill="#c4a06a" opacity="0.45" />
+        <rect x="-2.2" y="-2" width="4.4" height="2.4" rx="0.7" fill="#6b4e2e" />
+        <path
+          d="M-3.6 13.2 L3.6 13.2 L2.6 17.4 Q0 18.8 -2.6 17.4 Z"
+          fill="#9aa3a0"
+          stroke="#5c6562"
+          strokeWidth="0.35"
+        />
+      </g>
+    </svg>
+  );
+}
+
 /** Village well with rope bucket. */
 export function WellSprite({
   className = "",

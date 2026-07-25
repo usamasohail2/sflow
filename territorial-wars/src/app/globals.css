@@ -707,6 +707,101 @@ button.cameo:not(:disabled):hover {
   }
 }
 
+.shovel-sprite.is-digging {
+  animation: shovel-bounce 0.18s ease-in-out;
+}
+
+@keyframes shovel-bounce {
+  0% {
+    transform: translateY(0) rotate(0deg);
+  }
+  40% {
+    transform: translateY(5px) rotate(8deg);
+  }
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+}
+
+.map-unit-tag-dig {
+  margin-bottom: 2px;
+  padding: 1px 6px 2px;
+  border-radius: 3px;
+  border: 1px solid color-mix(in srgb, var(--sand) 50%, var(--line));
+  background: color-mix(in srgb, #1a1610 90%, var(--sand));
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--sand);
+}
+
+.shovel-panel {
+  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.45);
+}
+
+.shovel-dig-btn {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 8.5rem;
+  height: 8.5rem;
+  border-radius: 999px;
+  border: 2px solid color-mix(in srgb, var(--sand) 55%, var(--line));
+  background:
+    radial-gradient(circle at 50% 35%, rgba(232, 207, 138, 0.18), transparent 55%),
+    color-mix(in srgb, var(--wash) 80%, #000);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 6px 18px rgba(0, 0, 0, 0.45);
+  transition: transform 0.08s ease, border-color 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+.shovel-dig-btn:active,
+.shovel-dig-btn.is-digging {
+  transform: scale(0.94);
+  border-color: var(--sand);
+}
+
+.shovel-dig-label {
+  margin-top: 2px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.28em;
+  color: var(--sand);
+}
+
+.shovel-float {
+  position: absolute;
+  bottom: 55%;
+  z-index: 2;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px;
+  font-weight: 800;
+  color: #e8cf8a;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  animation: shovel-float-up 0.7s ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes shovel-float-up {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-42px) scale(1.15);
+  }
+}
+
 .hud-gold {
   font-variant-numeric: tabular-nums;
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);

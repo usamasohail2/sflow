@@ -92,6 +92,7 @@ import {
   HouseSprite,
   MillSprite,
   RocketSprite,
+  ShovelSprite,
   TurretSprite,
   VillagerSprite,
   WarehouseSprite,
@@ -191,6 +192,8 @@ type Props = {
   onSelectRaze?: (
     target: { playerId: string; buildingId: string } | null
   ) => void;
+  /** Tap your own clicker shovel to dig for gold */
+  onSelectShovel?: (buildingId: string) => void;
   /** Live camera peers floating above the map */
   presencePeers?: PresencePeer[];
   presenceSelf?: {
@@ -236,6 +239,8 @@ function BuildingSprite({ type }: { type: Building["type"] }) {
     return <WarehouseSprite className="h-9 w-10 drop-shadow-md" />;
   if (type === "turret")
     return <TurretSprite className="h-9 w-10 drop-shadow-md" />;
+  if (type === "shovel")
+    return <ShovelSprite className="h-9 w-10 drop-shadow-md" />;
   return <WellSprite className="h-9 w-10 drop-shadow-md" />;
 }
 
@@ -308,6 +313,7 @@ export function GameMap({
   onSelectPlayer,
   selectedPlayerId = null,
   onSelectRaze,
+  onSelectShovel,
   selectedRazeBuildingId = null,
   onPlace,
   onSpawnFind,
@@ -503,7 +509,7 @@ export function GameMap({
     mapReady,
     sectors.length,
     me?.homeSectorId,
-    homeSector?.id,
+    homeSector,
     isAzad,
     finishIntro,
     applyBasemapLabels,
@@ -1498,6 +1504,16 @@ export function GameMap({
                         onClick={(e) => {
                           e.stopPropagation();
                           if (syncing) return;
+                          if (
+                            p.id === me?.id &&
+                            b.type === "shovel" &&
+                            onSelectShovel
+                          ) {
+                            onSelectPlayer?.(null);
+                            onSelectRaze?.(null);
+                            onSelectShovel(b.id);
+                            return;
+                          }
                           if (canRaid) {
                             onSelectRaze?.(null);
                             onSelectPlayer?.(p.id);
@@ -1515,13 +1531,15 @@ export function GameMap({
                         title={
                           syncing
                             ? `Syncing ${bName}…`
-                            : p.id === me?.id
-                              ? `Your ${bName}`
-                              : canRaid
-                                ? `Tap to raid ${p.name}`
-                                : canRaze
-                                  ? `Clear ${p.name}'s ${bName} to free ground`
-                                  : `${p.name}'s ${bName}`
+                            : p.id === me?.id && b.type === "shovel"
+                              ? "Tap to dig — +1 gold each click"
+                              : p.id === me?.id
+                                ? `Your ${bName}`
+                                : canRaid
+                                  ? `Tap to raid ${p.name}`
+                                  : canRaze
+                                    ? `Clear ${p.name}'s ${bName} to free ground`
+                                    : `${p.name}'s ${bName}`
                         }
                       >
                         {relation === "ally" && !syncing && (
@@ -1540,6 +1558,13 @@ export function GameMap({
                         )}
                         <BuildingSprite type={b.type} />
                         <HpBar hp={b.hp ?? maxHp} maxHp={maxHp} width={38} />
+                        {p.id === me?.id &&
+                          b.type === "shovel" &&
+                          !syncing && (
+                            <span className="map-unit-tag map-unit-tag-dig">
+                              Dig
+                            </span>
+                          )}
                         {relation === "enemy" && !syncing && (
                           <span className="map-unit-dot map-unit-dot-enemy" />
                         )}

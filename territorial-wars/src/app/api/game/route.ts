@@ -11,6 +11,7 @@ import {
   claimAzadUmeed,
   claimBusinessReview,
   claimSector,
+  clickShovel,
   collectHidden,
   discoverSpot,
   endTutorialTest,
@@ -303,6 +304,14 @@ export async function POST(req: Request) {
       Number(body.lat),
       Number(body.lng)
     );
+  } else if (body.action === "click_shovel") {
+    if (!body.buildingId) {
+      return withGuestCookie(
+        NextResponse.json({ error: "Missing shovel" }, { status: 400 }),
+        setCookie
+      );
+    }
+    result = await clickShovel(id, body.buildingId);
   } else if (
     body.action === "buy_rocket" ||
     body.action === "recruit_soldier" ||
