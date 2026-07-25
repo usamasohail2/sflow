@@ -102,6 +102,8 @@ export async function POST(req: Request) {
     name?: string;
     lat?: number;
     lng?: number;
+    villagerLat?: number;
+    villagerLng?: number;
     bearing?: number;
     zoom?: number;
     roamMeters?: number;
@@ -134,7 +136,18 @@ export async function POST(req: Request) {
         setCookie
       );
     }
-    result = await claimSector(id, body.sectorId);
+    const housePos =
+      Number.isFinite(body.lat) && Number.isFinite(body.lng)
+        ? { lat: Number(body.lat), lng: Number(body.lng) }
+        : undefined;
+    const villagerPos =
+      Number.isFinite(body.villagerLat) && Number.isFinite(body.villagerLng)
+        ? {
+            lat: Number(body.villagerLat),
+            lng: Number(body.villagerLng),
+          }
+        : undefined;
+    result = await claimSector(id, body.sectorId, housePos, villagerPos);
   } else if (body.action === "spawn_find") {
     const lat = Number(body.lat);
     const lng = Number(body.lng);

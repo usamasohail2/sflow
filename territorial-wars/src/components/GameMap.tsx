@@ -48,16 +48,40 @@ export type MarchAnim = {
   durationMs: number;
 };
 
+export type PlacingKind = BuildingType | "house" | "villager";
+
+export type Placing = {
+  kind: PlacingKind;
+  /** Sector the placement must land inside */
+  sector: Sector;
+};
+
+const VILLAGER_FOOTPRINT_M = 8;
+
+function placingFootprint(kind: PlacingKind): number {
+  if (kind === "house") return HOUSE_FOOTPRINT_M;
+  if (kind === "villager") return VILLAGER_FOOTPRINT_M;
+  return catalogItem(kind).footprintM;
+}
+
+function placingLabel(kind: PlacingKind): string {
+  if (kind === "house") return "house";
+  if (kind === "villager") return "villager";
+  return catalogItem(kind).name.toLowerCase();
+}
+
 type Props = {
   sectors: Sector[];
   spots: ResourceSpot[];
   me: Player | null;
   players: PublicPlayer[];
   selectedId: string | null;
-  placingType: BuildingType | null;
+  placing: Placing | null;
+  /** House chosen but not yet committed (during claim flow) */
+  previewHouse: LatLng | null;
   march: MarchAnim | null;
   onSelect: (id: string) => void;
-  onPlaceBuilding?: (lat: number, lng: number) => void;
+  onPlace?: (lat: number, lng: number) => void;
   onSpawnFind?: (payload: {
     lat: number;
     lng: number;
@@ -111,10 +135,11 @@ export function GameMap({
   me,
   players,
   selectedId,
-  placingType,
+  placing,
+  previewHouse,
   march,
   onSelect,
-  onPlaceBuilding,
+  onPlace,
   onSpawnFind,
   onCollectHidden,
   className = "",
@@ -185,11 +210,12 @@ export function GameMap({
         );
       }
     }
-    if (placingType && hover && homeSector) {
-      const fp = catalogItem(placingType).footprintM;
-      const inSector = pointInRing(hover, homeSector.ring);
+    if (placing && hover) {
+      const fp = placingFootprint(placing.kind);
+      const inSector = pointInRing(hover, placing.sector.ring);
       let clear = inSector;
-      if (clear) {
+      // Villager only needs to stand inside the sector
+      if (clear && placing.kind !== "villager") {
         for (const p of players) {
           for (const b of p.buildings) {
             if (
@@ -215,7 +241,7 @@ export function GameMap({
       );
     }
     return { type: "FeatureCollection", features: feats };
-  }, [players, me, placingType, hover, homeSector]);
+  }, [players, me, placing, hover]);
 
   const mySpots = useMemo(() => {
     if (!me?.homeSectorId) return [];
@@ -229,9 +255,10 @@ export function GameMap({
   }, [mySpots, me]);
 
   const phase = me ? gatherPhase(me, now) : 0;
+  const walkOrigin = me?.villagerPost ?? me?.house ?? null;
   const villagerPos =
-    me?.house && easyTarget
-      ? walkPosition(me.house, easyTarget, phase)
+    walkOrigin && easyTarget
+      ? walkPosition(walkOrigin, easyTarget, phase)
       : null;
 
   // March animation position
@@ -367,16 +394,16 @@ export function GameMap({
         }}
         mapStyle="mapbox://styles/mapbox/dark-v11"
         interactiveLayerIds={["sector-fill"]}
-        cursor={placingType ? "crosshair" : "grab"}
+        cursor={placing ? "crosshair" : "grab"}
         onMove={onMove}
         onMouseMove={(e: MapMouseEvent) => {
-          if (placingType) {
+          if (placing) {
             setHover({ lat: e.lngLat.lat, lng: e.lngLat.lng });
           }
         }}
         onClick={(e: MapMouseEvent) => {
-          if (placingType && onPlaceBuilding) {
-            onPlaceBuilding(e.lngLat.lat, e.lngLat.lng);
+          if (placing && onPlace) {
+            onPlace(e.lngLat.lat, e.lngLat.lng);
             return;
           }
           const id = e.features?.[0]?.properties?.id;
@@ -619,6 +646,17 @@ export function GameMap({
           </Marker>
         )}
 
+        {/* Pending house during claim flow */}
+        {previewHouse && (
+          <Marker
+            longitude={previewHouse.lng}
+            latitude={previewHouse.lat}
+            anchor="bottom"
+          >
+            <HouseSprite className="h-10 w-11 opacity-70" />
+          </Marker>
+        )}
+
         {/* Marching army */}
         {marchPos && (
           <Marker
@@ -638,17 +676,16 @@ export function GameMap({
       </MapboxMap>
 
       {/* Placement banner */}
-      {placingType && (
+      {placing && (
         <div className="pointer-events-none absolute left-1/2 top-14 z-10 -translate-x-1/2">
           <p className="hud-chip px-4 py-2 text-center text-xs font-semibold text-[var(--sand)]">
-            Tap inside your sector to place the{" "}
-            {catalogItem(placingType).name.toLowerCase()} — green ring = clear
-            ground
+            Tap inside {placing.sector.name} to place your{" "}
+            {placingLabel(placing.kind)} — green ring = clear ground
           </p>
         </div>
       )}
 
-      {me?.homeSectorId && !placingType && (
+      {me?.homeSectorId && !placing && (
         <div className="pointer-events-none absolute bottom-24 left-1/2 z-10 w-[min(22rem,calc(100%-1rem))] -translate-x-1/2 space-y-2 sm:bottom-4">
           {spawnFlash && (
             <p className="hud-chip px-3 py-2 text-center text-xs font-semibold text-[var(--field-bright)]">

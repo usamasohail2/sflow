@@ -103,6 +103,7 @@ function migrateLegacy(raw: unknown): GameState {
       if (p.lastAttackAt == null) p.lastAttackAt = 0;
       if (p.soldiers == null) p.soldiers = 0;
       if (p.tanks == null) p.tanks = 0;
+      if (p.villagerPost === undefined) p.villagerPost = null;
       if (p.totalFarmed == null) p.totalFarmed = p.gold || 0;
       p.buildings = (p.buildings || []).map((b) => ({
         ...b,
@@ -197,6 +198,7 @@ function ensureRivalGarrison(state: GameState): boolean {
       name: "Rival Garrison",
       homeSectorId: BOT_SECTOR_ID,
       house: center,
+      villagerPost: null,
       villagers: 1,
       soldiers: 1,
       tanks: 0,
@@ -359,6 +361,7 @@ export async function ensurePlayer(
       image: image ?? null,
       homeSectorId: null,
       house: null,
+      villagerPost: null,
       villagers: 0,
       soldiers: 0,
       tanks: 0,
@@ -417,7 +420,9 @@ export async function getSnapshot(meId?: string | null): Promise<GameSnapshot> {
 
 export async function claimSector(
   playerId: string,
-  sectorId: string
+  sectorId: string,
+  housePos?: { lat: number; lng: number },
+  villagerPos?: { lat: number; lng: number }
 ): Promise<{ ok: true } | { error: string }> {
   const { state } = await loadAccruedState();
   const me = state.players[playerId];
@@ -433,7 +438,48 @@ export async function claimSector(
   );
   if (taken) return { error: "That sector is already claimed" };
 
-  const house = ringCentroid(sector.ring);
+  // Player places the house; fall back to centroid for API callers
+  const house =
+    housePos &&
+    Number.isFinite(housePos.lat) &&
+    Number.isFinite(housePos.lng)
+      ? housePos
+      : ringCentroid(sector.ring);
+  if (!pointInRing(house, sector.ring)) {
+    return { error: "Place your house inside the sector" };
+  }
+  for (const p of Object.values(state.players)) {
+    for (const b of p.buildings) {
+      if (
+        distMeters(house, { lat: b.lat, lng: b.lng }) <
+        HOUSE_FOOTPRINT_M + catalogItem(b.type).footprintM
+      ) {
+        return { error: "That ground is occupied — pick a clear spot" };
+      }
+    }
+    if (
+      p.house &&
+      distMeters(house, p.house) < HOUSE_FOOTPRINT_M * 2
+    ) {
+      return { error: "Too close to another house" };
+    }
+  }
+
+  let villagerPost: { lat: number; lng: number } | null = null;
+  if (
+    villagerPos &&
+    Number.isFinite(villagerPos.lat) &&
+    Number.isFinite(villagerPos.lng)
+  ) {
+    if (!pointInRing(villagerPos, sector.ring)) {
+      return { error: "Place your villager inside the sector" };
+    }
+    if (distMeters(villagerPos, house) > 400) {
+      return { error: "Villager must stay near the house (within 400m)" };
+    }
+    villagerPost = villagerPos;
+  }
+
   const now = Date.now();
   state.spots = seedSpotsForSector(sector, house, state.spots);
 
@@ -445,6 +491,7 @@ export async function claimSector(
     ...me,
     homeSectorId: sectorId,
     house,
+    villagerPost,
     villagers: STARTING.villagers,
     soldiers: 0,
     tanks: 0,

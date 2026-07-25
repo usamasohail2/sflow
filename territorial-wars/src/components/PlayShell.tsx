@@ -2,7 +2,12 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { GameMap, type MarchAnim } from "@/components/GameMap";
+import {
+  GameMap,
+  type MarchAnim,
+  type Placing,
+} from "@/components/GameMap";
+import type { LatLng } from "@/lib/gameTypes";
 import {
   HouseSprite,
   MillSprite,
@@ -44,7 +49,8 @@ export function PlayShell() {
   const [displayGold, setDisplayGold] = useState(0);
   const [showMissions, setShowMissions] = useState(false);
   const [showRanks, setShowRanks] = useState(false);
-  const [placing, setPlacing] = useState<BuildingType | null>(null);
+  const [placing, setPlacing] = useState<Placing | null>(null);
+  const [pendingHouse, setPendingHouse] = useState<LatLng | null>(null);
   const [march, setMarch] = useState<MarchAnim | null>(null);
 
   const load = useCallback(async () => {
@@ -222,14 +228,54 @@ export function PlayShell() {
     }
   };
 
-  const placeBuilding = async (lat: number, lng: number) => {
+  const handlePlace = async (lat: number, lng: number) => {
     if (!placing) return;
-    const data = await act("build", { buildingType: placing, lat, lng });
+
+    if (placing.kind === "house") {
+      // Stash the house, then ask for the villager
+      setPendingHouse({ lat, lng });
+      setPlacing({ kind: "villager", sector: placing.sector });
+      showToast("House set — now place your villager nearby");
+      return;
+    }
+
+    if (placing.kind === "villager") {
+      if (!pendingHouse) {
+        setPlacing({ kind: "house", sector: placing.sector });
+        return;
+      }
+      const data = await act("claim_sector", {
+        sectorId: placing.sector.id,
+        lat: pendingHouse.lat,
+        lng: pendingHouse.lng,
+        villagerLat: lat,
+        villagerLng: lng,
+      });
+      if (data) {
+        showToast(`${placing.sector.name} claimed — your village is live!`);
+        setPlacing(null);
+        setPendingHouse(null);
+      }
+      // On error stay in villager placement so they can adjust
+      return;
+    }
+
+    // Building placement
+    const data = await act("build", {
+      buildingType: placing.kind,
+      lat,
+      lng,
+    });
     if (data) {
       showToast("Building placed");
       setPlacing(null);
     }
     // On error keep placement mode so they can pick a clear spot
+  };
+
+  const cancelPlacement = () => {
+    setPlacing(null);
+    setPendingHouse(null);
   };
 
   const launchAttack = async () => {
@@ -300,10 +346,11 @@ export function PlayShell() {
           me={me}
           players={snap?.players ?? []}
           selectedId={selectedId}
-          placingType={placing}
+          placing={placing}
+          previewHouse={pendingHouse}
           march={march}
           onSelect={setSelectedId}
-          onPlaceBuilding={(lat, lng) => void placeBuilding(lat, lng)}
+          onPlace={(lat, lng) => void handlePlace(lat, lng)}
           onSpawnFind={(p) => spawnFind(p)}
           onCollectHidden={(spotId) => void act("collect_hidden", { spotId }).then((d) => {
             if (d?.gained) showToast(`Collected +${d.gained} gold`);
@@ -454,7 +501,7 @@ export function PlayShell() {
         <div className="absolute bottom-24 left-1/2 z-30 -translate-x-1/2 sm:bottom-8">
           <button
             type="button"
-            onClick={() => setPlacing(null)}
+            onClick={cancelPlacement}
             className="hud-chip px-4 py-2 text-xs font-semibold text-[var(--signal-bright)]"
           >
             ✕ Cancel placement
@@ -463,7 +510,7 @@ export function PlayShell() {
       )}
 
       {/* ---- Claim prompt (unclaimed) ---- */}
-      {!claimed && selected && (
+      {!claimed && selected && !placing && (
         <div className="absolute bottom-24 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-sm -translate-x-1/2 sm:bottom-8">
           <div className="hud-panel p-4 text-center">
             <p className="font-display text-2xl text-[var(--ink)]">
@@ -477,14 +524,14 @@ export function PlayShell() {
             <button
               type="button"
               disabled={busy || !me || sectorOwner.has(selected.id)}
-              onClick={() =>
-                void act("claim_sector").then((d) => {
-                  if (d) showToast("Sector claimed — house + villager ready");
-                })
-              }
+              onClick={() => {
+                setPendingHouse(null);
+                setPlacing({ kind: "house", sector: selected });
+                showToast("Tap the map to place your house");
+              }}
               className="mt-3 w-full rounded-sm bg-[var(--signal)] px-3 py-2.5 text-sm font-bold text-white shadow-[0_2px_8px_rgba(0,0,0,0.5)] disabled:opacity-40"
             >
-              ⚑ Claim {selected.name}
+              ⚑ Claim {selected.name} — place your house
             </button>
             <div className="mt-2 flex flex-wrap justify-center gap-1.5">
               {(snap?.sectors ?? []).map((s) => (
@@ -617,7 +664,10 @@ export function PlayShell() {
             <div className="grid grid-cols-2 gap-1.5">
               {(snap?.buildingCatalog ?? []).map((b) => {
                 const affordable = displayGold >= b.cost;
-                const active = placing === b.type;
+                const active = placing?.kind === b.type;
+                const homeSector = snap?.sectors.find(
+                  (s) => s.id === me.homeSectorId
+                );
                 return (
                   <button
                     key={b.type}
@@ -625,10 +675,14 @@ export function PlayShell() {
                     className={`cameo ${active ? "cameo-active" : ""} ${
                       affordable && !active ? "cameo-blink" : ""
                     }`}
-                    disabled={busy || !affordable}
+                    disabled={busy || !affordable || !homeSector}
                     title={`${b.name} — ${b.blurb} · ${b.footprintM}m ground`}
                     onClick={() =>
-                      setPlacing((cur) => (cur === b.type ? null : b.type))
+                      setPlacing((cur) =>
+                        cur?.kind === b.type || !homeSector
+                          ? null
+                          : { kind: b.type, sector: homeSector }
+                      )
                     }
                   >
                     <BuildingThumb type={b.type} className="h-9 w-10" />

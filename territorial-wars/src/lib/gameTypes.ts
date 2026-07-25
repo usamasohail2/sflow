@@ -80,6 +80,8 @@ export type Player = {
   /** Permanent home — set once, never changed */
   homeSectorId: string | null;
   house: LatLng | null;
+  /** Where the villager idles / starts gather trips (player-placed) */
+  villagerPost: LatLng | null;
   villagers: number;
   soldiers: number;
   tanks: number;
