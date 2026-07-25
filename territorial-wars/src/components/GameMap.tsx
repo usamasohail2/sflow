@@ -329,7 +329,12 @@ export function GameMap({
   /** Walking villagers for every settled player (mine + rivals) */
   const villagerMarkers = useMemo(() => {
     return players
-      .filter((p) => p.homeSectorId && p.house && p.villagers > 0)
+      .filter(
+        (p) =>
+          p.homeSectorId &&
+          p.villagers > 0 &&
+          (p.house || p.villagerPost)
+      )
       .map((p) => {
         const origin = p.villagerPost ?? p.house!;
         const easy =
@@ -337,7 +342,7 @@ export function GameMap({
           null;
         const target = easy
           ? { lat: easy.lat, lng: easy.lng }
-          : offsetMeters(p.house!, 36, 18);
+          : offsetMeters(origin, 36, 18);
         // Shared clock with a per-player offset so loops don't sync perfectly
         let offset = 0;
         for (let i = 0; i < p.id.length; i++) offset += p.id.charCodeAt(i);
@@ -781,7 +786,7 @@ export function GameMap({
             );
           })}
 
-        {/* Walking villagers — every settler */}
+        {/* Walking villagers — every settler (mine + rivals) */}
         {villagerMarkers.map((v) => (
           <Marker
             key={`villager-${v.id}`}
@@ -789,18 +794,25 @@ export function GameMap({
             latitude={v.pos.lat}
             anchor="bottom"
           >
-            <div className="relative" title={`${v.name}'s villager`}>
-              <VillagerSprite walking className="h-9 w-9" />
+            <div
+              className={`relative ${v.mine ? "" : "rival-villager"}`}
+              title={`${v.name}'s villager`}
+            >
+              <VillagerSprite walking className="h-10 w-10 drop-shadow-md" />
               {v.villagers > 1 && (
                 <span className="absolute -right-1 -top-1 rounded-full bg-[var(--surface)] px-1 font-mono text-[9px] text-[var(--field-bright)]">
                   ×{v.villagers}
                 </span>
               )}
-              {!v.mine && (
-                <span className="absolute -bottom-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-sm bg-[rgba(10,14,10,0.85)] px-1 font-mono text-[7px] text-[var(--ink-muted)]">
-                  {v.name.split(" ")[0]}
-                </span>
-              )}
+              <span
+                className={`absolute -bottom-3.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-sm px-1 font-mono text-[8px] ${
+                  v.mine
+                    ? "bg-[rgba(10,14,10,0.85)] text-[var(--field-bright)]"
+                    : "bg-[rgba(10,14,10,0.9)] text-[var(--signal-bright)] ring-1 ring-[var(--signal)]"
+                }`}
+              >
+                {v.mine ? "You" : v.name.split(" ")[0]}
+              </span>
             </div>
           </Marker>
         ))}

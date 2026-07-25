@@ -606,3 +606,18 @@ button.cameo:not(:disabled):hover {
     0 0 16px rgba(143, 224, 152, 0.5) !important;
 }
 
+/* Rival villagers — slight pulse so they're easy to spot on the map */
+.rival-villager {
+  animation: rival-bob 1.8s ease-in-out infinite;
+}
+
+@keyframes rival-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+

@@ -206,6 +206,8 @@ export function PlayShell() {
   const [showPlayers, setShowPlayers] = useState(false);
   const [showBattles, setShowBattles] = useState(false);
   const [placing, setPlacing] = useState<Placing | null>(null);
+  /** Mobile: build tray collapsed by default so it doesn't stack over the army row */
+  const [buildOpen, setBuildOpen] = useState(false);
   const [pendingHouse, setPendingHouse] = useState<LatLng | null>(null);
   const [march, setMarch] = useState<MarchAnim | null>(null);
   const [impact, setImpact] = useState<ImpactAnim | null>(null);
@@ -214,7 +216,7 @@ export function PlayShell() {
   );
   /** Live GPS pin shown on the map while picking a sector */
   const [liveLocation, setLiveLocation] = useState<LatLng | null>(null);
-  /** GPS fix confirmed inside the sector being claimed */
+  /** GPS fix confirmed inside the sector being settled */
   const [gpsFix, setGpsFix] = useState<{
     sectorId: string;
     lat: number;
@@ -439,7 +441,7 @@ export function PlayShell() {
     if (!me) return [];
     return [
       {
-        id: "claim",
+        id: "settle",
         label: "Settle in a sector",
         done: Boolean(me.homeSectorId),
       },
@@ -581,6 +583,17 @@ export function PlayShell() {
     setError(null);
     showToast(`Demo: GPS bypassed for ${sector.name}`);
   };
+
+  // Open build tray when a building is being placed; keep army row clear otherwise
+  useEffect(() => {
+    if (
+      placing &&
+      placing.kind !== "house" &&
+      placing.kind !== "villager"
+    ) {
+      setBuildOpen(true);
+    }
+  }, [placing]);
 
   // While choosing a sector, show the player's live GPS on the map
   useEffect(() => {
@@ -1193,15 +1206,15 @@ export function PlayShell() {
 
       {/* ---- Settle prompt (no home yet) ---- */}
       {!claimed && selected && !placing && (
-        <div className="absolute bottom-36 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-sm -translate-x-1/2 sm:bottom-8">
+        <div className="absolute bottom-28 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-sm -translate-x-1/2 sm:bottom-8">
           <div className="hud-panel p-4 text-center">
             <p className="font-display text-2xl text-[var(--ink)]">
               {selected.name}
             </p>
             <p className="mt-1 text-[11px] text-[var(--ink-muted)]">
               {settlersHere.length > 0
-                ? `${settlersHere.length} settler${settlersHere.length === 1 ? "" : "s"} here — you can join them.`
-                : "No one here yet. Confirm GPS, then place your house."}
+                ? `${settlersHere.length} settler${settlersHere.length === 1 ? "" : "s"} here — sectors are shared, join them.`
+                : "Sectors are shared. Confirm GPS, then place your house."}
             </p>
             {settlersHere.length > 0 && (
               <p className="mt-1 text-[10px] text-[var(--sand)]">
@@ -1286,7 +1299,11 @@ export function PlayShell() {
 
       {/* ---- Rebuild house after it was destroyed ---- */}
       {needsHouseRebuild && me?.homeSectorId && !placing && (
-        <div className="absolute bottom-36 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-sm -translate-x-1/2 sm:bottom-8">
+        <div
+          className={`absolute left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-sm -translate-x-1/2 sm:bottom-8 ${
+            buildOpen ? "bottom-56" : "bottom-28"
+          }`}
+        >
           <div className="hud-panel p-4 text-center">
             <p className="font-display text-xl text-[var(--signal-bright)]">
               House destroyed
@@ -1317,7 +1334,11 @@ export function PlayShell() {
 
       {/* ---- Sector settlers / attack target picker ---- */}
       {claimed && selected && !placing && !needsHouseRebuild && !enemySelected && rivalsHere.length > 0 && (
-        <div className="absolute bottom-36 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-xs -translate-x-1/2 sm:bottom-8">
+        <div
+          className={`absolute left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-xs -translate-x-1/2 sm:bottom-8 ${
+            buildOpen ? "bottom-56" : "bottom-28"
+          }`}
+        >
           <div className="hud-panel p-3 text-center">
             <p className="font-display text-lg text-[var(--ink)]">
               {selected.name}
@@ -1347,7 +1368,11 @@ export function PlayShell() {
 
       {/* ---- Attack panel: rival settler selected ---- */}
       {enemySelected && enemyPlayer && !placing && !needsHouseRebuild && (
-        <div className="absolute bottom-36 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-xs -translate-x-1/2 sm:bottom-8">
+        <div
+          className={`absolute left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-xs -translate-x-1/2 sm:bottom-8 ${
+            buildOpen ? "bottom-56" : "bottom-28"
+          }`}
+        >
           <div className="hud-panel p-3 text-center">
             <p className="font-display text-lg text-[var(--ink)]">
               {enemyPlayer.name}
@@ -1405,10 +1430,76 @@ export function PlayShell() {
         </div>
       )}
 
-      {/* ---- Bottom dock: army + build (stacks on mobile) ---- */}
+      {/* ---- Bottom dock: army row + collapsible build (no overlap on mobile) ---- */}
       {claimed && me && (
-        <div className="pointer-events-none absolute inset-x-2 bottom-2 z-20 flex flex-col-reverse gap-2 sm:inset-x-3 sm:bottom-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="pointer-events-auto max-w-full overflow-x-auto">
+        <div className="pointer-events-none absolute inset-x-2 bottom-2 z-20 flex flex-col items-stretch gap-2 sm:inset-x-3 sm:bottom-3 sm:flex-row sm:items-end sm:justify-between">
+          {/* Build tray — above army on mobile when open; always visible on sm+ */}
+          <div
+            className={`pointer-events-auto order-1 self-end sm:order-2 sm:self-auto ${
+              buildOpen ? "block" : "hidden sm:block"
+            }`}
+          >
+            <div className="hud-panel p-1.5 sm:p-2">
+              <div className="flex items-center justify-between gap-2 px-1 pb-1">
+                <p className="font-mono text-[8px] uppercase tracking-[0.24em] text-[var(--ink-faint)]">
+                  Build · tap then place
+                </p>
+                <button
+                  type="button"
+                  className="font-mono text-[9px] text-[var(--ink-faint)] underline decoration-dotted sm:hidden"
+                  onClick={() => {
+                    setBuildOpen(false);
+                    setPlacing((cur) =>
+                      cur && cur.kind !== "house" && cur.kind !== "villager"
+                        ? null
+                        : cur
+                    );
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {(snap?.buildingCatalog ?? []).map((b) => {
+                  const affordable = displayGold >= b.cost;
+                  const active = placing?.kind === b.type;
+                  const homeSector = snap?.sectors.find(
+                    (s) => s.id === me.homeSectorId
+                  );
+                  return (
+                    <button
+                      key={b.type}
+                      type="button"
+                      className={`cameo ${active ? "cameo-active" : ""} ${
+                        affordable && !active ? "cameo-blink" : ""
+                      }`}
+                      disabled={
+                        busy || !affordable || !homeSector || !me.house
+                      }
+                      title={
+                        !me.house
+                          ? "Rebuild your house first"
+                          : `${b.name} — ${b.blurb} · ${b.footprintM}m ground`
+                      }
+                      onClick={() =>
+                        setPlacing((cur) =>
+                          cur?.kind === b.type || !homeSector || !me.house
+                            ? null
+                            : { kind: b.type, sector: homeSector }
+                        )
+                      }
+                    >
+                      <BuildingThumb type={b.type} className="h-9 w-10" />
+                      <span className="cameo-cost">{b.cost}g</span>
+                      <span className="cameo-label">{b.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div className="pointer-events-auto order-2 max-w-full overflow-x-auto sm:order-1">
             <div className="hud-panel inline-flex items-end gap-1.5 p-1.5 sm:gap-2 sm:p-2">
               <div className="cameo" title={`${me.villagers} villager(s) gathering`}>
                 <VillagerSprite walking className="h-9 w-9" />
@@ -1480,51 +1571,16 @@ export function PlayShell() {
                   <span className="cameo-label">Finds</span>
                 </div>
               )}
-            </div>
-          </div>
-
-          <div className="pointer-events-auto self-end sm:self-auto">
-            <div className="hud-panel p-1.5 sm:p-2">
-              <p className="px-1 pb-1 text-center font-mono text-[8px] uppercase tracking-[0.24em] text-[var(--ink-faint)]">
-                Build · tap then place
-              </p>
-              <div className="grid grid-cols-2 gap-1.5">
-                {(snap?.buildingCatalog ?? []).map((b) => {
-                  const affordable = displayGold >= b.cost;
-                  const active = placing?.kind === b.type;
-                  const homeSector = snap?.sectors.find(
-                    (s) => s.id === me.homeSectorId
-                  );
-                  return (
-                    <button
-                      key={b.type}
-                      type="button"
-                      className={`cameo ${active ? "cameo-active" : ""} ${
-                        affordable && !active ? "cameo-blink" : ""
-                      }`}
-                      disabled={
-                        busy || !affordable || !homeSector || !me.house
-                      }
-                      title={
-                        !me.house
-                          ? "Rebuild your house first"
-                          : `${b.name} — ${b.blurb} · ${b.footprintM}m ground`
-                      }
-                      onClick={() =>
-                        setPlacing((cur) =>
-                          cur?.kind === b.type || !homeSector || !me.house
-                            ? null
-                            : { kind: b.type, sector: homeSector }
-                        )
-                      }
-                    >
-                      <BuildingThumb type={b.type} className="h-9 w-10" />
-                      <span className="cameo-cost">{b.cost}g</span>
-                      <span className="cameo-label">{b.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
+              {/* Mobile build toggle — avoids stacking the full grid over army */}
+              <button
+                type="button"
+                className={`cameo sm:hidden ${buildOpen ? "cameo-active" : ""}`}
+                title="Open build menu"
+                onClick={() => setBuildOpen((o) => !o)}
+              >
+                <MillSprite className="h-8 w-9" />
+                <span className="cameo-label">{buildOpen ? "Close" : "Build"}</span>
+              </button>
             </div>
           </div>
         </div>

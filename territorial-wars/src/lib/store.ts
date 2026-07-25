@@ -435,7 +435,7 @@ async function ensureRivalGarrison(): Promise<void> {
       homeSectorId: BOT_SECTOR_ID,
       house: center,
       houseHp: HOUSE_MAX_HP,
-      villagerPost: null,
+      villagerPost: center,
       villagers: 1,
       soldiers: 1,
       tanks: 0,
@@ -455,7 +455,24 @@ async function ensureRivalGarrison(): Promise<void> {
     });
     await hSet(K_INVITES, "RIVAL0", BOT_ID);
     await setNX(kOwner(BOT_SECTOR_ID), BOT_ID);
+    const spots = seedSpotsForSector(sector, center, await getSpots());
+    await setSpots(spots);
     return;
+  }
+
+  // Keep rival villager visible + easy spots seeded for walk loops
+  if (!bot.villagerPost && bot.house) {
+    await setPlayer({
+      ...bot,
+      villagerPost: bot.house,
+      updatedAt: now,
+    });
+  }
+  {
+    const spots = await getSpots();
+    if (!spots.some((s) => s.sectorId === BOT_SECTOR_ID && s.kind === "easy")) {
+      await setSpots(seedSpotsForSector(sector, bot.house ?? center, spots));
+    }
   }
 
   const razed =
@@ -469,6 +486,7 @@ async function ensureRivalGarrison(): Promise<void> {
       ...bot,
       house: bot.house ?? center,
       houseHp: HOUSE_MAX_HP,
+      villagerPost: bot.villagerPost ?? bot.house ?? center,
       soldiers: Math.max(bot.soldiers || 0, 1),
       buildings: defaultBuildings(),
       updatedAt: now,
@@ -510,13 +528,16 @@ function projectPlayer(p: Player, spots: ResourceSpot[]): Player {
 }
 
 function publicPlayer(p: Player): PublicPlayer {
+  // Always expose a walk origin so rival villagers render even if post was never set
+  const villagerPost =
+    p.villagerPost ?? (p.house ? { lat: p.house.lat, lng: p.house.lng } : null);
   return {
     id: p.id,
     name: p.name,
     homeSectorId: p.homeSectorId,
     house: p.house,
     houseHp: p.houseHp ?? 0,
-    villagerPost: p.villagerPost ?? null,
+    villagerPost,
     villagers: p.villagers,
     soldiers: p.soldiers || 0,
     tanks: p.tanks || 0,
@@ -637,8 +658,20 @@ export async function getSnapshot(meId?: string | null): Promise<GameSnapshot> {
     p.id === me?.id ? publicPlayer(me) : publicPlayer(projectPlayer(p, spotsAll))
   );
 
+  // Ensure every settled sector has easy nodes so rival walk loops have a target
+  let spotsWorking = spotsAll;
+  const settled = playersAll.filter((p) => p.homeSectorId && p.house);
+  for (const p of settled) {
+    const sector = sectors.find((s) => s.id === p.homeSectorId);
+    if (!sector || !p.house) continue;
+    if (!spotsWorking.some((s) => s.sectorId === sector.id && s.kind === "easy")) {
+      spotsWorking = seedSpotsForSector(sector, p.house, spotsWorking);
+    }
+  }
+  if (spotsWorking !== spotsAll) await setSpots(spotsWorking);
+
   // Easy nodes are shared/visible in every sector so you can see others gather
-  const spots = spotsAll.filter((s) => {
+  const spots = spotsWorking.filter((s) => {
     if (s.kind === "easy") return true;
     if (!me) return false;
     return s.ownerId === me.id || me.discoveredSpotIds.includes(s.id);
