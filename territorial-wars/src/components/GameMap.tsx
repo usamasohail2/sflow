@@ -976,10 +976,6 @@ export function GameMap({
     );
   }
 
-  const roamPct = Math.min(100, (roamMeters / ROAM_METERS_TO_SPAWN) * 100);
-  const timePct = Math.min(100, (exploreMs / ROAM_MIN_EXPLORE_MS) * 100);
-  const huntPct = Math.min(roamPct, timePct);
-
   return (
     <div className={`relative ${className}`}>
       {introTitle !== "gone" && (
