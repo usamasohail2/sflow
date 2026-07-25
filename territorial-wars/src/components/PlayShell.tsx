@@ -494,19 +494,36 @@ export function PlayShell() {
     ).length;
   }, [me, snap]);
 
-  const ranking = useMemo(() => {
-    const rows = (snap?.players ?? [])
-      .filter((p) => p.homeSectorId)
-      .map((p) => ({
-        id: p.id,
-        name: p.name,
-        sector:
-          snap?.sectors.find((s) => s.id === p.homeSectorId)?.name ?? "—",
-        farmed: p.totalFarmed,
-      }))
-      .sort((a, b) => b.farmed - a.farmed);
-    return rows.slice(0, 10);
+  /** Sector leaderboard — total resources farmed by everyone in each sector */
+  const sectorRanking = useMemo(() => {
+    const bySector = new Map<
+      string,
+      { id: string; name: string; farmed: number; settlers: number }
+    >();
+    for (const s of snap?.sectors ?? []) {
+      bySector.set(s.id, { id: s.id, name: s.name, farmed: 0, settlers: 0 });
+    }
+    for (const p of snap?.players ?? []) {
+      if (!p.homeSectorId) continue;
+      const row = bySector.get(p.homeSectorId);
+      if (!row) {
+        bySector.set(p.homeSectorId, {
+          id: p.homeSectorId,
+          name:
+            snap?.sectors.find((s) => s.id === p.homeSectorId)?.name ??
+            p.homeSectorId,
+          farmed: p.totalFarmed || 0,
+          settlers: 1,
+        });
+        continue;
+      }
+      row.farmed += p.totalFarmed || 0;
+      row.settlers += 1;
+    }
+    return Array.from(bySector.values()).sort((a, b) => b.farmed - a.farmed);
   }, [snap]);
+
+  const topSectors = sectorRanking.slice(0, 5);
 
   const missionList = useMemo(() => {
     if (!me) return [];
@@ -1014,46 +1031,108 @@ export function PlayShell() {
           </span>
         </Link>
 
-        <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2">
-          <div className="hud-chip px-2.5 py-1.5 sm:px-3">
-            <p className="hud-gold font-mono text-sm font-bold text-[#e8cf8a] sm:text-base">
-              ⛃ {Math.floor(displayGold)}
-            </p>
-            {claimed && (
-              <p className="text-right font-mono text-[8px] text-[var(--ink-faint)]">
-                +{perTrip}/trip
+        <div className="pointer-events-auto flex flex-col items-end gap-1.5">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <div className="hud-chip px-2.5 py-1.5 sm:px-3">
+              <p className="hud-gold font-mono text-sm font-bold text-[#e8cf8a] sm:text-base">
+                ⛃ {Math.floor(displayGold)}
               </p>
-            )}
+              {claimed && (
+                <p className="text-right font-mono text-[8px] text-[var(--ink-faint)]">
+                  +{perTrip}/trip
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setMusicOn(toggleMusic())}
+              className={`hud-chip px-2.5 py-1.5 font-mono text-[11px] sm:px-3 ${
+                musicOn
+                  ? "text-[var(--sand)]"
+                  : "text-[var(--ink-muted)] hover:text-[var(--sand)]"
+              }`}
+              title={musicOn ? "Music on — tap to mute" : "Music off — tap to play"}
+            >
+              ♫
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowMenu((v) => !v);
+                setShowBattles(false);
+                setShowRanks(false);
+                setShowMissions(false);
+                setShowPlayers(false);
+              }}
+              className={`hud-chip px-2.5 py-1.5 font-mono text-[11px] sm:px-3 ${
+                showMenu
+                  ? "text-[var(--sand)]"
+                  : "text-[var(--ink-muted)] hover:text-[var(--sand)]"
+              }`}
+              title="Menu"
+            >
+              ☰
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => setMusicOn(toggleMusic())}
-            className={`hud-chip px-2.5 py-1.5 font-mono text-[11px] sm:px-3 ${
-              musicOn
-                ? "text-[var(--sand)]"
-                : "text-[var(--ink-muted)] hover:text-[var(--sand)]"
-            }`}
-            title={musicOn ? "Music on — tap to mute" : "Music off — tap to play"}
-          >
-            ♫
-          </button>
+
+          {/* Top 5 sector leaderboard — tap for full list */}
           <button
             type="button"
             onClick={() => {
-              setShowMenu((v) => !v);
+              setShowRanks(true);
+              setShowMenu(false);
               setShowBattles(false);
-              setShowRanks(false);
               setShowMissions(false);
               setShowPlayers(false);
             }}
-            className={`hud-chip px-2.5 py-1.5 font-mono text-[11px] sm:px-3 ${
-              showMenu
-                ? "text-[var(--sand)]"
-                : "text-[var(--ink-muted)] hover:text-[var(--sand)]"
-            }`}
-            title="Menu"
+            className="hud-panel w-[11.5rem] px-2.5 py-2 text-left sm:w-56"
+            title="Open full sector leaderboard"
           >
-            ☰
+            <div className="mb-1 flex items-center justify-between">
+              <span className="font-mono text-[8px] uppercase tracking-[0.2em] text-[var(--ink-faint)]">
+                🏆 Top sectors
+              </span>
+              <span className="font-mono text-[8px] text-[var(--sand)]">
+                all →
+              </span>
+            </div>
+            {topSectors.length === 0 ? (
+              <p className="text-[10px] text-[var(--ink-faint)]">No farms yet</p>
+            ) : (
+              <ol className="space-y-0.5">
+                {topSectors.map((r, i) => {
+                  const mine = me?.homeSectorId === r.id;
+                  return (
+                    <li
+                      key={r.id}
+                      className={`flex items-center justify-between gap-2 font-mono text-[10px] sm:text-[11px] ${
+                        mine ? "text-[var(--sand)]" : "text-[var(--ink-muted)]"
+                      }`}
+                    >
+                      <span className="min-w-0 truncate">
+                        <span className="text-[var(--ink-faint)]">
+                          {i === 0
+                            ? "①"
+                            : i === 1
+                              ? "②"
+                              : i === 2
+                                ? "③"
+                                : i === 3
+                                  ? "④"
+                                  : "⑤"}
+                        </span>{" "}
+                        <strong className="font-semibold text-[var(--ink)]">
+                          {r.name}
+                        </strong>
+                      </span>
+                      <span className="shrink-0 text-[var(--ink-faint)]">
+                        {r.farmed}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
           </button>
         </div>
       </div>
@@ -1082,7 +1161,7 @@ export function PlayShell() {
             }}
             className="flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-[12px] text-[var(--ink-muted)] hover:bg-[var(--wash)] hover:text-[var(--sand)]"
           >
-            <span>🏆 Ranks</span>
+            <span>🏆 Sector leaderboard</span>
           </button>
           <button
             type="button"
@@ -1258,47 +1337,79 @@ export function PlayShell() {
         </div>
       )}
 
-      {/* Ranks dropdown */}
+      {/* Full sector leaderboard modal */}
       {showRanks && (
-        <div className="absolute right-2 top-[4.75rem] z-30 w-72 hud-panel p-3 sm:right-3 sm:top-16">
-          <div className="flex items-center justify-between">
-            <h2 className="font-mono text-[9px] uppercase tracking-[0.22em] text-[var(--ink-muted)]">
-              Ranking · resources farmed
-            </h2>
-            <button
-              type="button"
-              onClick={() => setShowRanks(false)}
-              className="font-mono text-[11px] text-[var(--ink-faint)] hover:text-[var(--sand)]"
-            >
-              ✕
-            </button>
-          </div>
-          <ol className="mt-2 space-y-1">
-            {ranking.length === 0 && (
-              <li className="text-[11px] text-[var(--ink-faint)]">
-                No settlers yet
-              </li>
-            )}
-            {ranking.map((r, i) => (
-              <li
-                key={r.id}
-                className={`flex items-center justify-between text-[11px] ${
-                  r.id === me?.id
-                    ? "text-[var(--sand)]"
-                    : "text-[var(--ink-muted)]"
-                }`}
+        <div
+          className="absolute inset-0 z-40 flex items-end justify-center bg-black/50 p-3 sm:items-center"
+          onClick={() => setShowRanks(false)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setShowRanks(false);
+          }}
+          role="presentation"
+        >
+          <div
+            className="hud-panel max-h-[min(80dvh,36rem)] w-full max-w-md overflow-hidden p-4"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-label="Sector leaderboard"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="font-display text-xl text-[var(--ink)]">
+                  Sector leaderboard
+                </h2>
+                <p className="mt-0.5 font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--ink-faint)]">
+                  Total resources farmed
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRanks(false)}
+                className="font-mono text-[14px] text-[var(--ink-faint)] hover:text-[var(--sand)]"
               >
-                <span>
-                  <span className="font-mono">
-                    {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`}
-                  </span>{" "}
-                  <strong>{r.sector}</strong>{" "}
-                  <span className="text-[var(--ink-faint)]">· {r.name}</span>
-                </span>
-                <span className="font-mono">{r.farmed}</span>
-              </li>
-            ))}
-          </ol>
+                ✕
+              </button>
+            </div>
+            <ol className="mt-3 max-h-[min(60dvh,28rem)] space-y-1.5 overflow-y-auto pr-1">
+              {sectorRanking.length === 0 && (
+                <li className="text-[12px] text-[var(--ink-faint)]">
+                  No sectors yet
+                </li>
+              )}
+              {sectorRanking.map((r, i) => {
+                const mine = me?.homeSectorId === r.id;
+                return (
+                  <li
+                    key={r.id}
+                    className={`flex items-center justify-between rounded-sm border px-2.5 py-2 text-[12px] ${
+                      mine
+                        ? "border-[var(--sand)] bg-[var(--wash)] text-[var(--sand)]"
+                        : "border-[var(--line)] text-[var(--ink-muted)]"
+                    }`}
+                  >
+                    <span className="min-w-0">
+                      <span className="font-mono text-[var(--ink-faint)]">
+                        {i === 0
+                          ? "🥇"
+                          : i === 1
+                            ? "🥈"
+                            : i === 2
+                              ? "🥉"
+                              : `${i + 1}.`}
+                      </span>{" "}
+                      <strong className="text-[var(--ink)]">{r.name}</strong>
+                      <span className="ml-1.5 font-mono text-[9px] text-[var(--ink-faint)]">
+                        {r.settlers} settler{r.settlers === 1 ? "" : "s"}
+                      </span>
+                    </span>
+                    <span className="shrink-0 font-mono font-semibold text-[#e8cf8a]">
+                      {r.farmed}
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
         </div>
       )}
 
