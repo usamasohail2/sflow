@@ -261,7 +261,7 @@ export function playBuildSound(): void {
   src.start(t + 0.02);
 }
 
-/** Soldier/tank recruited — short snare + blip */
+/** Rocket stocked — short snare + blip */
 export function playRecruitSound(): void {
   if (!sfxOn) return;
   const c = ensureCtx();

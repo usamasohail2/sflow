@@ -14,8 +14,7 @@ import type { LatLng } from "@/lib/gameTypes";
 import {
   HouseSprite,
   MillSprite,
-  SoldierSprite,
-  TankSprite,
+  RocketSprite,
   TurretSprite,
   VillagerSprite,
   WarehouseSprite,
@@ -31,8 +30,7 @@ import type {
 } from "@/lib/gameTypes";
 import {
   HOUSE_MAX_HP,
-  SOLDIER_COST,
-  TANK_COST,
+  ROCKET_COST,
   attackBreakdown,
   attackPower,
   buildingBonus,
@@ -101,12 +99,6 @@ function summaryFromAttack(
   defenderName: string,
   id = `atk_${Date.now()}`
 ): BattleSummary {
-  const losses = [
-    battle.soldiersLost > 0 ? `${battle.soldiersLost} soldier(s)` : null,
-    battle.tanksLost > 0 ? `${battle.tanksLost} tank(s)` : null,
-  ]
-    .filter(Boolean)
-    .join(" + ");
   const rows = [
     battle.attackPower > 0 || battle.defensePower > 0
       ? `Attack ${battle.attackPower} vs Defense ${battle.defensePower}`
@@ -123,11 +115,13 @@ function summaryFromAttack(
     battle.damagedBuildings.length
       ? `Damaged: ${battle.damagedBuildings.join(", ")}`
       : null,
-    battle.defenderSoldiersLost > 0
-      ? `Enemy lost ${battle.defenderSoldiersLost} soldier(s)`
+    battle.defenderRocketsLost > 0
+      ? `Enemy arsenal −${battle.defenderRocketsLost} rocket(s)`
       : null,
     battle.lootedGold > 0 ? `Looted +${battle.lootedGold}g` : null,
-    losses ? `Your losses: ${losses}` : null,
+    battle.rocketsLost > 0
+      ? `Rockets expended: ${battle.rocketsLost}`
+      : null,
   ].filter(Boolean) as string[];
 
   return {
@@ -142,6 +136,11 @@ function summaryFromAttack(
 }
 
 function summaryFromEvent(e: GameEvent, asDefender = true): BattleSummary {
+  const rocketsLost =
+    e.rocketsLost ?? (e.soldiersLost || 0) + (e.tanksLost || 0);
+  const defenderRocketsLost =
+    e.defenderRocketsLost ?? e.defenderSoldiersLost ?? 0;
+
   if (!asDefender) {
     return summaryFromAttack(
       {
@@ -154,9 +153,8 @@ function summaryFromEvent(e: GameEvent, asDefender = true): BattleSummary {
         houseDestroyed: Boolean(e.houseDestroyed),
         houseDamaged: Boolean(e.houseDamaged),
         lootedGold: e.lootedGold,
-        soldiersLost: e.soldiersLost ?? 0,
-        tanksLost: e.tanksLost ?? 0,
-        defenderSoldiersLost: e.defenderSoldiersLost,
+        rocketsLost,
+        defenderRocketsLost,
       },
       e.sectorName,
       e.defenderName,
@@ -178,8 +176,8 @@ function summaryFromEvent(e: GameEvent, asDefender = true): BattleSummary {
     e.damagedBuildings?.length
       ? `Damaged: ${e.damagedBuildings.join(", ")}`
       : null,
-    e.defenderSoldiersLost > 0
-      ? `Lost ${e.defenderSoldiersLost} soldier(s)`
+    defenderRocketsLost > 0
+      ? `Arsenal −${defenderRocketsLost} rocket(s)`
       : null,
     e.lootedGold > 0 ? `${e.lootedGold}g looted` : null,
     e.win ? "Enemy broke through" : "Your defenses held",
@@ -222,7 +220,7 @@ export function PlayShell() {
   const [showPlayers, setShowPlayers] = useState(false);
   const [showBattles, setShowBattles] = useState(false);
   const [placing, setPlacing] = useState<Placing | null>(null);
-  /** Mobile: build tray collapsed by default so it doesn't stack over the army row */
+  /** Mobile: build tray collapsed by default so it doesn't stack over arsenal */
   const [buildOpen, setBuildOpen] = useState(false);
   const [pendingHouse, setPendingHouse] = useState<LatLng | null>(null);
   const [march, setMarch] = useState<MarchAnim | null>(null);
@@ -452,11 +450,9 @@ export function PlayShell() {
   const needsHouseRebuild = Boolean(claimed && me && !me.house);
   const homeName =
     snap?.sectors.find((s) => s.id === me?.homeSectorId)?.name ?? null;
-  const myAttack = me ? attackPower(me.soldiers, me.tanks || 0) : 0;
+  const myAttack = me ? attackPower(me.rockets || 0) : 0;
   const myDefense = me
     ? defensePower({
-        soldiers: me.soldiers,
-        tanks: me.tanks,
         buildings: me.buildings,
         house: me.house,
         houseHp: me.houseHp,
@@ -479,8 +475,6 @@ export function PlayShell() {
       : null) ?? null;
   const enemyDefense = enemyPlayer
     ? defensePower({
-        soldiers: enemyPlayer.soldiers,
-        tanks: enemyPlayer.tanks,
         buildings: enemyPlayer.buildings,
         house: enemyPlayer.house,
         houseHp: enemyPlayer.houseHp,
@@ -549,9 +543,9 @@ export function PlayShell() {
         done: me.buildings.length >= 1,
       },
       {
-        id: "army",
-        label: "Recruit a soldier",
-        done: me.soldiers >= 1,
+        id: "arsenal",
+        label: "Buy a rocket for your arsenal",
+        done: (me.rockets || 0) >= 1,
       },
     ];
   }, [me, gemsFound]);
@@ -701,7 +695,7 @@ export function PlayShell() {
     return () => window.removeEventListener("pointerdown", unlock);
   }, []);
 
-  // Open build tray when a building is being placed; keep army row clear otherwise
+  // Open build tray when a building is being placed; keep arsenal clear otherwise
   useEffect(() => {
     if (
       placing &&
@@ -952,7 +946,7 @@ export function PlayShell() {
           Sign in to play
         </h1>
         <p className="mt-2 max-w-sm text-center text-sm text-[var(--ink-muted)]">
-          Your sector, army, and battle reports stay tied to your Google
+          Your sector, arsenal, and battle reports stay tied to your Google
           account — no more lost guest progress.
         </p>
         <div className="mt-6">
@@ -1315,7 +1309,7 @@ export function PlayShell() {
                       <span className="block text-[9px] text-[var(--ink-faint)]">
                         {snap?.sectors.find((s) => s.id === p.homeSectorId)
                           ?.name ?? "no sector"}{" "}
-                        · {p.gold}g · {p.soldiers}⚔ {p.tanks}🛡
+                        · {p.gold}g · {p.rockets || 0}🚀
                       </span>
                     </span>
                   </button>
@@ -1706,7 +1700,7 @@ export function PlayShell() {
               Your attack {myAttack}
               <span className="text-[var(--ink-faint)]">
                 {" "}
-                ({attackBreakdown(me?.soldiers ?? 0, me?.tanks ?? 0)})
+                ({attackBreakdown(me?.rockets ?? 0)})
               </span>
             </p>
             <p className="font-mono text-[10px] text-[var(--ink-muted)]">
@@ -1717,8 +1711,7 @@ export function PlayShell() {
               </span>
             </p>
             <p className="mt-1 text-[9px] text-[var(--ink-faint)]">
-              Soldier = 1 atk · Tank = 3 atk · House/soldier = 1 def · Tank/turret
-              = 2 def
+              Rocket = 1 atk (expended) · House = 1 def · Turret = 2 def
             </p>
             <button
               type="button"
@@ -1726,13 +1719,13 @@ export function PlayShell() {
                 busy ||
                 !me ||
                 !me.house ||
-                me.soldiers + me.tanks <= 0 ||
+                (me.rockets || 0) <= 0 ||
                 Boolean(march)
               }
               onClick={() => void launchAttack()}
               className="mt-2 w-full rounded-sm bg-[var(--signal)] px-3 py-2 text-sm font-bold text-white disabled:opacity-40"
             >
-              ⚔ Attack {enemyPlayer.name} ({myAttack} vs {enemyDefense})
+              ✦ Fire rockets at {enemyPlayer.name} ({myAttack} vs {enemyDefense})
             </button>
             <button
               type="button"
@@ -1741,19 +1734,19 @@ export function PlayShell() {
             >
               Cancel target
             </button>
-            {me && me.soldiers + me.tanks <= 0 && (
+            {me && (me.rockets || 0) <= 0 && (
               <p className="mt-1 text-[9px] text-[var(--ink-faint)]">
-                Recruit soldiers or build a tank from the army panel first
+                Stock rockets in Arsenal first — they are expended on each raid
               </p>
             )}
           </div>
         </div>
       )}
 
-      {/* ---- Bottom dock: army row + collapsible build (no overlap on mobile) ---- */}
+      {/* ---- Bottom dock: Arsenal (owned) + Build (place structures) ---- */}
       {claimed && me && (
         <div className="pointer-events-none absolute inset-x-2 bottom-2 z-20 flex flex-col items-stretch gap-2 sm:inset-x-3 sm:bottom-3 sm:flex-row sm:items-end sm:justify-between">
-          {/* Build tray — above army on mobile when open; always visible on sm+ */}
+          {/* Build tray — structures only */}
           <div
             className={`pointer-events-auto order-1 self-end sm:order-2 sm:self-auto ${
               buildOpen ? "block" : "hidden sm:block"
@@ -1761,9 +1754,14 @@ export function PlayShell() {
           >
             <div className="hud-panel p-1.5 sm:p-2">
               <div className="flex items-center justify-between gap-2 px-1 pb-1">
-                <p className="font-mono text-[8px] uppercase tracking-[0.24em] text-[var(--ink-faint)]">
-                  Build · tap then place
-                </p>
+                <div>
+                  <p className="font-mono text-[8px] uppercase tracking-[0.24em] text-[var(--sand)]">
+                    Build
+                  </p>
+                  <p className="font-mono text-[8px] text-[var(--ink-faint)]">
+                    Tap a structure, then place it on the map
+                  </p>
+                </div>
                 <button
                   type="button"
                   className="font-mono text-[9px] text-[var(--ink-faint)] underline decoration-dotted sm:hidden"
@@ -1819,94 +1817,107 @@ export function PlayShell() {
             </div>
           </div>
 
+          {/* Arsenal — what you own + buy rockets */}
           <div className="pointer-events-auto order-2 max-w-full overflow-x-auto sm:order-1">
-            <div className="hud-panel inline-flex items-end gap-1.5 p-1.5 sm:gap-2 sm:p-2">
-              <div className="cameo" title={`${me.villagers} villager(s) gathering`}>
-                <VillagerSprite walking className="h-9 w-9" />
-                <span className="cameo-badge">×{me.villagers}</span>
-                <span className="cameo-label">Villager</span>
-              </div>
-              <div
-                className="cameo"
-                title={
-                  me.house
-                    ? `House ${me.houseHp}/${HOUSE_MAX_HP} hp · defense ${myDefense}`
-                    : "House destroyed — rebuild to gather"
-                }
-              >
-                <HouseSprite className="h-9 w-10" />
-                {me.house ? (
-                  <span className="cameo-badge">
-                    {me.houseHp}/{HOUSE_MAX_HP}
-                  </span>
-                ) : (
-                  <span className="cameo-badge">✕</span>
-                )}
-                <span className="cameo-label">House</span>
-              </div>
-              <button
-                type="button"
-                className={`cameo ${
-                  displayGold >= SOLDIER_COST ? "cameo-blink" : ""
-                }`}
-                disabled={busy || displayGold < SOLDIER_COST || !me.house}
-                title={`Recruit soldier — ${SOLDIER_COST}g · +1 attack / +1 defense`}
-                onClick={() =>
-                  void act("recruit_soldier").then((d) => {
-                    if (d) {
-                      playRecruitSound();
-                      showToast("Soldier recruited · +1 attack");
-                    }
-                  })
-                }
-              >
-                <SoldierSprite className="h-9 w-9" />
-                {me.soldiers > 0 && (
-                  <span className="cameo-badge">×{me.soldiers}</span>
-                )}
-                <span className="cameo-cost">{SOLDIER_COST}g</span>
-                <span className="cameo-label">Soldier</span>
-              </button>
-              <button
-                type="button"
-                className={`cameo ${
-                  displayGold >= TANK_COST ? "cameo-blink" : ""
-                }`}
-                disabled={busy || displayGold < TANK_COST || !me.house}
-                title={`Build tank — ${TANK_COST}g · +3 attack / +2 defense`}
-                onClick={() =>
-                  void act("build_tank").then((d) => {
-                    if (d) {
-                      playRecruitSound();
-                      showToast("Tank ready · +3 attack");
-                    }
-                  })
-                }
-              >
-                <TankSprite className="h-9 w-11" />
-                {me.tanks > 0 && (
-                  <span className="cameo-badge">×{me.tanks}</span>
-                )}
-                <span className="cameo-cost">{TANK_COST}g</span>
-                <span className="cameo-label">Tank</span>
-              </button>
-              {gemsFound > 0 && (
-                <div className="cameo" title={`${gemsFound} resource site(s) found`}>
-                  <ResourceGem gem="diamond" size={26} pulse />
-                  <span className="cameo-badge">×{gemsFound}</span>
-                  <span className="cameo-label">Finds</span>
+            <div className="hud-panel p-1.5 sm:p-2">
+              <div className="flex items-end justify-between gap-2 px-1 pb-1">
+                <div>
+                  <p className="font-mono text-[8px] uppercase tracking-[0.24em] text-[var(--sand)]">
+                    Arsenal
+                  </p>
+                  <p className="font-mono text-[8px] text-[var(--ink-faint)]">
+                    What you own · rockets spent on attacks
+                  </p>
                 </div>
-              )}
-              {/* Mobile build toggle — avoids stacking the full grid over army */}
-              <button
-                type="button"
-                className={`cameo sm:hidden ${buildOpen ? "cameo-active" : ""}`}
-                title="Open build menu"
-                onClick={() => setBuildOpen((o) => !o)}
-              >
-                <MillSprite className="h-8 w-9" />
-                <span className="cameo-label">{buildOpen ? "Close" : "Build"}</span>
-              </button>
+                <p className="font-mono text-[9px] text-[var(--ink-muted)]">
+                  Atk {myAttack} · Def {myDefense}
+                </p>
+              </div>
+              <div className="inline-flex items-end gap-1.5 sm:gap-2">
+                <div
+                  className="cameo"
+                  title={`${me.villagers} villager(s) gathering`}
+                >
+                  <VillagerSprite walking className="h-9 w-9" />
+                  <span className="cameo-badge">×{me.villagers}</span>
+                  <span className="cameo-label">Villager</span>
+                </div>
+                <div
+                  className="cameo"
+                  title={
+                    me.house
+                      ? `House ${me.houseHp}/${HOUSE_MAX_HP} hp · defense ${myDefense}`
+                      : "House destroyed — rebuild to gather"
+                  }
+                >
+                  <HouseSprite className="h-9 w-10" />
+                  {me.house ? (
+                    <span className="cameo-badge">
+                      {me.houseHp}/{HOUSE_MAX_HP}
+                    </span>
+                  ) : (
+                    <span className="cameo-badge">✕</span>
+                  )}
+                  <span className="cameo-label">House</span>
+                </div>
+                <div
+                  className="cameo"
+                  title={`Arsenal: ${me.rockets || 0} rocket(s) · ${myAttack} attack power`}
+                >
+                  <RocketSprite className="h-9 w-9" />
+                  <span className="cameo-badge">×{me.rockets || 0}</span>
+                  <span className="cameo-label">Rockets</span>
+                </div>
+
+                <div className="mx-0.5 h-10 w-px self-center bg-[var(--line)]" />
+
+                <button
+                  type="button"
+                  className={`cameo ${
+                    displayGold >= ROCKET_COST && me.house ? "cameo-blink" : ""
+                  }`}
+                  disabled={busy || displayGold < ROCKET_COST || !me.house}
+                  title={
+                    !me.house
+                      ? "Rebuild your house first"
+                      : `Buy rocket — ${ROCKET_COST}g · +1 attack (expended when you fire)`
+                  }
+                  onClick={() =>
+                    void act("buy_rocket").then((d) => {
+                      if (d) {
+                        playRecruitSound();
+                        showToast("Rocket stocked · +1 attack");
+                      }
+                    })
+                  }
+                >
+                  <RocketSprite className="h-9 w-9" />
+                  <span className="cameo-cost">{ROCKET_COST}g</span>
+                  <span className="cameo-label">Buy +1</span>
+                </button>
+
+                {gemsFound > 0 && (
+                  <div
+                    className="cameo"
+                    title={`${gemsFound} resource site(s) found`}
+                  >
+                    <ResourceGem gem="diamond" size={26} pulse />
+                    <span className="cameo-badge">×{gemsFound}</span>
+                    <span className="cameo-label">Finds</span>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className={`cameo sm:hidden ${buildOpen ? "cameo-active" : ""}`}
+                  title="Open build menu — place structures"
+                  onClick={() => setBuildOpen((o) => !o)}
+                >
+                  <MillSprite className="h-8 w-9" />
+                  <span className="cameo-label">
+                    {buildOpen ? "Close" : "Build"}
+                  </span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -6,19 +6,19 @@ import { AUTH_DISABLED } from "@/lib/devMode";
 import {
   attackSector,
   buildBuilding,
-  buildTank,
+  buyRocket,
   claimSector,
   collectHidden,
   discoverSpot,
   ensurePlayer,
   getSnapshot,
   placeHouse,
-  recruitSoldier,
   renamePlayer,
   spawnRoamFind,
 } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 const GUEST_COOKIE = "itw_guest_id";
 
@@ -270,10 +270,13 @@ export async function POST(req: Request) {
       Number(body.lat),
       Number(body.lng)
     );
-  } else if (body.action === "recruit_soldier") {
-    result = await recruitSoldier(id);
-  } else if (body.action === "build_tank") {
-    result = await buildTank(id);
+  } else if (
+    body.action === "buy_rocket" ||
+    body.action === "recruit_soldier" ||
+    body.action === "build_tank"
+  ) {
+    // Legacy soldier/tank actions map to buying a rocket
+    result = await buyRocket(id);
   } else if (body.action === "attack") {
     const targetPlayerId =
       typeof body.targetPlayerId === "string"

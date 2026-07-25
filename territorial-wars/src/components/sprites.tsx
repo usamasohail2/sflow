@@ -77,14 +77,14 @@ export function VillagerSprite({
   );
 }
 
-/** Chibi soldier with helmet and rifle. */
-export function SoldierSprite({
+/** Stocked attack rocket — expended when you raid. */
+export function RocketSprite({
   className = "",
-  title = "Soldier",
+  title = "Rocket",
 }: SpriteProps) {
   return (
     <svg
-      className={`villager-sprite ${className}`}
+      className={`house-sprite ${className}`}
       viewBox="0 0 32 32"
       width="44"
       height="44"
@@ -92,75 +92,30 @@ export function SoldierSprite({
       aria-label={title}
     >
       <title>{title}</title>
-      <ellipse cx="16" cy="29.5" rx="7" ry="1.6" fill="rgba(0,0,0,0.35)" />
-      {/* boots */}
-      <rect x="11" y="25" width="4" height="3" rx="1" fill="#2f2a22" />
-      <rect x="17" y="25" width="4" height="3" rx="1" fill="#2f2a22" />
-      {/* legs */}
-      <rect x="12" y="21" width="3" height="5" rx="1" fill="#4a5550" />
-      <rect x="17" y="21" width="3" height="5" rx="1" fill="#4a5550" />
-      {/* body armor */}
-      <rect x="11" y="14" width="10" height="9" rx="3" fill="#5d6a63" />
-      <rect x="13" y="16" width="6" height="5" rx="1.5" fill="#77857c" />
-      {/* belt */}
-      <rect x="11" y="21" width="10" height="1.6" fill="#2f2a22" />
-      {/* head */}
-      <circle cx="16" cy="10" r="5" fill="#f3c7a1" />
-      {/* helmet */}
-      <path d="M10.6 9.4 a5.6 5.6 0 0 1 10.8 0 l-0.4 1.6 h-10 z" fill="#3d5c46" />
-      <rect x="10.4" y="10.4" width="11.2" height="1.4" rx="0.7" fill="#2c4234" />
-      {/* eyes */}
-      <circle cx="14.3" cy="12" r="0.8" fill="#2a241c" />
-      <circle cx="17.7" cy="12" r="0.8" fill="#2a241c" />
-      {/* rifle */}
-      <g transform="translate(22 15) rotate(18)">
-        <rect x="-1" y="0" width="2" height="9" rx="0.6" fill="#5c4030" />
-        <rect x="-0.6" y="-3" width="1.2" height="4" fill="#3a3a3a" />
-      </g>
-    </svg>
-  );
-}
-
-/** Battle tank with rolling treads. */
-export function TankSprite({
-  className = "",
-  title = "Tank",
-}: SpriteProps) {
-  return (
-    <svg
-      className={`house-sprite ${className}`}
-      viewBox="0 0 40 30"
-      width="54"
-      height="40"
-      role="img"
-      aria-label={title}
-    >
-      <title>{title}</title>
-      <ellipse cx="20" cy="27.5" rx="13" ry="1.8" fill="rgba(0,0,0,0.35)" />
-      {/* treads */}
-      <rect x="6" y="19" width="28" height="7" rx="3.5" fill="#2f2a22" />
-      <circle cx="11" cy="22.5" r="2" fill="#4a4438" />
-      <circle cx="17" cy="22.5" r="2" fill="#4a4438" />
-      <circle cx="23" cy="22.5" r="2" fill="#4a4438" />
-      <circle cx="29" cy="22.5" r="2" fill="#4a4438" />
-      {/* hull */}
-      <path d="M8 19 L11 14 H29 L32 19 Z" fill="#3d5c46" />
-      <path d="M8 19 L11 14 H20 V19 Z" fill="#33503c" />
-      {/* turret */}
-      <rect x="15" y="9.5" width="10" height="5.5" rx="2" fill="#4a6b52" />
-      <rect x="15" y="9.5" width="5" height="5.5" rx="2" fill="#3f5d47" />
-      {/* barrel */}
-      <g transform="translate(25 12) rotate(-6)">
-        <rect x="0" y="-0.9" width="11" height="1.8" rx="0.9" fill="#2f3a34" />
-        <rect x="10" y="-1.3" width="2.2" height="2.6" rx="0.8" fill="#202823" />
-      </g>
-      {/* hatch + star */}
-      <circle cx="18.5" cy="9.2" r="1.2" fill="#2c4234" />
+      <ellipse cx="16" cy="29.5" rx="6" ry="1.5" fill="rgba(0,0,0,0.35)" />
+      {/* exhaust plume */}
       <path
-        d="M20 16.2 l0.6 1.2 1.3 0.2 -0.95 0.9 0.25 1.3 -1.2 -0.6 -1.2 0.6 0.25 -1.3 -0.95 -0.9 1.3 -0.2 Z"
-        fill="#c4b089"
+        d="M14.2 26.5 C13 28.2 12.2 29.8 13.4 30.2 C14.8 29.4 15.2 28 16 26.2 C16.8 28 17.2 29.4 18.6 30.2 C19.8 29.8 19 28.2 17.8 26.5 Z"
+        fill="#e08a3a"
         opacity="0.9"
       />
+      <path
+        d="M14.8 25.8 C14.2 27.2 14.4 28.6 15.2 28.8 C15.8 28 16 27 16.2 25.6 C16.4 27 16.6 28 17.2 28.8 C18 28.6 18.2 27.2 17.6 25.8 Z"
+        fill="#f0c56a"
+      />
+      {/* fins */}
+      <path d="M11 22 L14.5 19.5 L14.5 23.5 Z" fill="#8a3a2a" />
+      <path d="M21 22 L17.5 19.5 L17.5 23.5 Z" fill="#8a3a2a" />
+      {/* body */}
+      <rect x="13.2" y="8" width="5.6" height="16" rx="2.6" fill="#c4b089" />
+      <rect x="13.2" y="8" width="2.8" height="16" rx="2.6" fill="#d8c9a0" />
+      {/* band */}
+      <rect x="13.2" y="14" width="5.6" height="2.2" fill="#6b4e2e" />
+      {/* nose cone */}
+      <path d="M13.4 9.2 L16 3.2 L18.6 9.2 Z" fill="#c45a3a" />
+      <path d="M13.4 9.2 L16 3.2 L16 9.2 Z" fill="#e07048" />
+      {/* tip highlight */}
+      <circle cx="16" cy="5.2" r="0.7" fill="#f3d9a8" opacity="0.85" />
     </svg>
   );
 }

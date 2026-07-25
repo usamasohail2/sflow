@@ -91,11 +91,10 @@ export type Player = {
   /** Where the villager idles / starts gather trips (player-placed) */
   villagerPost: LatLng | null;
   villagers: number;
-  soldiers: number;
-  tanks: number;
-  /** Highest counts reached — garrison health bars show current/peak */
-  peakSoldiers: number;
-  peakTanks: number;
+  /** Consumable attack munitions — expended when you raid */
+  rockets: number;
+  /** Highest rocket count reached — arsenal bar shows current/peak */
+  peakRockets: number;
   gold: number;
   /** Lifetime resources farmed — global ranking metric */
   totalFarmed: number;
@@ -133,10 +132,8 @@ export type PublicPlayer = {
   /** Visible so others can see your villager on the map */
   villagerPost: LatLng | null;
   villagers: number;
-  soldiers: number;
-  tanks: number;
-  peakSoldiers: number;
-  peakTanks: number;
+  rockets: number;
+  peakRockets: number;
   gold: number;
   totalFarmed: number;
   buildings: Building[];
@@ -172,9 +169,8 @@ export type BattleReport = {
   /** House took damage but is still standing */
   houseDamaged: boolean;
   lootedGold: number;
-  soldiersLost: number;
-  tanksLost: number;
-  defenderSoldiersLost: number;
+  rocketsLost: number;
+  defenderRocketsLost: number;
 };
 
 export type GameEvent = {
@@ -191,12 +187,15 @@ export type GameEvent = {
   damage: number;
   destroyed: string | null;
   lootedGold: number;
-  defenderSoldiersLost: number;
   /** Optional — present on newer battle events */
   attackPower?: number;
   defensePower?: number;
+  rocketsLost?: number;
+  defenderRocketsLost?: number;
+  /** Legacy army fields — older events only */
   soldiersLost?: number;
   tanksLost?: number;
+  defenderSoldiersLost?: number;
   damagedBuildings?: string[];
   houseDestroyed?: boolean;
   houseDamaged?: boolean;
@@ -233,8 +232,8 @@ export const HOUSE_FOOTPRINT_M = 30;
 /** Simple house HP — each attack point chips 1 HP */
 export const HOUSE_MAX_HP = 5;
 
-export const SOLDIER_COST = 30;
-export const TANK_COST = 90;
+/** Gold to stock one rocket in your arsenal */
+export const ROCKET_COST = 35;
 export const ATTACK_COOLDOWN_MS = 60_000;
 
 /**
@@ -300,42 +299,30 @@ export function buildingBonus(buildings: Building[]): number {
 
 /**
  * Simple combat:
- *  Attack = soldiers×1 + tanks×3
- *  Defense = house(1 if standing) + soldiers×1 + tanks×2 + turrets×2
+ *  Attack = rockets×1 (munitions you fire — expended after the raid)
+ *  Defense = house(1 if standing) + turrets×2
  */
-export function attackPower(soldiers: number, tanks = 0): number {
-  return Math.max(0, soldiers) + Math.max(0, tanks) * 3;
+export function attackPower(rockets: number): number {
+  return Math.max(0, rockets);
 }
 
 export function defensePower(p: {
-  soldiers: number;
-  tanks?: number;
   buildings: Building[];
   house?: LatLng | null;
   houseHp?: number;
 }): number {
   const houseUp = Boolean(p.house) && (p.houseHp ?? 0) > 0;
   const turrets = p.buildings.filter((b) => b.type === "turret").length;
-  return (
-    (houseUp ? 1 : 0) +
-    Math.max(0, p.soldiers) +
-    Math.max(0, p.tanks || 0) * 2 +
-    turrets * 2
-  );
+  return (houseUp ? 1 : 0) + turrets * 2;
 }
 
 /** Human-readable breakdown for HUD / battle reports */
-export function attackBreakdown(soldiers: number, tanks = 0): string {
-  const parts = [
-    soldiers > 0 ? `${soldiers} soldier${soldiers === 1 ? "" : "s"}` : null,
-    tanks > 0 ? `${tanks} tank${tanks === 1 ? "" : "s"}` : null,
-  ].filter(Boolean);
-  return parts.length ? parts.join(" + ") : "no army";
+export function attackBreakdown(rockets: number): string {
+  if (rockets <= 0) return "no rockets";
+  return `${rockets} rocket${rockets === 1 ? "" : "s"}`;
 }
 
 export function defenseBreakdown(p: {
-  soldiers: number;
-  tanks?: number;
   buildings: Building[];
   house?: LatLng | null;
   houseHp?: number;
@@ -344,12 +331,6 @@ export function defenseBreakdown(p: {
   const turrets = p.buildings.filter((b) => b.type === "turret").length;
   const parts = [
     houseUp ? "house" : null,
-    p.soldiers > 0
-      ? `${p.soldiers} soldier${p.soldiers === 1 ? "" : "s"}`
-      : null,
-    (p.tanks || 0) > 0
-      ? `${p.tanks} tank${p.tanks === 1 ? "" : "s"}`
-      : null,
     turrets > 0 ? `${turrets} turret${turrets === 1 ? "" : "s"}` : null,
   ].filter(Boolean);
   return parts.length ? parts.join(" + ") : "no defense";

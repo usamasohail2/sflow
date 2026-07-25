@@ -6,7 +6,7 @@ export default function LoginPage() {
     <main className="war-grid flex min-h-[100dvh] flex-col items-center justify-center px-5">
       <h1 className="font-display text-3xl text-[var(--ink)]">Sign in</h1>
       <p className="mt-2 max-w-sm text-center text-sm text-[var(--ink-muted)]">
-        Continue with Google to keep your sector, army, and battle reports
+        Continue with Google to keep your sector, arsenal, and battle reports
         across devices.
       </p>
       <div className="mt-6">

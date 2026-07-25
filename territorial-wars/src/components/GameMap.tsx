@@ -44,8 +44,7 @@ import { gatherPhase } from "@/lib/rules";
 import {
   HouseSprite,
   MillSprite,
-  SoldierSprite,
-  TankSprite,
+  RocketSprite,
   TurretSprite,
   VillagerSprite,
   WarehouseSprite,
@@ -789,54 +788,27 @@ export function GameMap({
             })
           )}
 
-        {/* Soldiers garrison (mine + rivals) */}
+        {/* Rocket arsenal stockpile (mine + rivals) */}
         {players
-          .filter((p) => p.homeSectorId && p.house && p.soldiers > 0)
+          .filter((p) => p.homeSectorId && p.house && (p.rockets || 0) > 0)
           .map((p) => {
             const pos = offsetMeters(p.house!, 26, -12);
             return (
               <Marker
-                key={`army-${p.id}`}
+                key={`rockets-${p.id}`}
                 longitude={pos.lng}
                 latitude={pos.lat}
                 anchor="bottom"
               >
                 <div className="relative flex flex-col items-center">
-                  <SoldierSprite className="h-8 w-8" />
+                  <RocketSprite className="h-8 w-8" />
                   <HpBar
-                    hp={p.soldiers}
-                    maxHp={Math.max(p.peakSoldiers || 0, p.soldiers)}
+                    hp={p.rockets}
+                    maxHp={Math.max(p.peakRockets || 0, p.rockets)}
                     width={30}
                   />
                   <span className="absolute -right-1.5 -top-1 rounded-full bg-[var(--surface)] px-1 font-mono text-[9px] text-[#ff9d5a]">
-                    ×{p.soldiers}
-                  </span>
-                </div>
-              </Marker>
-            );
-          })}
-
-        {/* Tank garrison (mine + rivals) */}
-        {players
-          .filter((p) => p.homeSectorId && p.house && p.tanks > 0)
-          .map((p) => {
-            const pos = offsetMeters(p.house!, -30, -16);
-            return (
-              <Marker
-                key={`tanks-${p.id}`}
-                longitude={pos.lng}
-                latitude={pos.lat}
-                anchor="bottom"
-              >
-                <div className="relative flex flex-col items-center">
-                  <TankSprite className="h-8 w-10" />
-                  <HpBar
-                    hp={p.tanks}
-                    maxHp={Math.max(p.peakTanks || 0, p.tanks)}
-                    width={34}
-                  />
-                  <span className="absolute -right-1.5 -top-1 rounded-full bg-[var(--surface)] px-1 font-mono text-[9px] text-[#ff9d5a]">
-                    ×{p.tanks}
+                    ×{p.rockets}
                   </span>
                 </div>
               </Marker>
@@ -945,7 +917,7 @@ export function GameMap({
           </Marker>
         )}
 
-        {/* Marching army */}
+        {/* Incoming rocket salvo */}
         {marchPos && (
           <Marker
             longitude={marchPos.lng}
@@ -953,10 +925,9 @@ export function GameMap({
             anchor="bottom"
           >
             <div className="relative flex items-end">
-              {me && me.tanks > 0 && <TankSprite className="h-8 w-10 -mr-2" />}
-              <SoldierSprite className="h-9 w-9" />
+              <RocketSprite className="h-9 w-9 rocket-march" />
               <span className="absolute -top-2 left-1/2 -translate-x-1/2 font-mono text-[9px] text-[var(--signal-bright)]">
-                ⚔
+                ✦
               </span>
             </div>
           </Marker>

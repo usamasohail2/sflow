@@ -13,10 +13,9 @@ import {
   MAX_ROAM_FINDS,
   ROAM_METERS_TO_SPAWN,
   ROAM_MIN_EXPLORE_MS,
-  SOLDIER_COST,
+  ROCKET_COST,
   SPAWN_COOLDOWN_MS,
   STARTING,
-  TANK_COST,
   attackPower,
   buildingBonus,
   catalogItem,
@@ -552,14 +551,35 @@ async function keyExists(key: string): Promise<boolean> {
 /* Normalization                                                       */
 /* ------------------------------------------------------------------ */
 
+type LegacyArmyFields = {
+  soldiers?: number;
+  tanks?: number;
+  peakSoldiers?: number;
+  peakTanks?: number;
+};
+
 function normalizePlayer(raw: Player): Player {
-  const p = { ...raw };
+  const legacy = raw as Player & LegacyArmyFields;
+  const p = { ...raw } as Player & LegacyArmyFields;
   if (p.lastRoamSpawnAt == null) p.lastRoamSpawnAt = 0;
   if (p.lastAttackAt == null) p.lastAttackAt = 0;
-  if (p.soldiers == null) p.soldiers = 0;
-  if (p.tanks == null) p.tanks = 0;
-  if (p.peakSoldiers == null) p.peakSoldiers = p.soldiers;
-  if (p.peakTanks == null) p.peakTanks = p.tanks;
+  // Migrate soldiers/tanks → rockets (preserve old attack power: 1 + 3)
+  if (p.rockets == null) {
+    const soldiers = legacy.soldiers || 0;
+    const tanks = legacy.tanks || 0;
+    p.rockets = soldiers + tanks * 3;
+  }
+  if (p.peakRockets == null) {
+    const peakS = legacy.peakSoldiers ?? legacy.soldiers ?? 0;
+    const peakT = legacy.peakTanks ?? legacy.tanks ?? 0;
+    p.peakRockets = Math.max(p.rockets, peakS + peakT * 3);
+  }
+  p.rockets = Math.max(0, p.rockets || 0);
+  p.peakRockets = Math.max(p.peakRockets || 0, p.rockets);
+  delete p.soldiers;
+  delete p.tanks;
+  delete p.peakSoldiers;
+  delete p.peakTanks;
   if (p.totalFarmed == null) p.totalFarmed = p.gold || 0;
   if (p.villagerPost === undefined) p.villagerPost = null;
   // Clamp building HP to the simplified scale (migrates old 100+ HP values)
@@ -824,10 +844,8 @@ async function ensureRivalGarrison(): Promise<void> {
       houseHp: HOUSE_MAX_HP,
       villagerPost: center,
       villagers: 1,
-      soldiers: 1,
-      tanks: 0,
-      peakSoldiers: 1,
-      peakTanks: 0,
+      rockets: 2,
+      peakRockets: 2,
       gold: 40,
       totalFarmed: 0,
       buildings: defaultBuildings(),
@@ -866,7 +884,7 @@ async function ensureRivalGarrison(): Promise<void> {
     !bot.house ||
     (bot.houseHp || 0) < HOUSE_MAX_HP ||
     bot.buildings.length < 3 ||
-    (bot.soldiers || 0) < 1 ||
+    (bot.rockets || 0) < 1 ||
     bot.buildings.some((b) => b.hp < catalogItem(b.type).hp);
   if (razed && now - (bot.lastAttackAt || 0) > BOT_RESTOCK_MS) {
     await setPlayer({
@@ -874,7 +892,8 @@ async function ensureRivalGarrison(): Promise<void> {
       house: bot.house ?? center,
       houseHp: HOUSE_MAX_HP,
       villagerPost: bot.villagerPost ?? bot.house ?? center,
-      soldiers: Math.max(bot.soldiers || 0, 1),
+      rockets: Math.max(bot.rockets || 0, 2),
+      peakRockets: Math.max(bot.peakRockets || 0, 2),
       buildings: defaultBuildings(),
       updatedAt: now,
     });
@@ -926,10 +945,8 @@ function publicPlayer(p: Player): PublicPlayer {
     houseHp: p.houseHp ?? 0,
     villagerPost,
     villagers: p.villagers,
-    soldiers: p.soldiers || 0,
-    tanks: p.tanks || 0,
-    peakSoldiers: Math.max(p.peakSoldiers || 0, p.soldiers || 0),
-    peakTanks: Math.max(p.peakTanks || 0, p.tanks || 0),
+    rockets: p.rockets || 0,
+    peakRockets: Math.max(p.peakRockets || 0, p.rockets || 0),
     gold: p.gold,
     totalFarmed: p.totalFarmed || 0,
     buildings: p.buildings,
@@ -985,10 +1002,8 @@ export async function ensurePlayer(
       houseHp: 0,
       villagerPost: null,
       villagers: 0,
-      soldiers: 0,
-      tanks: 0,
-      peakSoldiers: 0,
-      peakTanks: 0,
+      rockets: 0,
+      peakRockets: 0,
       gold: STARTING.gold,
       totalFarmed: 0,
       buildings: [],
@@ -1186,10 +1201,8 @@ export async function claimSector(
     houseHp: HOUSE_MAX_HP,
     villagerPost,
     villagers: STARTING.villagers,
-    soldiers: 0,
-    tanks: 0,
-    peakSoldiers: 0,
-    peakTanks: 0,
+    rockets: 0,
+    peakRockets: 0,
     gold: STARTING.gold,
     totalFarmed: 0,
     buildings: [],
@@ -1529,43 +1542,24 @@ export async function buildBuilding(
   return { ok: true };
 }
 
-export async function recruitSoldier(
+export async function buyRocket(
   playerId: string
 ): Promise<{ ok: true } | { error: string }> {
   await bootstrap();
   const me = await getPlayer(playerId);
   if (!me?.homeSectorId) return { error: "Settle in a sector first" };
+  if (!me.house) return { error: "Rebuild your house before stocking rockets" };
   const spots = await getSpots();
   const { player: fresh } = await accruePlayer(me, spots, true);
-  if (fresh.gold < SOLDIER_COST) {
-    return { error: `Need ${SOLDIER_COST} gold to recruit a soldier` };
+  if (fresh.gold < ROCKET_COST) {
+    return { error: `Need ${ROCKET_COST} gold to buy a rocket` };
   }
+  const rockets = (fresh.rockets || 0) + 1;
   await setPlayer({
     ...fresh,
-    gold: fresh.gold - SOLDIER_COST,
-    soldiers: (fresh.soldiers || 0) + 1,
-    peakSoldiers: Math.max(fresh.peakSoldiers || 0, (fresh.soldiers || 0) + 1),
-    updatedAt: Date.now(),
-  });
-  return { ok: true };
-}
-
-export async function buildTank(
-  playerId: string
-): Promise<{ ok: true } | { error: string }> {
-  await bootstrap();
-  const me = await getPlayer(playerId);
-  if (!me?.homeSectorId) return { error: "Settle in a sector first" };
-  const spots = await getSpots();
-  const { player: fresh } = await accruePlayer(me, spots, true);
-  if (fresh.gold < TANK_COST) {
-    return { error: `Need ${TANK_COST} gold to build a tank` };
-  }
-  await setPlayer({
-    ...fresh,
-    gold: fresh.gold - TANK_COST,
-    tanks: (fresh.tanks || 0) + 1,
-    peakTanks: Math.max(fresh.peakTanks || 0, (fresh.tanks || 0) + 1),
+    gold: fresh.gold - ROCKET_COST,
+    rockets,
+    peakRockets: Math.max(fresh.peakRockets || 0, rockets),
     updatedAt: Date.now(),
   });
   return { ok: true };
@@ -1581,8 +1575,8 @@ export async function attackSector(
   if (!me.house) {
     return { error: "Rebuild your house before attacking" };
   }
-  if ((me.soldiers || 0) + (me.tanks || 0) <= 0) {
-    return { error: "Recruit soldiers or build tanks before attacking" };
+  if ((me.rockets || 0) <= 0) {
+    return { error: "Buy rockets for your arsenal before attacking" };
   }
   if (!targetPlayerId || targetPlayerId === playerId) {
     return { error: "Pick someone else to attack" };
@@ -1590,7 +1584,7 @@ export async function attackSector(
   const now = Date.now();
   if (me.lastAttackAt && now - me.lastAttackAt < ATTACK_COOLDOWN_MS) {
     const wait = Math.ceil((ATTACK_COOLDOWN_MS - (now - me.lastAttackAt)) / 1000);
-    return { error: `Army regrouping — ${wait}s until next attack` };
+    return { error: `Reloading arsenal — ${wait}s until next attack` };
   }
 
   const defender = await getPlayer(targetPlayerId);
@@ -1602,7 +1596,7 @@ export async function attackSector(
   }
   const targetSectorId = defender.homeSectorId;
 
-  const atk = attackPower(me.soldiers, me.tanks || 0);
+  const atk = attackPower(me.rockets || 0);
   const def = defensePower(defender);
   const win = atk > def;
 
@@ -1653,26 +1647,25 @@ export async function attackSector(
 
   const damageDealt = damageBudget - remaining;
 
-  let soldiersLost: number;
-  let tanksLost: number;
-  let defenderSoldiersLost: number;
+  let rocketsLost: number;
+  let defenderRocketsLost: number;
   let lootedGold = 0;
 
   if (win) {
-    soldiersLost = Math.floor(me.soldiers * 0.4);
-    tanksLost = Math.floor((me.tanks || 0) * 0.25);
-    defenderSoldiersLost = Math.min(
-      defender.soldiers || 0,
-      Math.floor(me.soldiers / 2) || 1
+    // Munitions expended on a successful salvo
+    rocketsLost = Math.max(1, Math.floor((me.rockets || 0) * 0.4));
+    defenderRocketsLost = Math.min(
+      defender.rockets || 0,
+      Math.floor((me.rockets || 0) / 2) || 1
     );
     if (survivingBuildings.length === 0 || houseDestroyed) {
       lootedGold = Math.min(defender.gold, 25);
     }
   } else {
-    soldiersLost = me.soldiers;
-    tanksLost = Math.ceil((me.tanks || 0) / 2);
-    defenderSoldiersLost = Math.min(
-      defender.soldiers || 0,
+    // Failed raid burns the whole salvo
+    rocketsLost = me.rockets || 0;
+    defenderRocketsLost = Math.min(
+      defender.rockets || 0,
       Math.max(1, Math.floor(atk / 3))
     );
   }
@@ -1684,7 +1677,7 @@ export async function attackSector(
     // Gathering pauses without a house — reset anchor so rebuild isn't back-paid
     lastGatherAt: houseDestroyed ? now : defender.lastGatherAt,
     buildings: survivingBuildings,
-    soldiers: Math.max(0, (defender.soldiers || 0) - defenderSoldiersLost),
+    rockets: Math.max(0, (defender.rockets || 0) - defenderRocketsLost),
     gold: defender.gold - lootedGold,
     lastAttackAt: now,
     updatedAt: now,
@@ -1692,8 +1685,7 @@ export async function attackSector(
 
   await setPlayer({
     ...me,
-    soldiers: Math.max(0, (me.soldiers || 0) - soldiersLost),
-    tanks: Math.max(0, (me.tanks || 0) - tanksLost),
+    rockets: Math.max(0, (me.rockets || 0) - rocketsLost),
     gold: me.gold + lootedGold,
     lastAttackAt: now,
     updatedAt: now,
@@ -1732,11 +1724,10 @@ export async function attackSector(
     damage: damageDealt,
     destroyed,
     lootedGold,
-    defenderSoldiersLost,
+    defenderRocketsLost,
     attackPower: atk,
     defensePower: def,
-    soldiersLost,
-    tanksLost,
+    rocketsLost,
     damagedBuildings: damagedNames,
     houseDestroyed,
     houseDamaged,
@@ -1754,9 +1745,8 @@ export async function attackSector(
       houseDestroyed,
       houseDamaged,
       lootedGold,
-      soldiersLost,
-      tanksLost,
-      defenderSoldiersLost,
+      rocketsLost,
+      defenderRocketsLost,
     },
   };
 }
