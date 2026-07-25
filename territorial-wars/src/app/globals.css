@@ -338,6 +338,62 @@ body {
     0 4px 14px rgba(0, 0, 0, 0.55);
 }
 
+/* Arsenal = weapons / stock; Buildables = place structures */
+.hud-panel-arsenal {
+  border-color: #6a5b39;
+  box-shadow:
+    inset 0 1px 0 rgba(232, 207, 138, 0.14),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5),
+    0 4px 14px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(196, 176, 137, 0.12);
+}
+
+.hud-panel-build {
+  border-color: #3f6a4a;
+  box-shadow:
+    inset 0 1px 0 rgba(143, 224, 152, 0.12),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5),
+    0 4px 14px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(90, 154, 99, 0.14);
+}
+
+/* Compact villager / house readout — bottom-left, not arsenal */
+.hud-status {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.hud-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 1.75rem;
+  padding: 0.15rem 0.4rem 0.15rem 0.25rem;
+  border-radius: 4px;
+  border: 1px solid #46543f;
+  background:
+    linear-gradient(180deg, rgba(38, 48, 42, 0.92), rgba(16, 22, 18, 0.94));
+  box-shadow:
+    inset 0 1px 0 rgba(232, 235, 228, 0.1),
+    0 2px 8px rgba(0, 0, 0, 0.45);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #cdd4c5;
+  line-height: 1;
+}
+
+.hud-status-chip--hp {
+  color: #8fe098;
+}
+
+.hud-status-chip--down {
+  color: #e88a7a;
+  border-color: #6a3f3a;
+}
+
 /* Globe intro title — big brand over Earth, then fades */
 .intro-title {
   pointer-events: none;
