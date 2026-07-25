@@ -316,13 +316,45 @@ export function GameMap({
     [sectors, me]
   );
 
+  /** Home = friendly green; everyone else = enemy red; selected tint before settle */
+  const settled = Boolean(me?.homeSectorId);
   const sectorWallColor = [
     "case",
     ["==", ["get", "mine"], 1],
-    exploring ? "#5fd0ff" : "#7ec89a",
+    exploring ? "#5fd0ff" : "#3ecf7a",
     ["==", ["get", "id"], selectedId || ""],
-    exploring ? "#ff8a7a" : "#e25a4f",
-    exploring ? "#6aa8c8" : "#c4b089",
+    settled
+      ? exploring
+        ? "#ff8a7a"
+        : "#ff5a4a"
+      : exploring
+        ? "#e8cf8a"
+        : "#c4b089",
+    settled
+      ? exploring
+        ? "#c45a52"
+        : "#b33a32"
+      : exploring
+        ? "#6aa8c8"
+        : "#8a8578",
+  ] as never;
+
+  const sectorFillColor = [
+    "case",
+    ["==", ["get", "mine"], 1],
+    "#2f8f55",
+    ["==", ["get", "id"], selectedId || ""],
+    settled ? "#c43a30" : "#c4b089",
+    settled ? "#8a2e28" : "#5a564c",
+  ] as never;
+
+  const sectorLabelColor = [
+    "case",
+    ["==", ["get", "mine"], 1],
+    "#8fe098",
+    ["==", ["get", "id"], selectedId || ""],
+    settled ? "#ff9d8a" : "#e8cf8a",
+    settled ? "#e07068" : "#cdd4c5",
   ] as never;
 
   // Footprint circles for every settlement on the map (+ placement ghost)
@@ -608,15 +640,22 @@ export function GameMap({
         }}
         style={{ width: "100%", height: "100%" }}
       >
-        {/* Invisible hit target — keep sector tap without a filled block */}
+        {/* Sector hit target + soft ownership wash (walls stay the main signal) */}
         <Source id="sectors" type="geojson" data={fc}>
           <Layer
             id="sector-fill"
             type="fill"
             slot="top"
             paint={{
-              "fill-color": "#000000",
-              "fill-opacity": 0.01,
+              "fill-color": sectorFillColor,
+              "fill-opacity": [
+                "case",
+                ["==", ["get", "mine"], 1],
+                exploring ? 0.1 : 0.16,
+                ["==", ["get", "id"], selectedId || ""],
+                exploring ? 0.08 : 0.14,
+                settled ? (exploring ? 0.06 : 0.1) : 0.02,
+              ] as never,
             }}
           />
           <Layer
@@ -629,7 +668,7 @@ export function GameMap({
               "text-font": ["DIN Pro Medium", "Arial Unicode MS Regular"],
             }}
             paint={{
-              "text-color": "#e8ebe4",
+              "text-color": sectorLabelColor,
               "text-halo-color": "#0c100e",
               "text-halo-width": 1.2,
               "text-opacity": exploring ? 0.35 : 1,
@@ -645,9 +684,19 @@ export function GameMap({
             slot="top"
             paint={{
               "line-color": sectorWallColor,
-              "line-width": 10,
+              "line-width": [
+                "case",
+                ["==", ["get", "mine"], 1],
+                14,
+                9,
+              ] as never,
               "line-blur": 6,
-              "line-opacity": exploring ? 0.35 : 0.55,
+              "line-opacity": [
+                "case",
+                ["==", ["get", "mine"], 1],
+                exploring ? 0.45 : 0.7,
+                exploring ? 0.3 : 0.5,
+              ] as never,
             }}
           />
           <Layer
@@ -656,7 +705,12 @@ export function GameMap({
             slot="top"
             paint={{
               "line-color": sectorWallColor,
-              "line-width": exploring ? 2.5 : 3.5,
+              "line-width": [
+                "case",
+                ["==", ["get", "mine"], 1],
+                exploring ? 3.5 : 4.5,
+                exploring ? 2.2 : 3.2,
+              ] as never,
               "line-opacity": 0.95,
             }}
           />
@@ -669,8 +723,18 @@ export function GameMap({
               paint={{
                 "fill-extrusion-color": sectorWallColor,
                 "fill-extrusion-base": band.base,
-                "fill-extrusion-height": band.height,
-                "fill-extrusion-opacity": band.opacity,
+                "fill-extrusion-height": [
+                  "case",
+                  ["==", ["get", "mine"], 1],
+                  band.height + 12,
+                  band.height,
+                ] as never,
+                "fill-extrusion-opacity": [
+                  "case",
+                  ["==", ["get", "mine"], 1],
+                  Math.min(0.92, band.opacity + 0.08),
+                  band.opacity,
+                ] as never,
                 "fill-extrusion-vertical-gradient": true,
               }}
             />
@@ -1035,7 +1099,11 @@ export function GameMap({
               {spawnFlash}
             </p>
           )}
-          {zoom < EXPLORE_ZOOM ? (
+          {!showDetail ? (
+            <p className="hud-chip px-3 py-1.5 text-center font-mono text-[9px] text-[var(--ink-muted)]">
+              Overview — dots show settlers · zoom in for houses & villagers
+            </p>
+          ) : zoom < EXPLORE_ZOOM ? (
             <p className="hud-chip px-3 py-1.5 text-center font-mono text-[9px] text-[var(--ink-muted)]">
               Zoom into {homeSector?.name ?? "your sector"} & roam for
               resources · trip {Math.round(GATHER_TRIP_MS / 1000)}s
