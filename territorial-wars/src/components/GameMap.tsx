@@ -97,8 +97,11 @@ import {
   gatherTripIndex,
 } from "@/lib/rules";
 import {
+  CivicSprite,
   HouseSprite,
+  LandCruiserSprite,
   MillSprite,
+  PradoSprite,
   RocketSprite,
   ShovelSprite,
   VillagerSprite,
@@ -260,6 +263,12 @@ function BuildingSprite({ type }: { type: Building["type"] }) {
     return <WarehouseSprite className="h-9 w-10 drop-shadow-md" />;
   if (type === "shovel")
     return <ShovelSprite className="h-9 w-10 drop-shadow-md" />;
+  if (type === "civic")
+    return <CivicSprite className="h-8 w-11 drop-shadow-md" />;
+  if (type === "prado")
+    return <PradoSprite className="h-8 w-11 drop-shadow-md" />;
+  if (type === "landcruiser")
+    return <LandCruiserSprite className="h-9 w-12 drop-shadow-md" />;
   return <WellSprite className="h-9 w-10 drop-shadow-md" />;
 }
 

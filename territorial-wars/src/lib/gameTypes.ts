@@ -101,7 +101,14 @@ export const SPAWN_COOLDOWN_MS = 22_000;
 /** Cap finds spawned in a sector */
 export const MAX_ROAM_FINDS = 14;
 
-export type BuildingType = "mill" | "warehouse" | "well" | "shovel";
+export type BuildingType =
+  | "mill"
+  | "warehouse"
+  | "well"
+  | "shovel"
+  | "civic"
+  | "prado"
+  | "landcruiser";
 
 export type Building = {
   id: string;
@@ -450,6 +457,36 @@ export const BUILDING_CATALOG: BuildingCatalogItem[] = [
     tripBonus: 0,
     footprintM: 20,
     hp: 2,
+    defense: 0,
+  },
+  {
+    type: "civic",
+    name: "Honda Civic",
+    cost: 400,
+    blurb: "Park it by your house — flex tier",
+    tripBonus: 0,
+    footprintM: 16,
+    hp: 2,
+    defense: 0,
+  },
+  {
+    type: "prado",
+    name: "Toyota Prado",
+    cost: 950,
+    blurb: "SUV flex — park near home",
+    tripBonus: 0,
+    footprintM: 20,
+    hp: 3,
+    defense: 0,
+  },
+  {
+    type: "landcruiser",
+    name: "Land Cruiser",
+    cost: 1800,
+    blurb: "Top-shelf flex — everyone sees it",
+    tripBonus: 0,
+    footprintM: 24,
+    hp: 4,
     defense: 0,
   },
 ];

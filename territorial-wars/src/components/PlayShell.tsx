@@ -34,9 +34,12 @@ import {
   type MapBusiness,
 } from "@/lib/businesses";
 import {
+  CivicSprite,
   GoldCoinIcon,
   HouseSprite,
+  LandCruiserSprite,
   MillSprite,
+  PradoSprite,
   RocketSprite,
   ShovelSprite,
   VillagerSprite,
@@ -174,6 +177,9 @@ function BuildingThumb({
   if (type === "mill") return <MillSprite className={className} />;
   if (type === "warehouse") return <WarehouseSprite className={className} />;
   if (type === "shovel") return <ShovelSprite className={className} />;
+  if (type === "civic") return <CivicSprite className={className} />;
+  if (type === "prado") return <PradoSprite className={className} />;
+  if (type === "landcruiser") return <LandCruiserSprite className={className} />;
   return <WellSprite className={className} />;
 }
 
@@ -1712,7 +1718,9 @@ export function PlayShell() {
     showToast(
       kind === "shovel"
         ? "Shovel ready — tap it on the map to dig for gold"
-        : "Building synced"
+        : kind === "civic" || kind === "prado" || kind === "landcruiser"
+          ? `${catalogItem(kind).name} parked — flex unlocked`
+          : "Building synced"
     );
   };
 
@@ -4133,9 +4141,9 @@ export function PlayShell() {
               )}
             </div>
 
-            <div className="pointer-events-auto w-full min-w-0 sm:max-w-[min(100%,36rem)]">
+            <div className="pointer-events-auto w-full min-w-0 sm:max-w-[min(100%,42rem)]">
               <div className="hud-panel hud-panel-arsenal p-1.5 sm:p-2">
-                <div className="flex w-full items-stretch gap-1 sm:gap-1.5">
+                <div className="arsenal-dock-row flex w-full items-stretch gap-1 sm:gap-1.5">
                   <button
                     type="button"
                     className={`cameo cameo-dock ${
@@ -4207,7 +4215,13 @@ export function PlayShell() {
                             ? "Well"
                             : b.type === "shovel"
                               ? "Shovel"
-                              : b.name;
+                              : b.type === "civic"
+                                ? "Civic"
+                                : b.type === "prado"
+                                  ? "Prado"
+                                  : b.type === "landcruiser"
+                                    ? "Cruiser"
+                                    : b.name;
                     return (
                       <button
                         key={b.type}

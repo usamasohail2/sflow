@@ -707,16 +707,26 @@ body {
   }
 }
 
-/* Dock row tiles — share the full arsenal width equally */
+/* Dock scrolls when flex cars + builds exceed the row */
+.arsenal-dock-row {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  padding-bottom: 1px;
+}
+
+/* Dock row tiles — share width, but keep a readable minimum for cars */
 .cameo-dock {
   flex: 1 1 0;
   width: auto;
-  min-width: 0;
+  min-width: 3.25rem;
   height: 56px;
 }
 
 @media (min-width: 640px) {
   .cameo-dock {
+    min-width: 3.75rem;
     height: 64px;
   }
 }

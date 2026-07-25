@@ -442,6 +442,120 @@ export function HammerSprite({
   );
 }
 
+/** Compact sedan — Honda Civic flex. */
+export function CivicSprite({
+  className = "",
+  title = "Honda Civic",
+}: SpriteProps) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 40 24"
+      width="56"
+      height="34"
+      role="img"
+      aria-label={title}
+    >
+      <title>{title}</title>
+      <ellipse cx="20" cy="21.5" rx="14" ry="1.6" fill="rgba(0,0,0,0.35)" />
+      <path
+        d="M6 14.5 L9 10.2 Q11 8 14.5 8 L25.5 8 Q29 8 31 10.2 L34 14.5 L35.5 14.5 Q37 14.5 37 16 L37 18 Q37 19.5 35.5 19.5 L4.5 19.5 Q3 19.5 3 18 L3 16 Q3 14.5 4.5 14.5 Z"
+        fill="#c5ccd4"
+      />
+      <path
+        d="M12 10.2 L14.2 8.4 L25.8 8.4 L28 10.2 L26.5 14.2 L13.5 14.2 Z"
+        fill="#7a8a9a"
+        opacity="0.85"
+      />
+      <rect x="5.5" y="14.8" width="3.2" height="1.6" rx="0.4" fill="#f0e6a8" />
+      <rect x="31.2" y="14.8" width="3.2" height="1.6" rx="0.4" fill="#e23b2f" />
+      <circle cx="11" cy="19" r="2.4" fill="#2a241c" />
+      <circle cx="11" cy="19" r="1.1" fill="#8a9088" />
+      <circle cx="29" cy="19" r="2.4" fill="#2a241c" />
+      <circle cx="29" cy="19" r="1.1" fill="#8a9088" />
+      <rect x="18.5" y="15.2" width="3" height="1.2" rx="0.3" fill="#e8cf8a" />
+    </svg>
+  );
+}
+
+/** Mid-size SUV — Toyota Prado. */
+export function PradoSprite({
+  className = "",
+  title = "Toyota Prado",
+}: SpriteProps) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 42 26"
+      width="58"
+      height="36"
+      role="img"
+      aria-label={title}
+    >
+      <title>{title}</title>
+      <ellipse cx="21" cy="23.5" rx="15" ry="1.7" fill="rgba(0,0,0,0.38)" />
+      <path
+        d="M5 16 L8.5 10.5 Q11 8 15 8 L28 8 Q32 8 34.5 10.5 L38 16 L39.5 16 Q41 16 41 17.5 L41 20 Q41 21.5 39.5 21.5 L3.5 21.5 Q2 21.5 2 20 L2 17.5 Q2 16 3.5 16 Z"
+        fill="#f2f0ea"
+      />
+      <path
+        d="M11.5 10.8 L14 8.6 L28.5 8.6 L31 10.8 L29.5 15.5 L13 15.5 Z"
+        fill="#5a6a78"
+        opacity="0.8"
+      />
+      <rect x="4.5" y="16.2" width="3.4" height="1.8" rx="0.4" fill="#ffe08a" />
+      <rect x="34" y="16.2" width="3.4" height="1.8" rx="0.4" fill="#e23b2f" />
+      <rect x="19" y="9.5" width="4.2" height="1.4" rx="0.3" fill="#c4b089" />
+      <circle cx="11.5" cy="21" r="2.7" fill="#2a241c" />
+      <circle cx="11.5" cy="21" r="1.2" fill="#9aa3a0" />
+      <circle cx="30.5" cy="21" r="2.7" fill="#2a241c" />
+      <circle cx="30.5" cy="21" r="1.2" fill="#9aa3a0" />
+    </svg>
+  );
+}
+
+/** Flagship SUV — Land Cruiser flex. */
+export function LandCruiserSprite({
+  className = "",
+  title = "Land Cruiser",
+}: SpriteProps) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 44 28"
+      width="60"
+      height="38"
+      role="img"
+      aria-label={title}
+    >
+      <title>{title}</title>
+      <ellipse cx="22" cy="25.2" rx="16" ry="1.8" fill="rgba(0,0,0,0.4)" />
+      <path
+        d="M4 17.5 L8 11 Q11 8.2 16 8.2 L30 8.2 Q35 8.2 38 11 L42 17.5 L43 17.5 Q44.5 17.5 44.5 19 L44.5 22 Q44.5 23.5 43 23.5 L3 23.5 Q1.5 23.5 1.5 22 L1.5 19 Q1.5 17.5 3 17.5 Z"
+        fill="#1c1f24"
+      />
+      <path
+        d="M12 11.5 L15 9 L31 9 L34 11.5 L32.5 16.8 L13.5 16.8 Z"
+        fill="#3d4a58"
+        opacity="0.9"
+      />
+      <rect x="4.2" y="17.8" width="3.8" height="2" rx="0.4" fill="#f0e0a0" />
+      <rect x="36" y="17.8" width="3.8" height="2" rx="0.4" fill="#e23b2f" />
+      <rect x="19.5" y="10" width="5" height="1.6" rx="0.3" fill="#e8cf8a" />
+      <path
+        d="M8 17.5h28"
+        stroke="#c4b089"
+        strokeWidth="0.55"
+        opacity="0.7"
+      />
+      <circle cx="12" cy="23" r="3" fill="#111" />
+      <circle cx="12" cy="23" r="1.35" fill="#b8c0b4" />
+      <circle cx="32" cy="23" r="3" fill="#111" />
+      <circle cx="32" cy="23" r="1.35" fill="#b8c0b4" />
+    </svg>
+  );
+}
+
 /** Cozy little cottage with warm window glow. */
 export function HouseSprite({
   className = "",
