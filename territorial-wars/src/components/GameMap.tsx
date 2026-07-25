@@ -30,6 +30,7 @@ import {
 } from "@/lib/gameTypes";
 import { pointInRing, wallBandCoordinates } from "@/lib/geo";
 import { distMeters, lerpLatLng, offsetMeters } from "@/lib/mapMath";
+import { setVillagerWorkLevel, stopVillagerWork } from "@/lib/sound";
 
 /** Hollow perimeter band thickness (meters) */
 const SECTOR_WALL_M = 28;
@@ -408,6 +409,28 @@ export function GameMap({
       });
   }, [players, spots, me, now]);
 
+  // Villager working audio — only audible up close (zoom + distance falloff)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || villagerMarkers.length === 0) {
+      stopVillagerWork();
+      return;
+    }
+    const c = map.getCenter();
+    const center = { lat: c.lat, lng: c.lng };
+    let nearest = Infinity;
+    for (const v of villagerMarkers) {
+      const d = distMeters(center, v.pos);
+      if (d < nearest) nearest = d;
+    }
+    // Audible under ~320m, full volume within 60m — and only when zoomed in
+    const distFactor = Math.max(0, 1 - Math.max(0, nearest - 60) / 260);
+    const zoomFactor = Math.max(0, Math.min(1, (zoom - 14.6) / 1.2));
+    setVillagerWorkLevel(distFactor * zoomFactor);
+  }, [villagerMarkers, zoom]);
+
+  useEffect(() => () => stopVillagerWork(), []);
+
   // March animation position
   const marchPos = useMemo(() => {
     if (!march) return null;
@@ -711,8 +734,7 @@ export function GameMap({
                 }`}
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (p.homeSectorId) onSelect(p.homeSectorId);
-                  // Same-sector settlers are neighbors — not attack targets
+                  // Only houses open attack UI — sector taps stay quiet
                   if (
                     p.id !== me?.id &&
                     p.homeSectorId &&

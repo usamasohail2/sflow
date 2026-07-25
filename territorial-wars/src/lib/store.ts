@@ -41,6 +41,7 @@ import {
   seedSpotsForSector,
 } from "@/lib/mapMath";
 import { accrueGather } from "@/lib/rules";
+import { sendAttackEmail } from "@/lib/email";
 
 /**
  * Storage layout (v3) — granular keys so concurrent requests can't clobber
@@ -1308,6 +1309,22 @@ export async function attackSector(
   const destroyed = destroyedNames.length ? destroyedNames.join(", ") : null;
   const sectors = await getSectors();
   const sector = sectors.find((s) => s.id === targetSectorId);
+
+  // Notify the defender by email (no-op unless RESEND_API_KEY is set)
+  if (defender.email) {
+    await sendAttackEmail({
+      toEmail: defender.email,
+      defenderName: defender.name,
+      attackerName: me.name,
+      sectorName: sector?.name ?? targetSectorId,
+      win,
+      damage: damageDealt,
+      destroyed,
+      houseDestroyed,
+      lootedGold,
+    });
+  }
+
   await pushEvent({
     id: `ev_${now.toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
     ts: now,

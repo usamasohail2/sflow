@@ -40,6 +40,18 @@ import {
 } from "@/lib/gameTypes";
 import { pointInOrNearRing } from "@/lib/geo";
 import { ringCentroid } from "@/lib/mapMath";
+import {
+  isMusicOn,
+  playAttackSound,
+  playBuildSound,
+  playCoinSound,
+  playRecruitSound,
+  playUnderAttackSound,
+  readMusicPref,
+  startMusic,
+  toggleMusic,
+  unlockAudio,
+} from "@/lib/sound";
 
 const BATTLE_ACK_KEY = "itw_battle_ack_ts";
 
@@ -224,6 +236,7 @@ export function PlayShell() {
   } | null>(null);
   const [gpsBusy, setGpsBusy] = useState(false);
   const [locationFocus, setLocationFocus] = useState(0);
+  const [musicOn, setMusicOn] = useState(false);
   const gpsWatchStarted = useRef(false);
   const identityChecked = useRef(false);
   const seenEvents = useRef<Set<string>>(new Set());
@@ -268,6 +281,7 @@ export function PlayShell() {
       seenEvents.current.add(e.id);
       if (data.me && e.defenderId === data.me.id) {
         const summary = summaryFromEvent(e);
+        playUnderAttackSound();
         if (data.me.house) {
           setImpact({ at: data.me.house, startedAt: Date.now() });
           window.setTimeout(() => setImpact(null), 1600);
@@ -584,6 +598,20 @@ export function PlayShell() {
     showToast(`Demo: GPS bypassed for ${sector.name}`);
   };
 
+  // Audio: unlock on first tap (mobile autoplay) and resume music pref
+  useEffect(() => {
+    const unlock = () => {
+      unlockAudio();
+      if (readMusicPref() && !isMusicOn()) {
+        startMusic();
+        setMusicOn(true);
+      }
+      window.removeEventListener("pointerdown", unlock);
+    };
+    window.addEventListener("pointerdown", unlock);
+    return () => window.removeEventListener("pointerdown", unlock);
+  }, []);
+
   // Open build tray when a building is being placed; keep army row clear otherwise
   useEffect(() => {
     if (
@@ -657,6 +685,7 @@ export function PlayShell() {
           villagerLng: lng,
         });
         if (data) {
+          playBuildSound();
           showToast("House rebuilt — villagers are gathering again");
           setPlacing(null);
           setPendingHouse(null);
@@ -682,6 +711,7 @@ export function PlayShell() {
         gpsLng: gpsFix.lng,
       });
       if (data) {
+        playBuildSound();
         showToast(`Settled in ${placing.sector.name} — your village is live!`);
         setPlacing(null);
         setPendingHouse(null);
@@ -698,6 +728,7 @@ export function PlayShell() {
       lng,
     });
     if (data) {
+      playBuildSound();
       showToast("Building placed");
       setPlacing(null);
     }
@@ -749,6 +780,7 @@ export function PlayShell() {
       startedAt: marchStarted,
       durationMs,
     });
+    playAttackSound();
     const data = await act("attack", { targetPlayerId: enemyPlayer.id });
     const battle = data?.battle as BattleReport | undefined;
 
@@ -874,7 +906,10 @@ export function PlayShell() {
           onPlace={(lat, lng) => void handlePlace(lat, lng)}
           onSpawnFind={(p) => spawnFind(p)}
           onCollectHidden={(spotId) => void act("collect_hidden", { spotId }).then((d) => {
-            if (d?.gained) showToast(`Collected +${d.gained} gold`);
+            if (d?.gained) {
+              playCoinSound();
+              showToast(`Collected +${d.gained} gold`);
+            }
           })}
           className="h-full w-full"
         />
@@ -902,6 +937,18 @@ export function PlayShell() {
               </p>
             )}
           </div>
+          <button
+            type="button"
+            onClick={() => setMusicOn(toggleMusic())}
+            className={`hud-chip px-2.5 py-1.5 font-mono text-[10px] sm:px-3 ${
+              musicOn
+                ? "text-[var(--sand)]"
+                : "text-[var(--ink-muted)] hover:text-[var(--sand)]"
+            }`}
+            title={musicOn ? "Music on — tap to mute" : "Music off — tap to play"}
+          >
+            {musicOn ? "♫ On" : "♫ Off"}
+          </button>
           <button
             type="button"
             onClick={() => {
@@ -1534,7 +1581,10 @@ export function PlayShell() {
                 title={`Recruit soldier — ${SOLDIER_COST}g · +1 attack / +1 defense`}
                 onClick={() =>
                   void act("recruit_soldier").then((d) => {
-                    if (d) showToast("Soldier recruited · +1 attack");
+                    if (d) {
+                      playRecruitSound();
+                      showToast("Soldier recruited · +1 attack");
+                    }
                   })
                 }
               >
@@ -1554,7 +1604,10 @@ export function PlayShell() {
                 title={`Build tank — ${TANK_COST}g · +3 attack / +2 defense`}
                 onClick={() =>
                   void act("build_tank").then((d) => {
-                    if (d) showToast("Tank ready · +3 attack");
+                    if (d) {
+                      playRecruitSound();
+                      showToast("Tank ready · +3 attack");
+                    }
                   })
                 }
               >
