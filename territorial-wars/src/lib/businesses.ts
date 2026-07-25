@@ -1,5 +1,4 @@
 import type { LatLng } from "@/lib/gameTypes";
-import { distMeters } from "@/lib/mapMath";
 
 export type MapBusiness = {
   placeKey: string;
@@ -10,18 +9,15 @@ export type MapBusiness = {
 };
 
 type MapboxFeature = {
-  id?: string;
+  id?: string | number;
   text?: string;
   place_name?: string;
   center?: [number, number];
   properties?: Record<string, unknown>;
-  geometry?: { type?: string; coordinates?: number[] };
+  geometry?: { type?: string; coordinates?: number[] | number[][] | number[][][] };
   layer?: { id?: string; type?: string };
   source?: string;
 };
-
-/** How far a reverse-geocode POI may sit from the tap */
-const MAX_POI_DIST_M = 140;
 
 /** Stable key for one-reward-per-place tracking */
 export function businessPlaceKey(b: {
@@ -52,9 +48,70 @@ function readProp(
   return null;
 }
 
+function coordsFromFeature(
+  f: MapboxFeature,
+  fallback?: LatLng
+): LatLng | null {
+  const coords = f.geometry?.coordinates;
+  if (
+    f.geometry?.type === "Point" &&
+    Array.isArray(coords) &&
+    coords.length >= 2 &&
+    typeof coords[0] === "number" &&
+    typeof coords[1] === "number"
+  ) {
+    return { lng: coords[0], lat: coords[1] };
+  }
+  if (Array.isArray(f.center) && f.center.length >= 2) {
+    return { lng: f.center[0]!, lat: f.center[1]! };
+  }
+  return fallback ?? null;
+}
+
 /**
- * Pull a named place from Mapbox rendered features at a click
- * (POI / place labels on the Standard basemap).
+ * Convert a Mapbox Standard `poi` featureset feature into a business.
+ * Only named POI labels — never invent a place from a bare map tap.
+ */
+export function businessFromPoiFeature(
+  feature: unknown,
+  fallback?: LatLng
+): MapBusiness | null {
+  if (!feature || typeof feature !== "object") return null;
+  const f = feature as MapboxFeature;
+  const props = f.properties ?? {};
+
+  const name =
+    readProp(props, "name", "name_en", "name_en-US", "name_int", "text", "title") ||
+    (typeof f.text === "string" ? f.text.trim() : null);
+  if (!name) return null;
+
+  const at = coordsFromFeature(f, fallback);
+  if (!at) return null;
+
+  const idRaw = f.id;
+  const id =
+    (typeof idRaw === "string" && idRaw) ||
+    (typeof idRaw === "number" ? String(idRaw) : null) ||
+    readProp(props, "mapbox_id", "wikidata", "id") ||
+    undefined;
+
+  const className = readProp(props, "class", "group", "maki", "type");
+  const address =
+    readProp(props, "address", "full_address", "place_name") ||
+    (className ? className.replace(/_/g, " ") : undefined);
+
+  return {
+    placeKey: businessPlaceKey({ id, name, lat: at.lat, lng: at.lng }),
+    name,
+    address,
+    lat: at.lat,
+    lng: at.lng,
+  };
+}
+
+/**
+ * Pull a named POI from classic rendered features (non-Standard styles).
+ * Ignores roads / admin labels.
  */
 export function businessFromRenderedFeatures(
   features: MapboxFeature[],
@@ -65,135 +122,41 @@ export function businessFromRenderedFeatures(
     const source = (f.source || "").toLowerCase();
     const looksPoi =
       layerId.includes("poi") ||
-      layerId.includes("place") ||
-      layerId.includes("transit") ||
       source.includes("poi") ||
-      source.includes("place") ||
       typeof f.properties?.category === "string" ||
       typeof f.properties?.maki === "string" ||
-      typeof f.properties?.type === "string";
+      typeof f.properties?.class === "string";
 
-    const name =
-      readProp(
-        f.properties,
-        "name",
-        "name_en",
-        "name_en-US",
-        "name_int",
-        "text",
-        "title"
-      ) ||
-      (typeof f.text === "string" ? f.text.trim() : null) ||
-      null;
-
-    if (!name) continue;
-    // Skip pure road / admin labels unless they look like POIs
+    if (!looksPoi) continue;
     if (
-      !looksPoi &&
-      (layerId.includes("road") ||
-        layerId.includes("street") ||
-        layerId.includes("admin") ||
-        layerId.includes("boundary"))
+      layerId.includes("road") ||
+      layerId.includes("street") ||
+      layerId.includes("admin") ||
+      layerId.includes("boundary") ||
+      layerId.includes("place-label") ||
+      layerId.includes("settlement")
     ) {
       continue;
     }
 
-    let lat = fallback.lat;
-    let lng = fallback.lng;
-    const coords = f.geometry?.coordinates;
-    if (
-      f.geometry?.type === "Point" &&
-      Array.isArray(coords) &&
-      coords.length >= 2 &&
-      typeof coords[0] === "number" &&
-      typeof coords[1] === "number"
-    ) {
-      lng = coords[0];
-      lat = coords[1];
-    } else if (Array.isArray(f.center) && f.center.length >= 2) {
-      lng = f.center[0]!;
-      lat = f.center[1]!;
-    }
-
-    const address =
-      readProp(f.properties, "address", "place_name", "full_address") ||
-      undefined;
-    const id =
-      (typeof f.id === "string" && f.id) ||
-      readProp(f.properties, "id", "mapbox_id", "wikidata") ||
-      undefined;
-
-    return {
-      placeKey: businessPlaceKey({ id, name, lat, lng }),
-      name,
-      address,
-      lat,
-      lng,
-    };
+    const biz = businessFromPoiFeature(f, fallback);
+    if (biz) return biz;
   }
   return null;
 }
 
 /**
- * Reverse-geocode nearby POIs with Mapbox so players can tap businesses
- * in their sector without a separate Places key.
+ * Resolve a tapped label only — no reverse-geocode of empty map taps.
+ * Prefer Mapbox Standard `poi` featureset hits, then classic POI layers.
  */
-export async function findNearbyBusiness(
+export function resolveTappedPlaceLabel(
   at: LatLng,
-  token: string
-): Promise<MapBusiness | null> {
-  if (!token) return null;
-  const url =
-    `https://api.mapbox.com/geocoding/v5/mapbox.places/` +
-    `${at.lng},${at.lat}.json?types=poi&limit=8&access_token=${encodeURIComponent(token)}`;
-  try {
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const data = (await res.json()) as { features?: MapboxFeature[] };
-    let best: MapBusiness | null = null;
-    let bestDist = MAX_POI_DIST_M;
-    for (const f of data.features ?? []) {
-      const name = (
-        f.text ||
-        readProp(f.properties, "name") ||
-        f.place_name ||
-        ""
-      ).trim();
-      const center = f.center;
-      if (!name || !center) continue;
-      const lat = center[1]!;
-      const lng = center[0]!;
-      const d = distMeters(at, { lat, lng });
-      if (d > bestDist) continue;
-      bestDist = d;
-      best = {
-        placeKey: businessPlaceKey({ id: f.id, name, lat, lng }),
-        name,
-        address:
-          readProp(f.properties, "address") || f.place_name || undefined,
-        lat,
-        lng,
-      };
-    }
-    return best;
-  } catch {
-    return null;
+  rendered: unknown[],
+  featuresetHits: unknown[] = []
+): MapBusiness | null {
+  for (const f of featuresetHits) {
+    const biz = businessFromPoiFeature(f, at);
+    if (biz) return biz;
   }
-}
-
-/**
- * Resolve a tapped map place: prefer the label under the finger,
- * then fall back to nearby POI reverse-geocode.
- */
-export async function resolveTappedPlace(
-  at: LatLng,
-  token: string,
-  rendered: unknown[]
-): Promise<MapBusiness | null> {
-  const fromLabel = businessFromRenderedFeatures(
-    rendered as MapboxFeature[],
-    at
-  );
-  if (fromLabel) return fromLabel;
-  return findNearbyBusiness(at, token);
+  return businessFromRenderedFeatures(rendered as MapboxFeature[], at);
 }

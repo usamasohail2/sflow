@@ -99,7 +99,10 @@ import {
 } from "@/components/sprites";
 import { ResourceNode } from "@/components/ResourceNode";
 import { ViewerMarkers } from "@/components/ViewerMarkers";
-import { resolveTappedPlace } from "@/lib/businesses";
+import {
+  businessFromPoiFeature,
+  resolveTappedPlaceLabel,
+} from "@/lib/businesses";
 import type { PresencePeer } from "@/lib/presenceTypes";
 
 const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
@@ -349,6 +352,8 @@ export function GameMap({
   onIntroCompleteRef.current = onIntroComplete;
   const onCameraReportRef = useRef(onCameraReport);
   onCameraReportRef.current = onCameraReport;
+  const onSelectBusinessRef = useRef(onSelectBusiness);
+  onSelectBusinessRef.current = onSelectBusiness;
   const mapRef = useRef<MapRef>(null);
   const [zoom, setZoom] = useState(INTRO_GLOBE_ZOOM);
   const showDetail = zoom >= DETAIL_ZOOM;
@@ -385,6 +390,47 @@ export function GameMap({
         : sectors.find((s) => s.id === me?.homeSectorId) ?? null,
     [sectors, me, isAzad]
   );
+  const meRef = useRef(me);
+  meRef.current = me;
+  const homeSectorRef = useRef(homeSector);
+  homeSectorRef.current = homeSector;
+  const isAzadRef = useRef(isAzad);
+  isAzadRef.current = isAzad;
+  const showDetailRef = useRef(showDetail);
+  showDetailRef.current = showDetail;
+
+  /** Open review modal only for a real named POI inside the play area */
+  const trySelectBusiness = useCallback((biz: {
+    placeKey: string;
+    name: string;
+    address?: string;
+    lat: number;
+    lng: number;
+  }) => {
+    const select = onSelectBusinessRef.current;
+    const player = meRef.current;
+    if (!select || !player?.homeSectorId || !showDetailRef.current) return false;
+
+    if (isAzadRef.current) {
+      if (
+        !player.house ||
+        distMeters({ lat: biz.lat, lng: biz.lng }, player.house) >
+          AZAD_PLAY_RADIUS_M
+      ) {
+        return false;
+      }
+    } else {
+      const home = homeSectorRef.current;
+      if (
+        !home ||
+        !pointInOrNearRing({ lat: biz.lat, lng: biz.lng }, home.ring, 120)
+      ) {
+        return false;
+      }
+    }
+    select(biz);
+    return true;
+  }, []);
 
   const introFocus = useMemo((): LatLng => {
     if (me?.house) return me.house;
@@ -439,6 +485,65 @@ export function GameMap({
     }
     onIntroCompleteRef.current?.();
   }, []);
+
+  // Mapbox Standard: click real POI labels (schools, shops…) — not empty ground
+  useEffect(() => {
+    if (!mapReady) return;
+    type InteractiveMap = {
+      getCanvas: () => HTMLCanvasElement;
+      addInteraction?: (
+        id: string,
+        spec: {
+          type: string;
+          target?: { featuresetId: string; importId: string };
+          handler: (e: { feature?: unknown }) => boolean | void;
+        }
+      ) => void;
+      removeInteraction?: (id: string) => void;
+    };
+    const map = mapRef.current?.getMap() as InteractiveMap | undefined;
+    if (!map?.addInteraction) return;
+
+    const poiTarget = { featuresetId: "poi", importId: "basemap" };
+
+    try {
+      map.addInteraction("itw-poi-click", {
+        type: "click",
+        target: poiTarget,
+        handler: ({ feature }) => {
+          const biz = businessFromPoiFeature(feature);
+          if (!biz) return false;
+          return trySelectBusiness(biz);
+        },
+      });
+      map.addInteraction("itw-poi-enter", {
+        type: "mouseenter",
+        target: poiTarget,
+        handler: () => {
+          map.getCanvas().style.cursor = "pointer";
+        },
+      });
+      map.addInteraction("itw-poi-leave", {
+        type: "mouseleave",
+        target: poiTarget,
+        handler: () => {
+          map.getCanvas().style.cursor = "";
+        },
+      });
+    } catch {
+      /* older GL / style without featuresets */
+    }
+
+    return () => {
+      try {
+        map.removeInteraction?.("itw-poi-click");
+        map.removeInteraction?.("itw-poi-enter");
+        map.removeInteraction?.("itw-poi-leave");
+      } catch {
+        /* ignore */
+      }
+    };
+  }, [mapReady, trySelectBusiness]);
 
   // Splash: outside Earth → sector → villager-close
   useEffect(() => {
@@ -1119,47 +1224,28 @@ export function GameMap({
             /* layer may not be ready */
           }
 
-          // Fully zoomed in: tap a place label / nearby POI for review reward
-          if (
-            onSelectBusiness &&
-            me?.homeSectorId &&
-            showDetail &&
-            (isAzad
-              ? me.house &&
-                distMeters(
-                  { lat: e.lngLat.lat, lng: e.lngLat.lng },
-                  me.house
-                ) <= AZAD_PLAY_RADIUS_M
-              : homeSector &&
-                pointInOrNearRing(
-                  { lat: e.lngLat.lat, lng: e.lngLat.lng },
-                  homeSector.ring,
-                  90
-                ))
-          ) {
+          // Fallback: only if a POI label is under the finger (no reverse-geocode)
+          if (onSelectBusiness && me?.homeSectorId && showDetail) {
             const at = { lat: e.lngLat.lat, lng: e.lngLat.lng };
-            void resolveTappedPlace(at, TOKEN, rendered).then((biz) => {
-              if (!biz) return;
-              if (isAzad) {
-                if (
-                  !me.house ||
-                  distMeters({ lat: biz.lat, lng: biz.lng }, me.house) >
-                    AZAD_PLAY_RADIUS_M
-                ) {
-                  return;
+            let featuresetHits: unknown[] = [];
+            try {
+              featuresetHits = (
+                e.target as unknown as {
+                  queryRenderedFeatures: (
+                    point: mapboxgl.PointLike,
+                    opts?: {
+                      target?: { featuresetId: string; importId: string };
+                    }
+                  ) => unknown[];
                 }
-              } else if (
-                homeSector &&
-                !pointInOrNearRing(
-                  { lat: biz.lat, lng: biz.lng },
-                  homeSector.ring,
-                  120
-                )
-              ) {
-                return;
-              }
-              onSelectBusiness(biz);
-            });
+              ).queryRenderedFeatures(e.point, {
+                target: { featuresetId: "poi", importId: "basemap" },
+              });
+            } catch {
+              featuresetHits = [];
+            }
+            const biz = resolveTappedPlaceLabel(at, rendered, featuresetHits);
+            if (biz) trySelectBusiness(biz);
           }
         }}
         style={{ width: "100%", height: "100%" }}
@@ -1873,7 +1959,7 @@ export function GameMap({
       {me?.homeSectorId && showDetail && !placing && !spawnFlash && (
         <div className="pointer-events-none absolute bottom-[7.75rem] left-1/2 z-10 w-[min(17rem,calc(100%-7rem))] -translate-x-1/2 sm:bottom-[8.75rem] sm:w-[min(19rem,calc(100%-20rem))]">
           <p className="hud-chip px-2.5 py-1.5 text-center text-[10px] font-semibold text-[var(--sand)] sm:px-3 sm:text-[11px]">
-            Tap place names — review for +1 villager
+            Tap a local business label — review for +1 villager
           </p>
         </div>
       )}
