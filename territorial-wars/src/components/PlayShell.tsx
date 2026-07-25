@@ -153,6 +153,12 @@ function destroyedCountFrom(destroyed: string | null): number {
   return destroyed.split(",").map((s) => s.trim()).filter(Boolean).length;
 }
 
+function personName(name: string): string {
+  const t = name.trim();
+  if (!t) return "Someone";
+  return t;
+}
+
 function summaryFromAttack(
   battle: BattleReport,
   sectorName: string,
@@ -162,9 +168,9 @@ function summaryFromAttack(
   return {
     id,
     role: "attacker",
-    headline: battle.win ? "Victory" : "Repelled",
+    headline: battle.win ? "Raid succeeded" : "Raid failed",
     sectorName,
-    opponent: defenderName,
+    opponent: personName(defenderName),
     win: battle.win,
     attackPower: battle.attackPower,
     defensePower: battle.defensePower,
@@ -206,9 +212,9 @@ function summaryFromEvent(e: GameEvent, asDefender = true): BattleSummary | null
   return {
     id: e.id,
     role: "defender",
-    headline: e.win ? "Breach" : "Held",
+    headline: e.win ? "Village breached" : "Defense held",
     sectorName: e.sectorName,
-    opponent: e.attackerName,
+    opponent: personName(e.attackerName),
     win: !e.win,
     attackPower: report.attackPower,
     defensePower: report.defensePower,
@@ -227,32 +233,36 @@ function eventLogLine(e: GameEvent, myId: string | undefined): string {
   if (isRazeEvent(e)) {
     const asActor = e.attackerId === myId;
     if (asActor) {
-      return `Cleared ${e.defenderName}'s ${e.buildingName} in ${e.sectorName}`;
+      return `You cleared ${personName(e.defenderName)}'s ${e.buildingName} in ${e.sectorName}`;
     }
-    return `${e.attackerName} destroyed your ${e.buildingName} in ${e.sectorName}`;
+    return `Your ally, ${personName(e.attackerName)}, destroyed your ${e.buildingName}`;
   }
   if (!isAttackEvent(e)) return "Activity";
   const asAttacker = e.attackerId === myId;
   if (asAttacker) {
-    return `${e.win ? "Won" : "Lost"} vs ${e.defenderName} @ ${e.sectorName} · ${e.damage} dmg`;
+    return e.win
+      ? `You breached ${personName(e.defenderName)}'s village in ${e.sectorName}`
+      : `${personName(e.defenderName)} held against your raid in ${e.sectorName}`;
   }
-  return `${e.attackerName} hit ${e.sectorName} · ${e.damage} dmg · ${e.win ? "breached" : "held"}`;
+  return e.win
+    ? `${personName(e.attackerName)} breached your village in ${e.sectorName}`
+    : `You held against ${personName(e.attackerName)}'s raid in ${e.sectorName}`;
 }
 
 function activityLine(e: GameEvent, myId?: string | null): string {
   if (isRazeEvent(e)) {
     if (myId && e.attackerId === myId) {
-      return `${e.attackerName} cleared ${e.defenderName}'s ${e.buildingName} · ${e.sectorName}`;
+      return `You cleared ${personName(e.defenderName)}'s ${e.buildingName} · ${e.sectorName}`;
     }
     if (myId && e.defenderId === myId) {
-      return `${e.attackerName} destroyed your ${e.buildingName} · ${e.sectorName}`;
+      return `Your ally, ${personName(e.attackerName)}, destroyed your ${e.buildingName}`;
     }
-    return `${e.attackerName} cleared ${e.defenderName}'s ${e.buildingName} · ${e.sectorName}`;
+    return `${personName(e.attackerName)} cleared ${personName(e.defenderName)}'s ${e.buildingName} · ${e.sectorName}`;
   }
   if (isAttackEvent(e)) {
-    return `${e.attackerName} raided ${e.defenderName} @ ${e.sectorName} · ${
-      e.win ? "breach" : "held"
-    }`;
+    return e.win
+      ? `${personName(e.attackerName)} breached ${personName(e.defenderName)} · ${e.sectorName}`
+      : `${personName(e.defenderName)} held against ${personName(e.attackerName)} · ${e.sectorName}`;
   }
   return "Activity";
 }
@@ -1126,10 +1136,30 @@ export function PlayShell() {
     }
   };
 
-  const dismissBattle = () => {
+  const dismissBattle = useCallback(() => {
     writeBattleAck(Date.now());
     setBattleSummary(null);
-  };
+  }, []);
+
+  const dismissRazeAlert = useCallback(() => {
+    if (razeAlert) {
+      writeBattleAck(Math.max(readBattleAck(), razeAlert.ts));
+    }
+    setRazeAlert(null);
+  }, [razeAlert]);
+
+  // Corner toasts auto-dismiss after 7s
+  useEffect(() => {
+    if (!razeAlert) return;
+    const t = window.setTimeout(dismissRazeAlert, 7000);
+    return () => window.clearTimeout(t);
+  }, [razeAlert, dismissRazeAlert]);
+
+  useEffect(() => {
+    if (!battleSummary) return;
+    const t = window.setTimeout(dismissBattle, 7000);
+    return () => window.clearTimeout(t);
+  }, [battleSummary, dismissBattle]);
 
   const launchAttack = async () => {
     if (!me?.house || !enemyPlayer) return;
@@ -2049,16 +2079,19 @@ export function PlayShell() {
         </div>
       )}
 
-      {/* Graphical battle report — blocks until dismissed */}
+      {/* Battle report — corner toast, auto-dismisses */}
       {battleSummary && (
         <div
-          className="battle-report-overlay absolute inset-0 z-[60] flex items-start justify-center px-3 pt-16 sm:items-center sm:pt-0"
-          role="dialog"
-          aria-modal="true"
+          className="battle-toast pointer-events-none absolute right-2 z-[60] w-[min(18.5rem,calc(100%-1rem))] sm:right-3"
+          style={{
+            top: "max(4.25rem, calc(env(safe-area-inset-top) + 3.5rem))",
+          }}
+          role="status"
+          aria-live="polite"
           aria-label="Battle report"
         >
           <div
-            className={`battle-report pointer-events-auto w-[min(20rem,calc(100%-1rem))] p-4 ${
+            className={`battle-report pointer-events-auto p-3.5 ${
               battleSummary.role === "defender"
                 ? "battle-report-defense"
                 : battleSummary.win
@@ -2067,31 +2100,40 @@ export function PlayShell() {
             }`}
           >
             <div className="flex items-start justify-between gap-2">
-              <div>
+              <div className="min-w-0">
                 <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-white/65">
-                  {battleSummary.role === "defender" ? "Under attack" : "Raid"}
+                  {battleSummary.role === "defender" ? "Under attack" : "Your raid"}
                 </p>
-                <p className="font-display text-2xl text-white">
+                <p className="font-display text-xl leading-tight text-white sm:text-2xl">
                   {battleSummary.headline}
                 </p>
-                <p className="mt-0.5 text-[11px] text-white/80">
-                  {battleSummary.role === "attacker" ? "vs" : "from"}{" "}
-                  <span className="font-semibold">{battleSummary.opponent}</span>
-                  {" · "}
-                  {battleSummary.sectorName}
+                <p className="mt-1 text-[12px] leading-snug text-white/90">
+                  {battleSummary.role === "attacker" ? (
+                    <>
+                      You hit <strong>{battleSummary.opponent}</strong>
+                      {"'s village in "}
+                      {battleSummary.sectorName}
+                    </>
+                  ) : (
+                    <>
+                      <strong>{battleSummary.opponent}</strong>
+                      {" hit your village in "}
+                      {battleSummary.sectorName}
+                    </>
+                  )}
                 </p>
               </div>
               <button
                 type="button"
-                className="rounded-sm border border-white/30 px-2 py-0.5 text-[10px] font-bold text-white/90"
+                className="shrink-0 rounded-sm border border-white/30 px-2 py-0.5 text-[10px] font-bold text-white/90"
                 onClick={dismissBattle}
+                aria-label="Dismiss"
               >
                 ✕
               </button>
             </div>
 
-            {/* ATK vs DEF meter */}
-            <div className="battle-vs mt-4">
+            <div className="battle-vs mt-3">
               <div className="battle-vs-side">
                 <span className="battle-vs-num">{battleSummary.attackPower}</span>
                 <span className="battle-vs-lbl">ATK</span>
@@ -2132,8 +2174,7 @@ export function PlayShell() {
               </div>
             </div>
 
-            {/* Outcome chips */}
-            <div className="battle-stat-grid mt-3">
+            <div className="battle-stat-grid mt-2.5">
               <div className="battle-stat">
                 <span className="battle-stat-val">{battleSummary.damage}</span>
                 <span className="battle-stat-lbl">Damage</span>
@@ -2142,7 +2183,7 @@ export function PlayShell() {
                 <span className="battle-stat-val">
                   {battleSummary.destroyedCount}
                 </span>
-                <span className="battle-stat-lbl">Destroyed</span>
+                <span className="battle-stat-lbl">Lost</span>
               </div>
               <div className="battle-stat">
                 <span className="battle-stat-val">
@@ -2163,24 +2204,16 @@ export function PlayShell() {
             </div>
 
             {(battleSummary.houseDestroyed || battleSummary.houseDamaged) && (
-              <p className="mt-3 text-center font-mono text-[10px] text-white/85">
+              <p className="mt-2.5 text-center font-mono text-[10px] text-white/85">
                 {battleSummary.houseDestroyed
                   ? battleSummary.role === "attacker"
-                    ? "🏠 House razed — they must rebuild"
-                    : "🏠 Your house was razed — rebuild to gather"
+                    ? "Their house was razed — they must rebuild"
+                    : "Your house was razed — rebuild to gather"
                   : battleSummary.role === "attacker"
-                    ? "🏠 House damaged"
-                    : "🏠 Your house was damaged"}
+                    ? "Their house was damaged"
+                    : "Your house was damaged"}
               </p>
             )}
-
-            <button
-              type="button"
-              className="mt-4 w-full rounded-sm bg-white/20 px-3 py-2 text-sm font-bold text-white"
-              onClick={dismissBattle}
-            >
-              Close
-            </button>
           </div>
         </div>
       )}
@@ -2395,34 +2428,42 @@ export function PlayShell() {
         </div>
       )}
 
-      {/* Victim notice: same-sector building razed */}
-      {razeAlert && (
+      {/* Same-sector clear — corner toast, auto-dismisses */}
+      {razeAlert && !battleSummary && (
         <div
-          className="battle-report-overlay absolute inset-0 z-[60] flex items-start justify-center px-3 pt-16 sm:items-center sm:pt-0"
-          role="dialog"
-          aria-modal="true"
+          className="battle-toast pointer-events-none absolute right-2 z-[60] w-[min(18.5rem,calc(100%-1rem))] sm:right-3"
+          style={{
+            top: "max(4.25rem, calc(env(safe-area-inset-top) + 3.5rem))",
+          }}
+          role="status"
+          aria-live="polite"
           aria-label="Building destroyed"
         >
-          <div className="battle-report battle-report-defense pointer-events-auto w-[min(20rem,calc(100%-1rem))] p-4">
-            <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-white/65">
-              Same sector
-            </p>
-            <p className="font-display text-2xl text-white">Building cleared</p>
-            <p className="mt-2 text-sm text-white/85">
-              <strong>{razeAlert.attackerName}</strong> destroyed your{" "}
-              <strong>{razeAlert.buildingName}</strong> in{" "}
-              {razeAlert.sectorName} to free ground for their village.
-            </p>
-            <button
-              type="button"
-              className="mt-4 w-full rounded-sm bg-white/15 px-3 py-2 text-sm font-bold text-white"
-              onClick={() => {
-                writeBattleAck(Math.max(readBattleAck(), razeAlert.ts));
-                setRazeAlert(null);
-              }}
-            >
-              Got it
-            </button>
+          <div className="battle-report battle-report-defense pointer-events-auto p-3.5">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-white/65">
+                  Same sector
+                </p>
+                <p className="font-display text-xl leading-tight text-white sm:text-2xl">
+                  Building lost
+                </p>
+                <p className="mt-1.5 text-[13px] leading-snug text-white/90">
+                  Your ally, <strong>{personName(razeAlert.attackerName)}</strong>,
+                  destroyed your{" "}
+                  <strong>{razeAlert.buildingName}</strong>
+                  {razeAlert.sectorName ? ` in ${razeAlert.sectorName}` : ""}.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="shrink-0 rounded-sm border border-white/30 px-2 py-0.5 text-[10px] font-bold text-white/90"
+                onClick={dismissRazeAlert}
+                aria-label="Dismiss"
+              >
+                ✕
+              </button>
+            </div>
           </div>
         </div>
       )}

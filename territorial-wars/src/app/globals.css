@@ -833,14 +833,19 @@ button.cameo:not(:disabled):hover {
   }
 }
 
-/* Full-screen dim so the report can't hide under HUD/map chrome */
+/* Full-screen dim (legacy — kept for any remaining overlays) */
 .battle-report-overlay {
   pointer-events: auto;
   background: rgba(6, 10, 8, 0.62);
   backdrop-filter: blur(2px);
 }
 
-/* Persistent battle report card */
+/* Corner toast host — sits above the map, doesn't block play */
+.battle-toast {
+  animation: battle-toast-in 0.35s ease-out;
+}
+
+/* Battle / raze report card */
 .battle-report {
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.25);
@@ -978,6 +983,17 @@ button.cameo:not(:disabled):hover {
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes battle-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px) translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) translateY(0);
   }
 }
 
