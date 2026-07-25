@@ -51,10 +51,12 @@ import type {
   BuildingType,
   GameEvent,
   GameSnapshot,
+  GemClaimEvent,
   Player,
   RazeEvent,
 } from "@/lib/gameTypes";
 import {
+  GEM_META,
   GOLD_COIN,
   HOUSE_MAX_HP,
   ROCKET_COST,
@@ -64,6 +66,7 @@ import {
   defenseBreakdown,
   defensePower,
   isAttackEvent,
+  isGemClaimEvent,
   isRazeEvent,
 } from "@/lib/gameTypes";
 import { pointInOrNearRing } from "@/lib/geo";
@@ -448,6 +451,23 @@ function activityLine(
       </>
     );
   }
+  if (isGemClaimEvent(e)) {
+    const gemLabel = GEM_META[e.gem]?.label ?? "gem";
+    return (
+      <>
+        <NameChip id={e.attackerId} name={e.attackerName} myId={myId} colors={colors} />{" "}
+        claimed{" "}
+        <NameChip
+          id={e.defenderId}
+          name={e.defenderName}
+          myId={myId}
+          colors={colors}
+          possessive
+        />{" "}
+        {gemLabel} · {e.claimerSectorName}
+      </>
+    );
+  }
   if (isAttackEvent(e)) {
     if (e.win) {
       const verb = pickVariant(e.id, ATTACK_WIN_VERBS);
@@ -486,6 +506,9 @@ export function PlayShell() {
   const [showActivity, setShowActivity] = useState(false);
   const [activityTab, setActivityTab] = useState<"global" | "you">("global");
   const [razeAlert, setRazeAlert] = useState<RazeEvent | null>(null);
+  const [gemClaimAlert, setGemClaimAlert] = useState<GemClaimEvent | null>(
+    null
+  );
   /** Rockets to fire in the next salvo */
   const [salvo, setSalvo] = useState(1);
   const [busy, setBusy] = useState(false);
@@ -686,6 +709,11 @@ export function PlayShell() {
         continue;
       }
 
+      if (isGemClaimEvent(e)) {
+        setGemClaimAlert(e);
+        continue;
+      }
+
       if (isAttackEvent(e)) {
         const summary = summaryFromEvent(e);
         if (!summary) continue;
@@ -858,10 +886,17 @@ export function PlayShell() {
   }, [selectedPlayerId, me?.rockets, enemyPlayer?.id, enemyDefense]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const gemsFound = useMemo(() => {
-    if (!me) return 0;
-    return me.discoveredSpotIds.filter((id) =>
-      snap?.spots.some((s) => s.id === id && s.kind === "hidden")
+    if (!me || !snap) return 0;
+    const openMine = snap.spots.filter(
+      (s) => s.claimable && s.ownerId === me.id
     ).length;
+    const selfClaimed = me.discoveredSpotIds.filter((id) =>
+      id.startsWith("find_")
+    ).length;
+    const stolenFromMe = (snap.events ?? []).filter(
+      (e) => isGemClaimEvent(e) && e.defenderId === me.id
+    ).length;
+    return openMine + selfClaimed + stolenFromMe;
   }, [me, snap]);
 
   /** Sector leaderboard — total resources farmed by everyone in each sector */
@@ -929,7 +964,7 @@ export function PlayShell() {
       },
       {
         id: "explore",
-        label: "Roam zoomed-in until a resource spawns",
+        label: "Roam until a resource appears, then claim it",
         done: gemsFound >= 1,
       },
       {
@@ -1031,11 +1066,8 @@ export function PlayShell() {
       if (!res.ok) return false;
       applySnap(data as GameSnapshot);
       const gem = String(data.gem || "resource");
-      showToast(
-        data.bonus
-          ? `${gem[0].toUpperCase()}${gem.slice(1)} found ahead! +${GOLD_COIN}${data.bonus}`
-          : "A resource appeared ahead!"
-      );
+      const label = `${gem[0]!.toUpperCase()}${gem.slice(1)}`;
+      showToast(`${label} appeared — tap to claim before others do!`);
       return true;
     } catch {
       return false;
@@ -1352,12 +1384,25 @@ export function PlayShell() {
     setRazeAlert(null);
   }, [razeAlert]);
 
+  const dismissGemClaimAlert = useCallback(() => {
+    if (gemClaimAlert) {
+      writeBattleAck(Math.max(readBattleAck(), gemClaimAlert.ts));
+    }
+    setGemClaimAlert(null);
+  }, [gemClaimAlert]);
+
   // Corner toasts auto-dismiss after 7s
   useEffect(() => {
     if (!razeAlert) return;
     const t = window.setTimeout(dismissRazeAlert, 7000);
     return () => window.clearTimeout(t);
   }, [razeAlert, dismissRazeAlert]);
+
+  useEffect(() => {
+    if (!gemClaimAlert) return;
+    const t = window.setTimeout(dismissGemClaimAlert, 7000);
+    return () => window.clearTimeout(t);
+  }, [gemClaimAlert, dismissGemClaimAlert]);
 
   useEffect(() => {
     if (!battleSummary) return;
@@ -1647,12 +1692,21 @@ export function PlayShell() {
           selectedRazeBuildingId={razeTarget?.buildingId ?? null}
           onPlace={(lat, lng) => void handlePlace(lat, lng)}
           onSpawnFind={(p) => spawnFind(p)}
-          onCollectHidden={(spotId) => void act("collect_hidden", { spotId }).then((d) => {
-            if (d?.gained) {
+          onCollectHidden={(spotId) =>
+            void act("collect_hidden", { spotId }).then((d) => {
+              if (!d?.gained) return;
               playCoinSound();
-              showToast(`Collected +${GOLD_COIN}${d.gained}`);
-            }
-          })}
+              const gem = String(d.gem || "gem");
+              const label = `${gem[0]!.toUpperCase()}${gem.slice(1)}`;
+              if (d.stolen && d.ownerName) {
+                showToast(
+                  `Snatched ${personName(String(d.ownerName))}'s ${label} +${GOLD_COIN}${d.gained}`
+                );
+              } else {
+                showToast(`Claimed ${label} +${GOLD_COIN}${d.gained}`);
+              }
+            })
+          }
           onSelectBusiness={(biz) => {
             setReviewBiz(biz);
             setReviewOpenedAt(null);
@@ -2800,6 +2854,67 @@ export function PlayShell() {
         </div>
       )}
 
+      {/* Gem snatch — corner toast */}
+      {gemClaimAlert && !battleSummary && !razeAlert && (
+        <div
+          className="battle-toast pointer-events-none absolute right-2 z-[60] w-[min(18.5rem,calc(100%-1rem))] sm:right-3"
+          style={{
+            top: "max(4.25rem, calc(env(safe-area-inset-top) + 3.5rem))",
+          }}
+          role="status"
+          aria-live="polite"
+          aria-label="Gem claimed"
+        >
+          <div className="battle-report battle-report-defense pointer-events-auto p-3.5">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-white/65">
+                  Find stolen
+                </p>
+                <p className="font-display text-xl leading-tight text-white sm:text-2xl">
+                  Gem claimed
+                </p>
+                <p className="mt-1.5 text-[13px] leading-snug text-white/90">
+                  {(() => {
+                    const claimer = snap?.players.find(
+                      (p) => p.id === gemClaimAlert.attackerId
+                    );
+                    const ally =
+                      Boolean(me?.homeSectorId) &&
+                      claimer?.homeSectorId === me?.homeSectorId;
+                    const gemLabel =
+                      GEM_META[gemClaimAlert.gem]?.label ?? "gem";
+                    return (
+                      <>
+                        {ally ? "Your ally" : "Enemy"}{" "}
+                        <strong>
+                          {personName(gemClaimAlert.attackerName)}
+                        </strong>{" "}
+                        from{" "}
+                        <strong>{gemClaimAlert.claimerSectorName}</strong>{" "}
+                        claimed your <strong>{gemLabel}</strong>
+                        {gemClaimAlert.gold
+                          ? ` (+${GOLD_COIN}${gemClaimAlert.gold})`
+                          : ""}
+                        .
+                      </>
+                    );
+                  })()}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="shrink-0 rounded-sm border border-white/30 px-2 py-0.5 text-[10px] font-bold text-white/90"
+                onClick={dismissGemClaimAlert}
+                aria-label="Dismiss"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Activity summary — global + personal */}
       {showActivity && (
         <div
@@ -2882,8 +2997,12 @@ export function PlayShell() {
                       {activityLine(e, me?.id, playerColors)}
                     </p>
                     <p className="mt-0.5 font-mono text-[9px] text-[var(--ink-faint)]">
-                      {isRazeEvent(e) ? "Sabotage" : "Attack"} ·{" "}
-                      {new Date(e.ts).toLocaleString()}
+                      {isGemClaimEvent(e)
+                        ? "Find claim"
+                        : isRazeEvent(e)
+                          ? "Sabotage"
+                          : "Attack"}{" "}
+                      · {new Date(e.ts).toLocaleString()}
                     </p>
                   </li>
                 ))

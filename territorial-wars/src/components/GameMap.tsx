@@ -775,9 +775,13 @@ export function GameMap({
     return { type: "FeatureCollection", features: feats };
   }, [players, me, placing, hover]);
 
+  /** Easy/private hiddens in home sector; contested finds visible everywhere */
   const mySpots = useMemo(() => {
-    if (!me?.homeSectorId) return [];
-    return spots.filter((s) => s.sectorId === me.homeSectorId);
+    return spots.filter((s) => {
+      if (s.claimable) return true;
+      if (!me?.homeSectorId) return false;
+      return s.sectorId === me.homeSectorId;
+    });
   }, [spots, me]);
 
   /** Walking villagers for every settled player (mine + rivals) */
@@ -892,8 +896,8 @@ export function GameMap({
           localCooldownUntil.current = Date.now() + 4000;
           return;
         }
-        setSpawnFlash("A resource appeared ahead!");
-        window.setTimeout(() => setSpawnFlash(null), 2600);
+        setSpawnFlash("A resource appeared — tap to claim!");
+        window.setTimeout(() => setSpawnFlash(null), 2800);
         roamAcc.current = 0;
         exploreAcc.current = 0;
         lastExploreTick.current = Date.now();
@@ -1537,6 +1541,8 @@ export function GameMap({
               .map((s) => {
                 const ready = s.availableAt <= now;
                 const gem = s.gem || "diamond";
+                const contested = Boolean(s.claimable);
+                const mine = s.ownerId === me?.id;
                 return (
                   <Marker
                     key={s.id}
@@ -1546,16 +1552,20 @@ export function GameMap({
                   >
                     <ResourceNode
                       gem={gem}
-                      size={ready ? 40 : 32}
-                      depleted={!ready}
-                      pulse={ready}
+                      size={ready || contested ? 40 : 32}
+                      depleted={!ready && !contested}
+                      pulse={ready || contested}
                       title={
-                        ready
-                          ? `${GEM_META[gem].label} — tap to collect`
-                          : `${GEM_META[gem].label} refilling…`
+                        contested
+                          ? mine
+                            ? `${GEM_META[gem].label} — tap to claim (others can snatch it)`
+                            : `${GEM_META[gem].label} — tap to claim`
+                          : ready
+                            ? `${GEM_META[gem].label} — tap to collect`
+                            : `${GEM_META[gem].label} refilling…`
                       }
                       onClick={() => {
-                        if (ready) onCollectHidden?.(s.id);
+                        if (contested || ready) onCollectHidden?.(s.id);
                       }}
                     />
                   </Marker>

@@ -35,6 +35,11 @@ export type ResourceSpot = {
   availableAt: number;
   /** Player who spawned this find (roam discovers) */
   ownerId?: string;
+  /**
+   * Contested one-shot find — visible on the map for everyone,
+   * first click claims the gold and removes the spot.
+   */
+  claimable?: boolean;
 };
 
 export const GEM_META: Record<
@@ -250,7 +255,16 @@ export type RazeEvent = GameEventBase & {
   buildingName: string;
 };
 
-export type GameEvent = AttackEvent | RazeEvent;
+/** Contested roam find claimed by someone else */
+export type GemClaimEvent = GameEventBase & {
+  type: "gem_claim";
+  gem: GemType;
+  gold: number;
+  /** Claimer's home sector name (for "from X") */
+  claimerSectorName: string;
+};
+
+export type GameEvent = AttackEvent | RazeEvent | GemClaimEvent;
 
 export function isAttackEvent(e: GameEvent): e is AttackEvent {
   return e.type === "attack" || (e as { type?: string }).type == null;
@@ -258,6 +272,10 @@ export function isAttackEvent(e: GameEvent): e is AttackEvent {
 
 export function isRazeEvent(e: GameEvent): e is RazeEvent {
   return e.type === "raze";
+}
+
+export function isGemClaimEvent(e: GameEvent): e is GemClaimEvent {
+  return e.type === "gem_claim";
 }
 
 export type GameSnapshot = {

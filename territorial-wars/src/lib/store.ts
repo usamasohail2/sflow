@@ -1080,9 +1080,11 @@ export async function getSnapshot(meId?: string | null): Promise<GameSnapshot> {
   }
   if (spotsWorking !== spotsAll) await setSpots(spotsWorking);
 
-  // Easy nodes are shared/visible in every sector so you can see others gather
+  // Easy nodes + contested claimable finds are world-visible;
+  // legacy refillable hiddens stay private to discoverers/owners.
   const spots = spotsWorking.filter((s) => {
     if (s.kind === "easy") return true;
+    if (s.claimable) return true;
     if (!me) return false;
     return s.ownerId === me.id || me.discoveredSpotIds.includes(s.id);
   });
@@ -1376,7 +1378,7 @@ export async function spawnRoamFind(
     exploreMs: number;
   }
 ): Promise<
-  | { ok: true; gem: GemType; bonus: number; spotId: string }
+  | { ok: true; gem: GemType; spotId: string }
   | { error: string }
 > {
   await bootstrap();
@@ -1411,6 +1413,7 @@ export async function spawnRoamFind(
     (s) =>
       s.sectorId === me.homeSectorId &&
       s.kind === "hidden" &&
+      s.claimable &&
       s.ownerId === playerId
   );
   if (finds.length >= MAX_ROAM_FINDS) {
@@ -1462,23 +1465,21 @@ export async function spawnRoamFind(
     gem,
     lat: pos.lat,
     lng: pos.lng,
-    yield: meta.yield,
-    refillMs: meta.refillMs,
+    yield: meta.yield * 2,
+    refillMs: 0,
     availableAt: 0,
     ownerId: playerId,
+    claimable: true,
   };
 
-  const bonus = meta.yield * 2;
+  // No gold yet — first player to tap the gem claims it
   await setSpots([...spots, spot]);
   await setPlayer({
     ...me,
-    discoveredSpotIds: [...me.discoveredSpotIds, spotId],
-    gold: me.gold + bonus,
-    totalFarmed: (me.totalFarmed || 0) + bonus,
     lastRoamSpawnAt: now,
     updatedAt: now,
   });
-  return { ok: true, gem, bonus, spotId };
+  return { ok: true, gem, spotId };
 }
 
 export async function discoverSpot(
@@ -1518,21 +1519,88 @@ export async function discoverSpot(
   return { ok: true, bonus };
 }
 
+/**
+ * Claim a contested roam find (world-visible, first tap wins)
+ * or harvest a legacy private refillable hidden cache.
+ */
 export async function collectHidden(
   playerId: string,
   spotId: string
-): Promise<{ ok: true; gained?: number } | { error: string }> {
+): Promise<
+  | {
+      ok: true;
+      gained?: number;
+      gem?: GemType;
+      stolen?: boolean;
+      ownerName?: string;
+    }
+  | { error: string }
+> {
   await bootstrap();
   const me = await getPlayer(playerId);
   if (!me?.homeSectorId) return { error: "Settle in a sector first" };
+
+  const spots = await getSpots();
+  const spot = spots.find((s) => s.id === spotId);
+  if (!spot || spot.kind !== "hidden") return { error: "Not a resource find" };
+  const now = Date.now();
+
+  // Contested one-shot — anyone settled can claim
+  if (spot.claimable) {
+    if (spot.availableAt > now) {
+      return { error: "Already claimed" };
+    }
+    const gained = spot.yield;
+    const ownerId = spot.ownerId;
+    const stolen = Boolean(ownerId && ownerId !== playerId);
+    const sectors = await getSectors();
+    const spotSector = sectors.find((s) => s.id === spot.sectorId);
+    const claimerSector = sectors.find((s) => s.id === me.homeSectorId);
+    const owner = ownerId ? await getPlayer(ownerId) : null;
+
+    await setPlayer({
+      ...me,
+      gold: me.gold + gained,
+      totalFarmed: (me.totalFarmed || 0) + gained,
+      discoveredSpotIds: me.discoveredSpotIds.includes(spotId)
+        ? me.discoveredSpotIds
+        : [...me.discoveredSpotIds, spotId],
+      updatedAt: now,
+    });
+    // Remove from the map — first claim wins
+    await setSpots(spots.filter((s) => s.id !== spotId));
+
+    if (stolen && owner) {
+      await pushEvent({
+        type: "gem_claim",
+        id: `gem_${now.toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+        ts: now,
+        attackerId: me.id,
+        attackerName: me.name,
+        defenderId: owner.id,
+        defenderName: owner.name,
+        sectorId: spot.sectorId,
+        sectorName: spotSector?.name ?? "Sector",
+        gem: spot.gem,
+        gold: gained,
+        claimerSectorName: claimerSector?.name ?? "Sector",
+      });
+    }
+
+    return {
+      ok: true,
+      gained,
+      gem: spot.gem,
+      stolen,
+      ownerName: stolen ? owner?.name : undefined,
+    };
+  }
+
+  // Legacy private refillable cache
   if (!me.discoveredSpotIds.includes(spotId)) {
     return { error: "Explore and discover this spot first" };
   }
-  const spots = await getSpots();
-  const spot = spots.find((s) => s.id === spotId);
-  if (!spot || spot.kind !== "hidden") return { error: "Not a hidden cache" };
   if (spot.sectorId !== me.homeSectorId) return { error: "Wrong sector" };
-  const now = Date.now();
   if (spot.availableAt > now) {
     return { error: "Still refilling — come back later" };
   }
@@ -1548,7 +1616,7 @@ export async function collectHidden(
       s.id === spotId ? { ...s, availableAt: now + (s.refillMs || 45_000) } : s
     )
   );
-  return { ok: true, gained: spot.yield };
+  return { ok: true, gained: spot.yield, gem: spot.gem };
 }
 
 export async function renamePlayer(

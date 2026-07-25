@@ -371,6 +371,8 @@ export async function POST(req: Request) {
       gained: "gained" in result ? result.gained : undefined,
       gem: "gem" in result ? result.gem : undefined,
       spotId: "spotId" in result ? result.spotId : undefined,
+      stolen: "stolen" in result ? result.stolen : undefined,
+      ownerName: "ownerName" in result ? result.ownerName : undefined,
       battle: "battle" in result ? result.battle : undefined,
       raze: "raze" in result ? result.raze : undefined,
     }),

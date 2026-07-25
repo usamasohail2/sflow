@@ -47,6 +47,8 @@ export function accrueGather(
     nextSpots = nextSpots.map((s) => {
       if (s.sectorId !== p.homeSectorId) return s;
       if (s.kind !== "hidden") return s;
+      // Contested one-shot finds must be clicked — never auto-harvested
+      if (s.claimable) return s;
       if (!p.discoveredSpotIds.includes(s.id)) return s;
       if (s.availableAt > now) return s;
       // One harvest when available, then refill — not once per skipped trip
