@@ -842,8 +842,8 @@ export function PlayShell() {
 
   return (
     <main className="relative h-[100dvh] w-full overflow-hidden bg-[var(--surface)]">
-      {/* Full-bleed map */}
-      <div className="absolute inset-0">
+      {/* Full-bleed map (clips here so HUD never gets cut) */}
+      <div className="absolute inset-0 overflow-hidden">
         <GameMap
           sectors={snap?.sectors ?? []}
           spots={snap?.spots ?? []}
@@ -857,8 +857,17 @@ export function PlayShell() {
           userLocationFocus={locationFocus}
           march={march}
           impact={impact}
-          onSelect={setSelectedId}
+          onSelect={(id) => {
+            setSelectedId(id);
+            if (!me?.homeSectorId || id === me.homeSectorId) {
+              setSelectedPlayerId(null);
+            }
+          }}
           onSelectPlayer={(id) => {
+            if (!id) {
+              setSelectedPlayerId(null);
+              return;
+            }
             const target = snap?.players.find((p) => p.id === id);
             if (
               target?.homeSectorId &&
@@ -880,9 +889,9 @@ export function PlayShell() {
         />
       </div>
 
-      {/* ---- Top bar ---- */}
-      <div className="pointer-events-none absolute left-0 right-0 top-0 z-20 flex items-start justify-between gap-2 p-2 sm:p-3">
-        <div className="pointer-events-auto hud-chip px-3 py-1.5">
+      {/* ---- Top bar (safe-area + wrap so chips aren't clipped) ---- */}
+      <div className="pointer-events-none absolute left-0 right-0 top-0 z-20 flex flex-wrap items-start justify-between gap-2 px-2 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] sm:px-3 sm:pt-[max(0.75rem,env(safe-area-inset-top))]">
+        <div className="pointer-events-auto hud-chip min-w-0 max-w-[46%] px-2.5 py-1.5 sm:max-w-none sm:px-3">
           <Link href="/" className="font-display text-xs text-[var(--ink)] sm:text-sm">
             Islamabad Territorial Wars
           </Link>
@@ -891,8 +900,8 @@ export function PlayShell() {
           </p>
         </div>
 
-        <div className="pointer-events-auto flex items-center gap-2">
-          <div className="hud-chip px-3 py-1.5">
+        <div className="pointer-events-auto flex max-w-full flex-wrap items-center justify-end gap-1.5 sm:gap-2">
+          <div className="hud-chip px-2.5 py-1.5 sm:px-3">
             <p className="hud-gold font-mono text-sm font-bold text-[#e8cf8a] sm:text-base">
               ⛃ {Math.floor(displayGold)}
             </p>
@@ -910,10 +919,13 @@ export function PlayShell() {
               setShowMissions(false);
               setShowPlayers(false);
             }}
-            className="hud-chip px-3 py-1.5 font-mono text-[10px] text-[var(--ink-muted)] hover:text-[var(--sand)]"
-            title="Recent battle reports"
+            className="hud-chip px-2.5 py-1.5 font-mono text-[10px] text-[var(--ink-muted)] hover:text-[var(--sand)] sm:px-3"
+            title="Battle reports from your raids"
           >
-            ⚔ {(snap?.events ?? []).length}
+            <span className="block leading-tight">⚔ Battles</span>
+            <span className="block text-center text-[9px] text-[var(--ink-faint)]">
+              {(snap?.events ?? []).length}
+            </span>
           </button>
           <button
             type="button"
@@ -923,7 +935,8 @@ export function PlayShell() {
               setShowPlayers(false);
               setShowBattles(false);
             }}
-            className="hud-chip px-3 py-1.5 font-mono text-[10px] text-[var(--ink-muted)] hover:text-[var(--sand)]"
+            className="hud-chip px-2.5 py-1.5 font-mono text-[10px] text-[var(--ink-muted)] hover:text-[var(--sand)] sm:px-3"
+            title="Leaderboard by gold farmed"
           >
             🏆 Ranks
           </button>
@@ -935,9 +948,13 @@ export function PlayShell() {
               setShowPlayers(false);
               setShowBattles(false);
             }}
-            className="hud-chip px-3 py-1.5 font-mono text-[10px] text-[var(--ink-muted)] hover:text-[var(--sand)]"
+            className="hud-chip px-2.5 py-1.5 font-mono text-[10px] text-[var(--ink-muted)] hover:text-[var(--sand)] sm:px-3"
+            title="Starter goals checklist"
           >
-            ◈ {missionsDone}/{missionList.length}
+            <span className="block leading-tight">Goals</span>
+            <span className="block text-center text-[9px] text-[var(--ink-faint)]">
+              {missionsDone}/{missionList.length}
+            </span>
           </button>
           {snap?.authDisabled ? (
             <button
@@ -948,14 +965,14 @@ export function PlayShell() {
                 setShowMissions(false);
                 setShowBattles(false);
               }}
-              className="hud-chip px-3 py-1.5 font-mono text-[10px] text-[var(--ink-muted)] hover:text-[var(--sand)]"
+              className="hud-chip px-2.5 py-1.5 font-mono text-[10px] text-[var(--ink-muted)] hover:text-[var(--sand)] sm:px-3"
               title="Switch player (testing)"
             >
               👤 {me?.name?.replace("Settler ", "") ?? "…"}
             </button>
           ) : me ? (
-            <div className="hud-chip flex items-center gap-2 px-3 py-1.5">
-              <span className="max-w-[7rem] truncate font-mono text-[10px] text-[var(--sand)]">
+            <div className="hud-chip flex items-center gap-2 px-2.5 py-1.5 sm:px-3">
+              <span className="max-w-[5.5rem] truncate font-mono text-[10px] text-[var(--sand)] sm:max-w-[7rem]">
                 {me.name}
               </span>
               <button
@@ -969,7 +986,7 @@ export function PlayShell() {
           ) : (
             <Link
               href="/login"
-              className="hud-chip px-3 py-1.5 font-mono text-[10px] text-[var(--sand)]"
+              className="hud-chip px-2.5 py-1.5 font-mono text-[10px] text-[var(--sand)] sm:px-3"
             >
               Sign in
             </Link>
@@ -985,9 +1002,9 @@ export function PlayShell() {
 
       {/* Recent battles log */}
       {showBattles && (
-        <div className="absolute right-2 top-14 z-30 w-80 max-w-[calc(100%-1rem)] hud-panel p-3 sm:right-3">
+        <div className="absolute right-2 top-[4.75rem] z-30 w-80 max-w-[calc(100%-1rem)] hud-panel p-3 sm:right-3 sm:top-16">
           <h2 className="font-mono text-[9px] uppercase tracking-[0.22em] text-[var(--ink-muted)]">
-            Recent battles
+            Battle reports
           </h2>
           {(snap?.events ?? []).length === 0 ? (
             <p className="mt-2 text-[11px] text-[var(--ink-faint)]">
@@ -1029,7 +1046,7 @@ export function PlayShell() {
 
       {/* Player switcher (testing) */}
       {showPlayers && (
-        <div className="absolute right-2 top-14 z-30 w-72 hud-panel p-3 sm:right-3">
+        <div className="absolute right-2 top-[4.75rem] z-30 w-72 hud-panel p-3 sm:right-3 sm:top-16">
           <h2 className="font-mono text-[9px] uppercase tracking-[0.22em] text-[var(--ink-muted)]">
             Switch player · test accounts
           </h2>
@@ -1078,7 +1095,7 @@ export function PlayShell() {
 
       {/* Ranks dropdown */}
       {showRanks && (
-        <div className="absolute right-2 top-14 z-30 w-72 hud-panel p-3 sm:right-3">
+        <div className="absolute right-2 top-[4.75rem] z-30 w-72 hud-panel p-3 sm:right-3 sm:top-16">
           <h2 className="font-mono text-[9px] uppercase tracking-[0.22em] text-[var(--ink-muted)]">
             Global sector ranking · resources farmed
           </h2>
@@ -1111,11 +1128,11 @@ export function PlayShell() {
         </div>
       )}
 
-      {/* Missions dropdown */}
+      {/* Goals dropdown */}
       {showMissions && (
-        <div className="absolute right-2 top-14 z-30 w-64 hud-panel p-3 sm:right-3">
+        <div className="absolute right-2 top-[4.75rem] z-30 w-64 hud-panel p-3 sm:right-3 sm:top-16">
           <h2 className="font-mono text-[9px] uppercase tracking-[0.22em] text-[var(--ink-muted)]">
-            Missions
+            Starter goals
           </h2>
           <ul className="mt-2 space-y-1.5">
             {missionList.map((m) => (
