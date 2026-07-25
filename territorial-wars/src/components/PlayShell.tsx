@@ -820,13 +820,6 @@ export function PlayShell() {
   const homeName =
     snap?.sectors.find((s) => s.id === me?.homeSectorId)?.name ?? null;
   const myAttack = me ? attackPower(me.rockets || 0) : 0;
-  const myDefense = me
-    ? defensePower({
-        buildings: me.buildings,
-        house: me.house,
-        houseHp: me.houseHp,
-      })
-    : 0;
   const salvoAttack = attackPower(salvo);
   const settlersBySector = useMemo(() => {
     const map = new Map<string, NonNullable<typeof snap>["players"]>();
@@ -3063,20 +3056,6 @@ export function PlayShell() {
 
             <div className="pointer-events-auto w-full min-w-0">
               <div className="hud-panel hud-panel-arsenal p-1.5 sm:p-2">
-                <div className="flex items-end justify-between gap-2 px-1 pb-1">
-                  <div className="min-w-0">
-                    <p className="font-mono text-[8px] uppercase tracking-[0.24em] text-[var(--sand)]">
-                      Arsenal{" "}
-                      <span className="text-[#8fe098]">· Build</span>
-                    </p>
-                    <p className="hidden font-mono text-[8px] text-[var(--ink-faint)] sm:block">
-                      Buy rockets · place structures
-                    </p>
-                  </div>
-                  <p className="shrink-0 font-mono text-[9px] text-[var(--ink-muted)]">
-                    Atk {myAttack} · Def {myDefense}
-                  </p>
-                </div>
                 <div className="flex w-full items-stretch gap-1 sm:gap-1.5">
                   <button
                     type="button"
