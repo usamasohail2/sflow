@@ -25,6 +25,7 @@ import {
   catalogItem,
   colorForPlayerId,
   defensePower,
+  formatGold,
   isAzadHomeId,
   type BattleReport,
   type Building,
@@ -1913,7 +1914,7 @@ export async function buildBuilding(
   // Accrue pending gold first so affordability reflects reality
   const spots = await getSpots();
   const { player: fresh } = await accruePlayer(me, spots, true);
-  if (fresh.gold < cat.cost) return { error: `Need ◈${cat.cost} gold` };
+  if (fresh.gold < cat.cost) return { error: `Need ${formatGold(cat.cost)} gold` };
 
   const now = Date.now();
   await setPlayer({
