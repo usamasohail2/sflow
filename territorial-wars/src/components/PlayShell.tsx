@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { signOut } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   GameMap,
@@ -8,6 +9,7 @@ import {
   type MarchAnim,
   type Placing,
 } from "@/components/GameMap";
+import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 import type { LatLng } from "@/lib/gameTypes";
 import {
   HouseSprite,
@@ -28,6 +30,24 @@ import type {
 } from "@/lib/gameTypes";
 import { SOLDIER_COST, TANK_COST, buildingBonus } from "@/lib/gameTypes";
 import { ringCentroid } from "@/lib/mapMath";
+
+const BATTLE_ACK_KEY = "itw_battle_ack_ts";
+
+function readBattleAck(): number {
+  try {
+    return Number(window.localStorage.getItem(BATTLE_ACK_KEY) || "0") || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeBattleAck(ts: number) {
+  try {
+    window.localStorage.setItem(BATTLE_ACK_KEY, String(ts));
+  } catch {
+    /* ignore */
+  }
+}
 
 type BattleSummary = {
   id: string;
@@ -191,27 +211,32 @@ export function PlayShell() {
     if (!eventsPrimed.current) {
       for (const e of events) seenEvents.current.add(e.id);
       eventsPrimed.current = true;
-      // After a player switch, surface a very recent hit on this account
-      const recentHit = [...events]
+      // Unacknowledged hits on this account — stay until dismissed
+      const ack = typeof window !== "undefined" ? readBattleAck() : 0;
+      const pendingHit = [...events]
         .reverse()
         .find(
-          (e) =>
-            data.me &&
-            e.defenderId === data.me.id &&
-            Date.now() - e.ts < 180_000
+          (e) => data.me && e.defenderId === data.me.id && e.ts > ack
         );
-      if (recentHit) setBattleSummary(summaryFromEvent(recentHit));
+      if (pendingHit) {
+        setBattleSummary(summaryFromEvent(pendingHit));
+      }
       return;
     }
     for (const e of events) {
       if (seenEvents.current.has(e.id)) continue;
       seenEvents.current.add(e.id);
       if (data.me && e.defenderId === data.me.id) {
-        setBattleSummary(summaryFromEvent(e));
+        const summary = summaryFromEvent(e);
         if (data.me.house) {
           setImpact({ at: data.me.house, startedAt: Date.now() });
           window.setTimeout(() => setImpact(null), 1600);
         }
+        // Show after the hit lands — stays until they close it
+        window.setTimeout(() => {
+          setBattleSummary(summary);
+          setShowBattles(false);
+        }, 1500);
       }
     }
   }, []);
@@ -235,9 +260,12 @@ export function PlayShell() {
     const res = await fetch(`/api/game${q}`);
     const data = (await res.json()) as GameSnapshot;
 
-    // First load: if the cookie identity doesn't match the account this
-    // browser last used, restore the remembered account automatically.
-    if (!identityChecked.current && typeof window !== "undefined") {
+    // Guest mode only: restore last guest if the cookie was reset.
+    if (
+      data.authDisabled &&
+      !identityChecked.current &&
+      typeof window !== "undefined"
+    ) {
       identityChecked.current = true;
       let stored: string | null = null;
       try {
@@ -270,6 +298,8 @@ export function PlayShell() {
         }
       }
       rememberIdentity(data.me?.id);
+    } else if (!identityChecked.current) {
+      identityChecked.current = true;
     }
 
     applySnap(data);
@@ -504,6 +534,11 @@ export function PlayShell() {
     }
   };
 
+  const dismissBattle = () => {
+    writeBattleAck(Date.now());
+    setBattleSummary(null);
+  };
+
   const launchAttack = async () => {
     if (!me?.house || !selected) return;
     const targetSector = selected;
@@ -514,10 +549,11 @@ export function PlayShell() {
       snap?.players.find((p) => p.homeSectorId === targetSector.id)?.house ??
       ringCentroid(targetSector.ring);
     const durationMs = 3200;
+    const marchStarted = Date.now();
     setMarch({
       from: me.house,
       to: target,
-      startedAt: Date.now(),
+      startedAt: marchStarted,
       durationMs,
     });
     const data = await act("attack", { sectorId: targetSector.id });
@@ -528,24 +564,21 @@ export function PlayShell() {
       return;
     }
 
-    // Show the report immediately — don't wait for the march animation.
-    // (Waiting made it feel like "nothing happened" and was easy to miss.)
     const summary = summaryFromAttack(
       battle,
       targetSector.name,
       defenderName
     );
-    setBattleSummary(summary);
-    setShowBattles(false);
-
-    // Impact FX still lands when the army arrives
+    // Wait until the march finishes, then impact + report.
+    // Report stays until the player closes it — never auto-dismisses.
+    const remaining = Math.max(0, durationMs - (Date.now() - marchStarted));
     window.setTimeout(() => {
       setMarch(null);
       setImpact({ at: target, startedAt: Date.now() });
       window.setTimeout(() => setImpact(null), 1600);
-      // Re-assert report in case something cleared it mid-march
-      setBattleSummary((cur) => cur ?? summary);
-    }, durationMs);
+      setBattleSummary(summary);
+      setShowBattles(false);
+    }, remaining);
   };
 
   const inviteLink =
@@ -574,6 +607,30 @@ export function PlayShell() {
     selected &&
     selected.id !== me?.homeSectorId &&
     sectorOwner.has(selected.id);
+
+  // Google auth required — gate the game until signed in
+  if (snap && !snap.authDisabled && !me) {
+    return (
+      <main className="war-grid flex min-h-[100dvh] flex-col items-center justify-center px-5">
+        <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-[var(--ink-faint)]">
+          Islamabad Territorial Wars
+        </p>
+        <h1 className="mt-2 font-display text-4xl text-[var(--ink)]">
+          Sign in to play
+        </h1>
+        <p className="mt-2 max-w-sm text-center text-sm text-[var(--ink-muted)]">
+          Your sector, army, and battle reports stay tied to your Google
+          account — no more lost guest progress.
+        </p>
+        <div className="mt-6">
+          <GoogleSignInButton callbackUrl="/play" />
+        </div>
+        <Link href="/" className="mt-8 text-xs text-[var(--ink-faint)]">
+          Back
+        </Link>
+      </main>
+    );
+  }
 
   return (
     <main className="relative h-[100dvh] w-full overflow-hidden bg-[var(--surface)]">
@@ -658,19 +715,41 @@ export function PlayShell() {
           >
             ◈ {missionsDone}/{missionList.length}
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              setShowPlayers((v) => !v);
-              setShowRanks(false);
-              setShowMissions(false);
-              setShowBattles(false);
-            }}
-            className="hud-chip px-3 py-1.5 font-mono text-[10px] text-[var(--ink-muted)] hover:text-[var(--sand)]"
-            title="Switch player (testing)"
-          >
-            👤 {me?.name?.replace("Settler ", "") ?? "…"}
-          </button>
+          {snap?.authDisabled ? (
+            <button
+              type="button"
+              onClick={() => {
+                setShowPlayers((v) => !v);
+                setShowRanks(false);
+                setShowMissions(false);
+                setShowBattles(false);
+              }}
+              className="hud-chip px-3 py-1.5 font-mono text-[10px] text-[var(--ink-muted)] hover:text-[var(--sand)]"
+              title="Switch player (testing)"
+            >
+              👤 {me?.name?.replace("Settler ", "") ?? "…"}
+            </button>
+          ) : me ? (
+            <div className="hud-chip flex items-center gap-2 px-3 py-1.5">
+              <span className="max-w-[7rem] truncate font-mono text-[10px] text-[var(--sand)]">
+                {me.name}
+              </span>
+              <button
+                type="button"
+                className="font-mono text-[9px] text-[var(--ink-muted)] hover:text-[var(--signal-bright)]"
+                onClick={() => void signOut({ callbackUrl: "/play" })}
+              >
+                Sign out
+              </button>
+            </div>
+          ) : (
+            <Link
+              href="/login"
+              className="hud-chip px-3 py-1.5 font-mono text-[10px] text-[var(--sand)]"
+            >
+              Sign in
+            </Link>
+          )}
           <Link
             href="/edit"
             className="hud-chip hidden px-3 py-1.5 font-mono text-[10px] text-[var(--ink-muted)] hover:text-[var(--sand)] sm:block"
@@ -875,7 +954,7 @@ export function PlayShell() {
               <button
                 type="button"
                 className="rounded-sm border border-white/30 px-2 py-0.5 text-[10px] font-bold text-white/90"
-                onClick={() => setBattleSummary(null)}
+                onClick={dismissBattle}
               >
                 ✕
               </button>
@@ -894,9 +973,9 @@ export function PlayShell() {
             <button
               type="button"
               className="mt-4 w-full rounded-sm bg-white/20 px-3 py-2 text-sm font-bold text-white"
-              onClick={() => setBattleSummary(null)}
+              onClick={dismissBattle}
             >
-              Dismiss
+              Close report
             </button>
           </div>
         </div>

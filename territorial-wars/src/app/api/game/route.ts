@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { auth } from "@/auth";
 import type { BuildingType } from "@/lib/gameTypes";
 import { AUTH_DISABLED } from "@/lib/devMode";
 import {
@@ -32,15 +33,22 @@ function newGuestId(): string {
 }
 
 async function resolveIdentity(): Promise<{
-  identity: Identity;
+  identity: Identity | null;
   setCookie?: string;
 }> {
   if (!AUTH_DISABLED) {
+    const session = await auth();
+    const user = session?.user;
+    const uid = (user as { id?: string } | undefined)?.id?.trim();
+    if (!user || !uid) {
+      return { identity: null };
+    }
     return {
       identity: {
-        id: "needs-auth",
-        email: "",
-        name: "Guest",
+        id: uid.startsWith("google_") ? uid : `google_${uid}`,
+        email: user.email || `${uid}@google.local`,
+        name: user.name?.trim() || "Commander",
+        image: user.image,
       },
     };
   }
@@ -80,6 +88,12 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const invite = url.searchParams.get("invite");
   const { identity, setCookie } = await resolveIdentity();
+
+  if (!identity) {
+    const snap = await getSnapshot(null);
+    return NextResponse.json(snap);
+  }
+
   await ensurePlayer(
     identity.id,
     identity.name,
@@ -134,6 +148,13 @@ export async function POST(req: Request) {
     return withGuestCookie(NextResponse.json({ ok: true, ...snap }), target);
   }
 
+  if (!identity) {
+    return NextResponse.json(
+      { error: "Sign in with Google to play" },
+      { status: 401 }
+    );
+  }
+
   await ensurePlayer(
     identity.id,
     identity.name,
@@ -166,10 +187,7 @@ export async function POST(req: Request) {
         : undefined;
     const villagerPos =
       Number.isFinite(body.villagerLat) && Number.isFinite(body.villagerLng)
-        ? {
-            lat: Number(body.villagerLat),
-            lng: Number(body.villagerLng),
-          }
+        ? { lat: Number(body.villagerLat), lng: Number(body.villagerLng) }
         : undefined;
     result = await claimSector(id, body.sectorId, housePos, villagerPos);
   } else if (body.action === "spawn_find") {

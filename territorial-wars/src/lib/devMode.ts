@@ -1,8 +1,13 @@
 import type { Sector } from "@/lib/gameTypes";
 import { closeRing } from "@/lib/geo";
 
-/** Temporary: skip Google auth — guest cookie identity instead */
-export const AUTH_DISABLED = true;
+/**
+ * Guest-cookie mode for local testing.
+ * Default: Google auth on. Set AUTH_DISABLED=true to use guests.
+ */
+export const AUTH_DISABLED =
+  process.env.AUTH_DISABLED === "true" ||
+  process.env.NEXT_PUBLIC_AUTH_DISABLED === "true";
 
 /** Starter sectors with real-ish Islamabad names for local play */
 export function buildDummySectors(now = Date.now()): Sector[] {
