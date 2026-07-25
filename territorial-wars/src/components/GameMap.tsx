@@ -23,7 +23,13 @@ import {
 import { pointInRing } from "@/lib/geo";
 import { distMeters, lerpLatLng } from "@/lib/mapMath";
 import { gatherPhase } from "@/lib/rules";
-import { HouseSprite, VillagerSprite } from "@/components/sprites";
+import {
+  HouseSprite,
+  MillSprite,
+  VillagerSprite,
+  WarehouseSprite,
+  WellSprite,
+} from "@/components/sprites";
 import { ResourceGem } from "@/components/ResourceGem";
 
 const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
@@ -46,10 +52,11 @@ type Props = {
   className?: string;
 };
 
-function buildingLabel(type: Building["type"]): string {
-  if (type === "mill") return "Mill";
-  if (type === "warehouse") return "Store";
-  return "Well";
+function BuildingSprite({ type }: { type: Building["type"] }) {
+  if (type === "mill") return <MillSprite className="h-9 w-10 drop-shadow-md" />;
+  if (type === "warehouse")
+    return <WarehouseSprite className="h-9 w-10 drop-shadow-md" />;
+  return <WellSprite className="h-9 w-10 drop-shadow-md" />;
 }
 
 /** Outbound 0–0.45, gather pause 0.45–0.55, return 0.55–1 */
@@ -331,9 +338,7 @@ export function GameMap({
             latitude={b.lat}
             anchor="bottom"
           >
-            <div className="rounded-sm bg-[var(--surface)]/85 px-1.5 py-0.5 font-mono text-[9px] text-[var(--sand)]">
-              {buildingLabel(b.type)}
-            </div>
+            <BuildingSprite type={b.type} />
           </Marker>
         ))}
 
@@ -405,34 +410,31 @@ export function GameMap({
       </MapboxMap>
 
       {me?.homeSectorId && (
-        <div className="pointer-events-none absolute bottom-3 left-3 right-3 space-y-2">
+        <div className="pointer-events-none absolute bottom-24 left-1/2 z-10 w-[min(22rem,calc(100%-1rem))] -translate-x-1/2 space-y-2 sm:bottom-4">
           {spawnFlash && (
-            <p className="rounded-sm bg-[var(--field)]/25 px-3 py-2 text-center text-xs font-semibold text-[var(--field-bright)]">
+            <p className="hud-chip px-3 py-2 text-center text-xs font-semibold text-[var(--field-bright)]">
               {spawnFlash}
             </p>
           )}
           {zoom < EXPLORE_ZOOM ? (
-            <p className="rounded-sm bg-[var(--surface)]/90 px-3 py-2 text-center font-mono text-[10px] text-[var(--ink-muted)]">
-              Zoom fully into {homeSector?.name ?? "your sector"} and roam to
-              uncover gems · trip {Math.round(GATHER_TRIP_MS / 1000)}s
+            <p className="hud-chip px-3 py-1.5 text-center font-mono text-[9px] text-[var(--ink-muted)]">
+              Zoom into {homeSector?.name ?? "your sector"} & roam for gems ·
+              trip {Math.round(GATHER_TRIP_MS / 1000)}s
             </p>
           ) : exploring ? (
-            <div className="rounded-sm bg-[var(--surface)]/90 px-3 py-2">
-              <p className="text-center font-mono text-[10px] text-[var(--sand)]">
-                Exploring · pan around your sector to uncover gems
+            <div className="hud-chip px-3 py-1.5">
+              <p className="text-center font-mono text-[9px] text-[var(--sand)]">
+                Exploring — gems appear ahead as you roam
               </p>
-              <div className="mx-auto mt-1.5 h-1.5 max-w-xs overflow-hidden rounded-full bg-[var(--wash)]">
+              <div className="mx-auto mt-1 h-1.5 max-w-xs overflow-hidden rounded-full bg-[var(--wash)]">
                 <div
                   className="h-full bg-[var(--sand)] transition-[width] duration-150"
                   style={{ width: `${huntPct}%` }}
                 />
               </div>
-              <p className="mt-1 text-center font-mono text-[9px] text-[var(--ink-faint)]">
-                Keep moving — finds need a short roam
-              </p>
             </div>
           ) : (
-            <p className="rounded-sm bg-[var(--surface)]/90 px-3 py-2 text-center font-mono text-[10px] text-[var(--ink-muted)]">
+            <p className="hud-chip px-3 py-1.5 text-center font-mono text-[9px] text-[var(--ink-muted)]">
               Pan into your sector while zoomed in to hunt gems
             </p>
           )}

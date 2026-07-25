@@ -249,3 +249,137 @@ body {
   }
 }
 
+/* ---- RTS HUD ---- */
+
+.hud-panel {
+  background:
+    linear-gradient(180deg, rgba(38, 48, 42, 0.92), rgba(16, 22, 18, 0.94));
+  border: 1px solid #46543f;
+  border-radius: 6px;
+  box-shadow:
+    inset 0 1px 0 rgba(232, 235, 228, 0.12),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5),
+    0 4px 14px rgba(0, 0, 0, 0.55);
+}
+
+.hud-chip {
+  background: linear-gradient(180deg, #2c3830, #171f1a);
+  border: 1px solid #46543f;
+  border-radius: 5px;
+  box-shadow:
+    inset 0 1px 0 rgba(232, 235, 228, 0.14),
+    0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+.cameo {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 74px;
+  height: 62px;
+  padding: 3px 3px 12px;
+  border-radius: 4px;
+  border: 1px solid #55634c;
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(122, 148, 108, 0.35), transparent 60%),
+    linear-gradient(180deg, #37423a 0%, #1c241e 55%, #10150f 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(232, 235, 228, 0.22),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.6),
+    0 2px 6px rgba(0, 0, 0, 0.6);
+}
+
+.cameo:disabled {
+  filter: grayscale(0.7) brightness(0.65);
+  cursor: default;
+}
+
+button.cameo:not(:disabled):hover {
+  border-color: #c4b089;
+  box-shadow:
+    inset 0 1px 0 rgba(232, 235, 228, 0.25),
+    0 0 0 1px rgba(196, 176, 137, 0.6),
+    0 2px 8px rgba(0, 0, 0, 0.6);
+}
+
+.cameo-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 1px 2px;
+  border-top: 1px solid rgba(85, 99, 76, 0.8);
+  background: linear-gradient(180deg, rgba(10, 14, 10, 0.85), rgba(10, 14, 10, 0.95));
+  font-size: 8px;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: center;
+  color: #cdd4c5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-radius: 0 0 3px 3px;
+}
+
+.cameo-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: rgba(10, 14, 10, 0.9);
+  border: 1px solid #55634c;
+  font-size: 9px;
+  font-weight: 700;
+  color: #5a9a63;
+  text-align: center;
+}
+
+.cameo-cost {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: rgba(10, 14, 10, 0.9);
+  border: 1px solid #6a5b39;
+  font-size: 9px;
+  font-weight: 700;
+  color: #e8cf8a;
+}
+
+.cameo-ready {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  right: 3px;
+  padding: 1px 0;
+  border-radius: 2px;
+  background: rgba(20, 60, 30, 0.85);
+  border: 1px solid #5a9a63;
+  color: #8fe098;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.mill-sails {
+  animation: mill-turn 6s linear infinite;
+  transform-origin: 0 0;
+}
+
+@keyframes mill-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.hud-gold {
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+}
+

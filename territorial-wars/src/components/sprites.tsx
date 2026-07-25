@@ -77,6 +77,111 @@ export function VillagerSprite({
   );
 }
 
+/** Grain mill with turning sails. */
+export function MillSprite({
+  className = "",
+  title = "Grain mill",
+}: SpriteProps) {
+  return (
+    <svg
+      className={`house-sprite ${className}`}
+      viewBox="0 0 36 32"
+      width="52"
+      height="46"
+      role="img"
+      aria-label={title}
+    >
+      <title>{title}</title>
+      <ellipse cx="18" cy="30" rx="9" ry="1.8" fill="rgba(0,0,0,0.35)" />
+      {/* tower */}
+      <path d="M13 28 L15 12 H21 L23 28 Z" fill="#c9b490" />
+      <path d="M13 28 L15 12 H18 V28 Z" fill="#b09a74" />
+      {/* cap */}
+      <path d="M14 12 L18 7 L22 12 Z" fill="#8a4f35" />
+      {/* door + window */}
+      <rect x="16.4" y="22.5" width="3.2" height="5.5" rx="0.8" fill="#6b4228" />
+      <circle cx="18" cy="16.5" r="1.3" fill="#ffe08a" />
+      {/* sails */}
+      <g transform="translate(18 10)">
+        <g className="mill-sails">
+          <rect x="-0.6" y="-9" width="1.2" height="18" rx="0.5" fill="#e8ebe4" />
+          <rect x="-9" y="-0.6" width="18" height="1.2" rx="0.5" fill="#e8ebe4" />
+          <rect x="-0.6" y="-9" width="1.2" height="7" fill="#c4b089" />
+          <rect x="2" y="-0.6" width="7" height="1.2" fill="#c4b089" />
+        </g>
+      </g>
+      <circle cx="18" cy="10" r="1.1" fill="#5c4030" />
+    </svg>
+  );
+}
+
+/** Stone warehouse with crates. */
+export function WarehouseSprite({
+  className = "",
+  title = "Warehouse",
+}: SpriteProps) {
+  return (
+    <svg
+      className={`house-sprite ${className}`}
+      viewBox="0 0 36 32"
+      width="52"
+      height="46"
+      role="img"
+      aria-label={title}
+    >
+      <title>{title}</title>
+      <ellipse cx="18" cy="30" rx="11" ry="1.8" fill="rgba(0,0,0,0.35)" />
+      {/* body */}
+      <rect x="6" y="13" width="24" height="15" rx="1" fill="#9aa392" />
+      <rect x="6" y="13" width="24" height="3" fill="#7f8877" />
+      {/* roof */}
+      <path d="M4 14 L18 6 L32 14 Z" fill="#4a5550" />
+      <path d="M6 13.4 L18 7.6 L30 13.4 Z" fill="#5d6a63" />
+      {/* door */}
+      <rect x="14" y="18" width="8" height="10" rx="0.8" fill="#3d4a3f" />
+      <path d="M14 18h8M18 18v10" stroke="#2a342c" strokeWidth="0.7" />
+      {/* crates */}
+      <rect x="7.5" y="23" width="4.5" height="5" fill="#c4a86a" />
+      <path d="M7.5 25.5h4.5M9.7 23v5" stroke="#8a7a5a" strokeWidth="0.5" />
+      <rect x="24" y="24" width="4" height="4" fill="#c4a86a" />
+    </svg>
+  );
+}
+
+/** Village well with rope bucket. */
+export function WellSprite({
+  className = "",
+  title = "Village well",
+}: SpriteProps) {
+  return (
+    <svg
+      className={`house-sprite ${className}`}
+      viewBox="0 0 36 32"
+      width="52"
+      height="46"
+      role="img"
+      aria-label={title}
+    >
+      <title>{title}</title>
+      <ellipse cx="18" cy="30" rx="9" ry="1.8" fill="rgba(0,0,0,0.35)" />
+      {/* base */}
+      <path d="M10 22 a8 4 0 0 1 16 0 v5 a8 4 0 0 1 -16 0 Z" fill="#7f8877" />
+      <ellipse cx="18" cy="22" rx="8" ry="4" fill="#5d6a63" />
+      <ellipse cx="18" cy="22" rx="5.5" ry="2.6" fill="#20303a" />
+      {/* posts + roof */}
+      <rect x="11" y="10" width="1.6" height="13" fill="#8b5a2b" />
+      <rect x="23.4" y="10" width="1.6" height="13" fill="#8b5a2b" />
+      <path d="M9 11 L18 5 L27 11 Z" fill="#c73a30" />
+      <path d="M10.6 10.6 L18 6.4 L25.4 10.6 Z" fill="#e23b2f" />
+      {/* rope + bucket */}
+      <rect x="17.7" y="11" width="0.6" height="7" fill="#d9c9a3" />
+      <path d="M16 18 h4 v3 a2 1.4 0 0 1 -4 0 Z" fill="#8b5a2b" />
+      {/* water shine */}
+      <path d="M14.5 21.6 q1.6 1 3.5 0.6" stroke="#7ec8ff" strokeWidth="0.7" fill="none" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 /** Cozy little cottage with warm window glow. */
 export function HouseSprite({
   className = "",
