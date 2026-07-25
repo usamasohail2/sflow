@@ -2731,7 +2731,7 @@ export function PlayShell() {
       {needsHouseRebuild && me?.homeSectorId && !placing && (
         <div
           className={`absolute left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-sm -translate-x-1/2 sm:bottom-8 ${
-            buildOpen ? "bottom-56" : "bottom-28"
+            buildOpen ? "bottom-[13.5rem]" : "bottom-28"
           }`}
         >
           <div className="hud-panel p-4 text-center">
@@ -2766,7 +2766,7 @@ export function PlayShell() {
       {canRazeSelected && razeOwner && razeBuilding && !placing && (
         <div
           className={`absolute left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-xs -translate-x-1/2 sm:bottom-8 ${
-            buildOpen ? "bottom-56" : "bottom-28"
+            buildOpen ? "bottom-[13.5rem]" : "bottom-28"
           }`}
         >
           <div className="hud-panel p-3 text-center">
