@@ -2882,7 +2882,7 @@ export function PlayShell() {
                 }`}
                 onClick={() => setActivityTab("global")}
               >
-                World
+                Sector wars
               </button>
               <button
                 type="button"
@@ -2893,7 +2893,7 @@ export function PlayShell() {
                 }`}
                 onClick={() => setActivityTab("you")}
               >
-                Your fights
+                Your wars
               </button>
             </div>
 
@@ -2904,8 +2904,8 @@ export function PlayShell() {
               ).length === 0 ? (
                 <li className="text-[12px] text-[var(--ink-faint)]">
                   {activityTab === "global"
-                    ? "No world activity yet — raids and ground clears show up here."
-                    : "Nothing involving you yet."}
+                    ? "No sector wars yet — attacks and sabotage show up here."
+                    : "No wars involving you yet."}
                 </li>
               ) : (
                 (activityTab === "global"
