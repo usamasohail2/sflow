@@ -523,6 +523,7 @@ function publicPlayer(p: Player): PublicPlayer {
     homeSectorId: p.homeSectorId,
     house: p.house,
     houseHp: p.houseHp ?? 0,
+    villagerPost: p.villagerPost ?? null,
     villagers: p.villagers,
     soldiers: p.soldiers || 0,
     tanks: p.tanks || 0,
@@ -643,10 +644,9 @@ export async function getSnapshot(meId?: string | null): Promise<GameSnapshot> {
     p.id === me?.id ? publicPlayer(me) : publicPlayer(projectPlayer(p, spotsAll))
   );
 
+  // Easy nodes are shared/visible in every sector so you can see others gather
   const spots = spotsAll.filter((s) => {
-    if (s.kind === "easy") {
-      return !me?.homeSectorId || s.sectorId === me.homeSectorId;
-    }
+    if (s.kind === "easy") return true;
     if (!me) return false;
     return s.ownerId === me.id || me.discoveredSpotIds.includes(s.id);
   });
@@ -704,16 +704,13 @@ export async function claimSector(
   const me = await getPlayer(playerId);
   if (!me) return { error: "Player missing" };
   if (me.homeSectorId) {
-    return { error: "You already claimed a sector — it's yours forever." };
+    return { error: "You already settled in a sector." };
   }
   const sectors = await getSectors();
   const sector = sectors.find((s) => s.id === sectorId);
   if (!sector) return { error: "Sector not found" };
 
-  const existingOwner = await getStr(kOwner(sectorId));
-  if (existingOwner && existingOwner !== playerId) {
-    return { error: "That sector is already claimed" };
-  }
+  // Many players may settle the same sector — no exclusive lock.
 
   if (
     !gpsPos ||
@@ -724,7 +721,7 @@ export async function claimSector(
   }
   if (!pointInOrNearRing(gpsPos, sector.ring, 120)) {
     return {
-      error: `Your GPS is outside ${sector.name} — go there to claim it`,
+      error: `Your GPS is outside ${sector.name} — go there to settle`,
     };
   }
 
@@ -754,12 +751,8 @@ export async function claimSector(
     villagerPost = villagerPos;
   }
 
-  // Atomic ownership — losers of the race get a clean error
-  const locked = await setNX(kOwner(sectorId), playerId);
-  if (!locked) {
-    const owner = await getStr(kOwner(sectorId));
-    if (owner !== playerId) return { error: "That sector was just claimed" };
-  }
+  // Soft residency marker (not exclusive) — useful for bots / legacy
+  await setNX(kOwner(sectorId), playerId);
 
   const now = Date.now();
   const spots = seedSpotsForSector(sector, house, await getSpots());
@@ -801,7 +794,7 @@ export async function placeHouse(
 ): Promise<{ ok: true } | { error: string }> {
   await bootstrap();
   const me = await getPlayer(playerId);
-  if (!me?.homeSectorId) return { error: "Claim a sector first" };
+  if (!me?.homeSectorId) return { error: "Settle in a sector first" };
   if (me.house) return { error: "You already have a house" };
 
   const sectors = await getSectors();
@@ -866,7 +859,7 @@ export async function spawnRoamFind(
 > {
   await bootstrap();
   const me = await getPlayer(playerId);
-  if (!me?.homeSectorId || !me.house) return { error: "Claim a sector first" };
+  if (!me?.homeSectorId || !me.house) return { error: "Settle in a sector first" };
   if (opts.zoom < EXPLORE_ZOOM) {
     return { error: "Zoom all the way in to explore" };
   }
@@ -967,7 +960,7 @@ export async function discoverSpot(
 ): Promise<{ ok: true; bonus?: number } | { error: string }> {
   await bootstrap();
   const me = await getPlayer(playerId);
-  if (!me?.homeSectorId) return { error: "Claim a sector first" };
+  if (!me?.homeSectorId) return { error: "Settle in a sector first" };
   const spots = await getSpots();
   const spot = spots.find((s) => s.id === spotId);
   if (!spot) return { error: "Spot not found" };
@@ -1004,7 +997,7 @@ export async function collectHidden(
 ): Promise<{ ok: true; gained?: number } | { error: string }> {
   await bootstrap();
   const me = await getPlayer(playerId);
-  if (!me?.homeSectorId) return { error: "Claim a sector first" };
+  if (!me?.homeSectorId) return { error: "Settle in a sector first" };
   if (!me.discoveredSpotIds.includes(spotId)) {
     return { error: "Explore and discover this spot first" };
   }
@@ -1052,7 +1045,7 @@ export async function buildBuilding(
 ): Promise<{ ok: true } | { error: string }> {
   await bootstrap();
   const me = await getPlayer(playerId);
-  if (!me?.homeSectorId || !me.house) return { error: "Claim a sector first" };
+  if (!me?.homeSectorId || !me.house) return { error: "Settle in a sector first" };
   const cat = BUILDING_CATALOG.find((b) => b.type === type);
   if (!cat) return { error: "Unknown building" };
 
@@ -1121,7 +1114,7 @@ export async function recruitSoldier(
 ): Promise<{ ok: true } | { error: string }> {
   await bootstrap();
   const me = await getPlayer(playerId);
-  if (!me?.homeSectorId) return { error: "Claim a sector first" };
+  if (!me?.homeSectorId) return { error: "Settle in a sector first" };
   const spots = await getSpots();
   const { player: fresh } = await accruePlayer(me, spots, true);
   if (fresh.gold < SOLDIER_COST) {
@@ -1142,7 +1135,7 @@ export async function buildTank(
 ): Promise<{ ok: true } | { error: string }> {
   await bootstrap();
   const me = await getPlayer(playerId);
-  if (!me?.homeSectorId) return { error: "Claim a sector first" };
+  if (!me?.homeSectorId) return { error: "Settle in a sector first" };
   const spots = await getSpots();
   const { player: fresh } = await accruePlayer(me, spots, true);
   if (fresh.gold < TANK_COST) {
@@ -1160,19 +1153,19 @@ export async function buildTank(
 
 export async function attackSector(
   playerId: string,
-  targetSectorId: string
+  targetPlayerId: string
 ): Promise<{ ok: true; battle: BattleReport } | { error: string }> {
   await bootstrap();
   const me = await getPlayer(playerId);
-  if (!me?.homeSectorId) return { error: "Claim a sector first" };
+  if (!me?.homeSectorId) return { error: "Settle in a sector first" };
   if (!me.house) {
     return { error: "Rebuild your house before attacking" };
   }
   if ((me.soldiers || 0) + (me.tanks || 0) <= 0) {
     return { error: "Recruit soldiers or build tanks before attacking" };
   }
-  if (targetSectorId === me.homeSectorId) {
-    return { error: "That's your own sector" };
+  if (!targetPlayerId || targetPlayerId === playerId) {
+    return { error: "Pick someone else to attack" };
   }
   const now = Date.now();
   if (me.lastAttackAt && now - me.lastAttackAt < ATTACK_COOLDOWN_MS) {
@@ -1180,11 +1173,11 @@ export async function attackSector(
     return { error: `Army regrouping — ${wait}s until next attack` };
   }
 
-  const defenderId = await getStr(kOwner(targetSectorId));
-  const defender = defenderId ? await getPlayer(defenderId) : null;
-  if (!defender || defender.homeSectorId !== targetSectorId) {
-    return { error: "Nobody holds that sector" };
+  const defender = await getPlayer(targetPlayerId);
+  if (!defender?.homeSectorId) {
+    return { error: "That settler has no village" };
   }
+  const targetSectorId = defender.homeSectorId;
 
   const atk = attackPower(me.soldiers, me.tanks || 0);
   const def = defensePower(defender);

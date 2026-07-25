@@ -120,6 +120,9 @@ type Props = {
   march: MarchAnim | null;
   impact: ImpactAnim | null;
   onSelect: (id: string) => void;
+  /** Tap another settler's house to target them */
+  onSelectPlayer?: (playerId: string) => void;
+  selectedPlayerId?: string | null;
   onPlace?: (lat: number, lng: number) => void;
   onSpawnFind?: (payload: {
     lat: number;
@@ -181,6 +184,8 @@ export function GameMap({
   march,
   impact,
   onSelect,
+  onSelectPlayer,
+  selectedPlayerId = null,
   onPlace,
   onSpawnFind,
   onCollectHidden,
@@ -321,18 +326,34 @@ export function GameMap({
     return spots.filter((s) => s.sectorId === me.homeSectorId);
   }, [spots, me]);
 
-  const easyTarget = useMemo(() => {
-    const easy = mySpots.find((s) => s.kind === "easy");
-    if (easy) return { lat: easy.lat, lng: easy.lng };
-    return me?.house ?? null;
-  }, [mySpots, me]);
-
-  const phase = me ? gatherPhase(me, now) : 0;
-  const walkOrigin = me?.villagerPost ?? me?.house ?? null;
-  const villagerPos =
-    walkOrigin && easyTarget
-      ? walkPosition(walkOrigin, easyTarget, phase)
-      : null;
+  /** Walking villagers for every settled player (mine + rivals) */
+  const villagerMarkers = useMemo(() => {
+    return players
+      .filter((p) => p.homeSectorId && p.house && p.villagers > 0)
+      .map((p) => {
+        const origin = p.villagerPost ?? p.house!;
+        const easy =
+          spots.find((s) => s.sectorId === p.homeSectorId && s.kind === "easy") ??
+          null;
+        const target = easy
+          ? { lat: easy.lat, lng: easy.lng }
+          : offsetMeters(p.house!, 36, 18);
+        // Shared clock with a per-player offset so loops don't sync perfectly
+        let offset = 0;
+        for (let i = 0; i < p.id.length; i++) offset += p.id.charCodeAt(i);
+        const phase =
+          p.id === me?.id && me
+            ? gatherPhase(me, now)
+            : (((now + offset * 37) % GATHER_TRIP_MS) / GATHER_TRIP_MS);
+        return {
+          id: p.id,
+          name: p.name,
+          mine: p.id === me?.id,
+          villagers: p.villagers,
+          pos: walkPosition(origin, target, phase),
+        };
+      });
+  }, [players, spots, me, now]);
 
   // March animation position
   const marchPos = useMemo(() => {
@@ -603,19 +624,38 @@ export function GameMap({
               latitude={p.house!.lat}
               anchor="bottom"
             >
-              <div className="relative flex flex-col items-center">
+              <button
+                type="button"
+                className={`relative flex flex-col items-center bg-transparent p-0 ${
+                  selectedPlayerId === p.id ? "ring-2 ring-[var(--sand)] rounded-sm" : ""
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (p.homeSectorId) onSelect(p.homeSectorId);
+                  if (p.id !== me?.id) onSelectPlayer?.(p.id);
+                }}
+                title={
+                  p.id === me?.id
+                    ? "Your house"
+                    : `Tap to target ${p.name}`
+                }
+              >
                 <HouseSprite className="h-10 w-11 drop-shadow-md" />
                 <HpBar
                   hp={p.houseHp ?? HOUSE_MAX_HP}
                   maxHp={HOUSE_MAX_HP}
                   width={38}
                 />
-                {p.id !== me?.id && (
-                  <span className="absolute -top-2 left-1/2 -translate-x-1/2 rounded-sm bg-[rgba(10,14,10,0.85)] px-1 font-mono text-[8px] text-[var(--signal-bright)]">
-                    {p.name}
-                  </span>
-                )}
-              </div>
+                <span
+                  className={`absolute -top-2 left-1/2 -translate-x-1/2 rounded-sm px-1 font-mono text-[8px] ${
+                    p.id === me?.id
+                      ? "bg-[rgba(10,14,10,0.85)] text-[var(--field-bright)]"
+                      : "bg-[rgba(10,14,10,0.85)] text-[var(--signal-bright)]"
+                  }`}
+                >
+                  {p.id === me?.id ? "You" : p.name}
+                </span>
+              </button>
             </Marker>
           ))}
         {players
@@ -741,23 +781,29 @@ export function GameMap({
             );
           })}
 
-        {/* Walking villager */}
-        {villagerPos && me && me.villagers > 0 && (
+        {/* Walking villagers — every settler */}
+        {villagerMarkers.map((v) => (
           <Marker
-            longitude={villagerPos.lng}
-            latitude={villagerPos.lat}
+            key={`villager-${v.id}`}
+            longitude={v.pos.lng}
+            latitude={v.pos.lat}
             anchor="bottom"
           >
-            <div className="relative">
+            <div className="relative" title={`${v.name}'s villager`}>
               <VillagerSprite walking className="h-9 w-9" />
-              {me.villagers > 1 && (
+              {v.villagers > 1 && (
                 <span className="absolute -right-1 -top-1 rounded-full bg-[var(--surface)] px-1 font-mono text-[9px] text-[var(--field-bright)]">
-                  ×{me.villagers}
+                  ×{v.villagers}
+                </span>
+              )}
+              {!v.mine && (
+                <span className="absolute -bottom-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-sm bg-[rgba(10,14,10,0.85)] px-1 font-mono text-[7px] text-[var(--ink-muted)]">
+                  {v.name.split(" ")[0]}
                 </span>
               )}
             </div>
           </Marker>
-        )}
+        ))}
 
         {/* Pending house during claim flow */}
         {previewHouse && (

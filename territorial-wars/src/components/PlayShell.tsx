@@ -194,6 +194,9 @@ function eventLogLine(e: GameEvent, myId: string | undefined): string {
 export function PlayShell() {
   const [snap, setSnap] = useState<GameSnapshot | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(
+    null
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -386,9 +389,21 @@ export function PlayShell() {
         houseHp: me.houseHp,
       })
     : 0;
-  const enemyPlayer = selected
-    ? snap?.players.find((p) => p.homeSectorId === selected.id)
-    : null;
+  const settlersBySector = useMemo(() => {
+    const map = new Map<string, NonNullable<typeof snap>["players"]>();
+    for (const p of snap?.players ?? []) {
+      if (!p.homeSectorId) continue;
+      const list = map.get(p.homeSectorId) ?? [];
+      list.push(p);
+      map.set(p.homeSectorId, list);
+    }
+    return map;
+  }, [snap]);
+
+  const enemyPlayer =
+    (selectedPlayerId
+      ? snap?.players.find((p) => p.id === selectedPlayerId)
+      : null) ?? null;
   const enemyDefense = enemyPlayer
     ? defensePower({
         soldiers: enemyPlayer.soldiers,
@@ -398,16 +413,6 @@ export function PlayShell() {
         houseHp: enemyPlayer.houseHp,
       })
     : 0;
-
-  const sectorOwner = useMemo(() => {
-    const map = new Map<string, { id: string; name: string }>();
-    for (const p of snap?.players ?? []) {
-      if (p.homeSectorId) {
-        map.set(p.homeSectorId, { id: p.id, name: p.name });
-      }
-    }
-    return map;
-  }, [snap]);
 
   const gemsFound = useMemo(() => {
     if (!me) return 0;
@@ -435,7 +440,7 @@ export function PlayShell() {
     return [
       {
         id: "claim",
-        label: "Claim one sector forever",
+        label: "Settle in a sector",
         done: Boolean(me.homeSectorId),
       },
       {
@@ -664,7 +669,7 @@ export function PlayShell() {
         gpsLng: gpsFix.lng,
       });
       if (data) {
-        showToast(`${placing.sector.name} claimed — your village is live!`);
+        showToast(`Settled in ${placing.sector.name} — your village is live!`);
         setPlacing(null);
         setPendingHouse(null);
         setGpsFix(null);
@@ -718,14 +723,11 @@ export function PlayShell() {
   };
 
   const launchAttack = async () => {
-    if (!me?.house || !selected) return;
-    const targetSector = selected;
-    const defenderName =
-      snap?.players.find((p) => p.homeSectorId === targetSector.id)?.name ??
-      "enemy";
-    const target =
-      snap?.players.find((p) => p.homeSectorId === targetSector.id)?.house ??
-      ringCentroid(targetSector.ring);
+    if (!me?.house || !enemyPlayer?.house) return;
+    const targetSector =
+      snap?.sectors.find((s) => s.id === enemyPlayer.homeSectorId) ?? null;
+    const defenderName = enemyPlayer.name;
+    const target = enemyPlayer.house;
     const durationMs = 3200;
     const marchStarted = Date.now();
     setMarch({
@@ -734,7 +736,7 @@ export function PlayShell() {
       startedAt: marchStarted,
       durationMs,
     });
-    const data = await act("attack", { sectorId: targetSector.id });
+    const data = await act("attack", { targetPlayerId: enemyPlayer.id });
     const battle = data?.battle as BattleReport | undefined;
 
     if (!data || !battle) {
@@ -744,7 +746,7 @@ export function PlayShell() {
 
     const summary = summaryFromAttack(
       battle,
-      targetSector.name,
+      targetSector?.name ?? "their village",
       defenderName
     );
     // Wait until the march finishes, then impact + report.
@@ -780,11 +782,11 @@ export function PlayShell() {
 
   const missionsDone = missionList.filter((m) => m.done).length;
 
-  const enemySelected =
-    claimed &&
-    selected &&
-    selected.id !== me?.homeSectorId &&
-    sectorOwner.has(selected.id);
+  const settlersHere = selected
+    ? settlersBySector.get(selected.id) ?? []
+    : [];
+  const rivalsHere = settlersHere.filter((p) => p.id !== me?.id);
+  const enemySelected = claimed && Boolean(enemyPlayer && enemyPlayer.id !== me?.id);
 
   // Google auth required — gate the game until signed in
   if (snap && !snap.authDisabled && !me) {
@@ -820,6 +822,7 @@ export function PlayShell() {
           me={me}
           players={snap?.players ?? []}
           selectedId={selectedId}
+          selectedPlayerId={selectedPlayerId}
           placing={placing}
           previewHouse={pendingHouse}
           userLocation={!claimed ? liveLocation : null}
@@ -827,6 +830,7 @@ export function PlayShell() {
           march={march}
           impact={impact}
           onSelect={setSelectedId}
+          onSelectPlayer={setSelectedPlayerId}
           onPlace={(lat, lng) => void handlePlace(lat, lng)}
           onSpawnFind={(p) => spawnFind(p)}
           onCollectHidden={(spotId) => void act("collect_hidden", { spotId }).then((d) => {
@@ -843,7 +847,7 @@ export function PlayShell() {
             Islamabad Territorial Wars
           </Link>
           <p className="font-mono text-[8px] uppercase tracking-[0.22em] text-[var(--ink-faint)]">
-            {claimed ? `Home · ${homeName}` : "Pick your sector"}
+            {claimed ? `Home · ${homeName}` : "Pick a sector to settle"}
           </p>
         </div>
 
@@ -1041,7 +1045,7 @@ export function PlayShell() {
           <ol className="mt-2 space-y-1">
             {ranking.length === 0 && (
               <li className="text-[11px] text-[var(--ink-faint)]">
-                No sectors claimed yet
+                No settlers yet
               </li>
             )}
             {ranking.map((r, i) => (
@@ -1187,7 +1191,7 @@ export function PlayShell() {
         </div>
       )}
 
-      {/* ---- Claim prompt (unclaimed) ---- */}
+      {/* ---- Settle prompt (no home yet) ---- */}
       {!claimed && selected && !placing && (
         <div className="absolute bottom-24 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-sm -translate-x-1/2 sm:bottom-8">
           <div className="hud-panel p-4 text-center">
@@ -1195,83 +1199,86 @@ export function PlayShell() {
               {selected.name}
             </p>
             <p className="mt-1 text-[11px] text-[var(--ink-muted)]">
-              {sectorOwner.has(selected.id)
-                ? `Claimed by ${sectorOwner.get(selected.id)!.name}`
-                : "Open territory — your blue pin is your GPS. Confirm you're inside, then place your house."}
+              {settlersHere.length > 0
+                ? `${settlersHere.length} settler${settlersHere.length === 1 ? "" : "s"} here — you can join them.`
+                : "No one here yet. Confirm GPS, then place your house."}
             </p>
-            {!sectorOwner.has(selected.id) && liveLocation && (
+            {settlersHere.length > 0 && (
+              <p className="mt-1 text-[10px] text-[var(--sand)]">
+                {settlersHere.map((p) => p.name).join(" · ")}
+              </p>
+            )}
+            {liveLocation && (
               <p className="mt-1 font-mono text-[9px] text-[#9fd0ff]">
                 {pointInOrNearRing(liveLocation, selected.ring, 120)
                   ? `Blue pin is inside ${selected.name}`
                   : `Blue pin is outside ${selected.name} — move closer`}
               </p>
             )}
-            {!sectorOwner.has(selected.id) && (
-              <>
-                <button
-                  type="button"
-                  disabled={busy || !me || gpsBusy}
-                  onClick={() => confirmGpsForSector(selected.id)}
-                  className={`mt-3 w-full rounded-sm px-3 py-2.5 text-sm font-bold shadow-[0_2px_8px_rgba(0,0,0,0.5)] disabled:opacity-40 ${
-                    gpsFix?.sectorId === selected.id
-                      ? "bg-[var(--field)] text-white"
-                      : "bg-[var(--wash)] text-[var(--ink)] border border-[var(--line-strong)]"
-                  }`}
-                >
-                  {gpsBusy
-                    ? "Reading GPS…"
-                    : gpsFix?.sectorId === selected.id
-                      ? "✓ Location confirmed"
-                      : liveLocation
-                        ? "📍 Confirm this pin for claim"
-                        : "📍 Show my location"}
-                </button>
-                <button
-                  type="button"
-                  disabled={
-                    busy ||
-                    !me ||
-                    gpsFix?.sectorId !== selected.id
-                  }
-                  onClick={() => {
-                    setPendingHouse(null);
-                    setPlacing({ kind: "house", sector: selected });
-                    showToast("Tap the map to place your house");
-                  }}
-                  className="mt-2 w-full rounded-sm bg-[var(--signal)] px-3 py-2.5 text-sm font-bold text-white shadow-[0_2px_8px_rgba(0,0,0,0.5)] disabled:opacity-40"
-                >
-                  ⚑ Claim {selected.name} — place your house
-                </button>
-                <button
-                  type="button"
-                  disabled={busy || !me}
-                  onClick={() => bypassGpsForSector(selected.id)}
-                  className="mt-1.5 text-[9px] font-mono text-[var(--ink-faint)] underline decoration-dotted underline-offset-2 hover:text-[var(--sand)] disabled:opacity-40"
-                  title="Demo only — skips the GPS check"
-                >
-                  Demo: bypass location check
-                </button>
-              </>
-            )}
+            <>
+              <button
+                type="button"
+                disabled={busy || !me || gpsBusy}
+                onClick={() => confirmGpsForSector(selected.id)}
+                className={`mt-3 w-full rounded-sm px-3 py-2.5 text-sm font-bold shadow-[0_2px_8px_rgba(0,0,0,0.5)] disabled:opacity-40 ${
+                  gpsFix?.sectorId === selected.id
+                    ? "bg-[var(--field)] text-white"
+                    : "bg-[var(--wash)] text-[var(--ink)] border border-[var(--line-strong)]"
+                }`}
+              >
+                {gpsBusy
+                  ? "Reading GPS…"
+                  : gpsFix?.sectorId === selected.id
+                    ? "✓ Location confirmed"
+                    : liveLocation
+                      ? "📍 Confirm this pin to settle"
+                      : "📍 Show my location"}
+              </button>
+              <button
+                type="button"
+                disabled={busy || !me || gpsFix?.sectorId !== selected.id}
+                onClick={() => {
+                  setPendingHouse(null);
+                  setPlacing({ kind: "house", sector: selected });
+                  showToast("Tap the map to place your house");
+                }}
+                className="mt-2 w-full rounded-sm bg-[var(--signal)] px-3 py-2.5 text-sm font-bold text-white shadow-[0_2px_8px_rgba(0,0,0,0.5)] disabled:opacity-40"
+              >
+                ⚑ Settle in {selected.name} — place house
+              </button>
+              <button
+                type="button"
+                disabled={busy || !me}
+                onClick={() => bypassGpsForSector(selected.id)}
+                className="mt-1.5 text-[9px] font-mono text-[var(--ink-faint)] underline decoration-dotted underline-offset-2 hover:text-[var(--sand)] disabled:opacity-40"
+                title="Demo only — skips the GPS check"
+              >
+                Demo: bypass location check
+              </button>
+            </>
             <div className="mt-2 flex flex-wrap justify-center gap-1.5">
-              {(snap?.sectors ?? []).map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => {
-                    setSelectedId(s.id);
-                    if (gpsFix && gpsFix.sectorId !== s.id) setGpsFix(null);
-                  }}
-                  className={`rounded-sm border px-2 py-1 font-mono text-[9px] ${
-                    s.id === selectedId
-                      ? "border-[var(--sand)] text-[var(--sand)]"
-                      : "border-[var(--line)] text-[var(--ink-muted)]"
-                  }`}
-                >
-                  {s.name}
-                  {sectorOwner.has(s.id) ? " ●" : ""}
-                </button>
-              ))}
+              {(snap?.sectors ?? []).map((s) => {
+                const n = settlersBySector.get(s.id)?.length ?? 0;
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedId(s.id);
+                      setSelectedPlayerId(null);
+                      if (gpsFix && gpsFix.sectorId !== s.id) setGpsFix(null);
+                    }}
+                    className={`rounded-sm border px-2 py-1 font-mono text-[9px] ${
+                      s.id === selectedId
+                        ? "border-[var(--sand)] text-[var(--sand)]"
+                        : "border-[var(--line)] text-[var(--ink-muted)]"
+                    }`}
+                  >
+                    {s.name}
+                    {n > 0 ? ` · ${n}` : ""}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -1308,15 +1315,47 @@ export function PlayShell() {
         </div>
       )}
 
-      {/* ---- Attack panel: enemy sector selected ---- */}
-      {enemySelected && !placing && !needsHouseRebuild && (
+      {/* ---- Sector settlers / attack target picker ---- */}
+      {claimed && selected && !placing && !needsHouseRebuild && !enemySelected && rivalsHere.length > 0 && (
         <div className="absolute bottom-24 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-xs -translate-x-1/2 sm:bottom-8">
           <div className="hud-panel p-3 text-center">
             <p className="font-display text-lg text-[var(--ink)]">
-              {selected!.name}
+              {selected.name}
             </p>
             <p className="text-[10px] text-[var(--ink-muted)]">
-              Held by {sectorOwner.get(selected!.id)!.name}
+              Tap a house on the map, or pick a rival below
+            </p>
+            <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto text-left">
+              {rivalsHere.map((p) => (
+                <li key={p.id}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPlayerId(p.id)}
+                    className="flex w-full items-center justify-between rounded-sm border border-[var(--line)] px-2 py-1.5 text-[11px] text-[var(--ink-muted)] hover:border-[var(--sand)] hover:text-[var(--sand)]"
+                  >
+                    <span>{p.name}</span>
+                    <span className="font-mono text-[9px]">
+                      {p.soldiers}⚔ {p.tanks}🛡
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+
+      {/* ---- Attack panel: rival settler selected ---- */}
+      {enemySelected && enemyPlayer && !placing && !needsHouseRebuild && (
+        <div className="absolute bottom-24 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-xs -translate-x-1/2 sm:bottom-8">
+          <div className="hud-panel p-3 text-center">
+            <p className="font-display text-lg text-[var(--ink)]">
+              {enemyPlayer.name}
+            </p>
+            <p className="text-[10px] text-[var(--ink-muted)]">
+              Village in{" "}
+              {snap?.sectors.find((s) => s.id === enemyPlayer.homeSectorId)
+                ?.name ?? "sector"}
             </p>
             <p className="mt-2 font-mono text-[10px] text-[var(--sand)]">
               Your attack {myAttack}
@@ -1327,12 +1366,10 @@ export function PlayShell() {
             </p>
             <p className="font-mono text-[10px] text-[var(--ink-muted)]">
               Their defense {enemyDefense}
-              {enemyPlayer && (
-                <span className="text-[var(--ink-faint)]">
-                  {" "}
-                  ({defenseBreakdown(enemyPlayer)})
-                </span>
-              )}
+              <span className="text-[var(--ink-faint)]">
+                {" "}
+                ({defenseBreakdown(enemyPlayer)})
+              </span>
             </p>
             <p className="mt-1 text-[9px] text-[var(--ink-faint)]">
               Soldier = 1 atk · Tank = 3 atk · House/soldier = 1 def · Tank/turret
@@ -1350,7 +1387,14 @@ export function PlayShell() {
               onClick={() => void launchAttack()}
               className="mt-2 w-full rounded-sm bg-[var(--signal)] px-3 py-2 text-sm font-bold text-white disabled:opacity-40"
             >
-              ⚔ Attack ({myAttack} vs {enemyDefense})
+              ⚔ Attack {enemyPlayer.name} ({myAttack} vs {enemyDefense})
+            </button>
+            <button
+              type="button"
+              className="mt-1.5 text-[9px] font-mono text-[var(--ink-faint)] underline decoration-dotted"
+              onClick={() => setSelectedPlayerId(null)}
+            >
+              Cancel target
             </button>
             {me && me.soldiers + me.tanks <= 0 && (
               <p className="mt-1 text-[9px] text-[var(--ink-faint)]">
@@ -1361,127 +1405,126 @@ export function PlayShell() {
         </div>
       )}
 
-      {/* ---- Bottom-left: village + army cameos ---- */}
+      {/* ---- Bottom dock: army + build (stacks on mobile) ---- */}
       {claimed && me && (
-        <div className="absolute bottom-2 left-2 z-20 sm:bottom-3 sm:left-3">
-          <div className="hud-panel flex items-end gap-1.5 p-1.5 sm:gap-2 sm:p-2">
-            <div className="cameo" title={`${me.villagers} villager(s) gathering`}>
-              <VillagerSprite walking className="h-9 w-9" />
-              <span className="cameo-badge">×{me.villagers}</span>
-              <span className="cameo-label">Villager</span>
-            </div>
-            <div
-              className="cameo"
-              title={
-                me.house
-                  ? `House ${me.houseHp}/${HOUSE_MAX_HP} hp · defense ${myDefense}`
-                  : "House destroyed — rebuild to gather"
-              }
-            >
-              <HouseSprite className="h-9 w-10" />
-              {me.house ? (
-                <span className="cameo-badge">
-                  {me.houseHp}/{HOUSE_MAX_HP}
-                </span>
-              ) : (
-                <span className="cameo-badge">✕</span>
-              )}
-              <span className="cameo-label">House</span>
-            </div>
-            <button
-              type="button"
-              className={`cameo ${
-                displayGold >= SOLDIER_COST ? "cameo-blink" : ""
-              }`}
-              disabled={busy || displayGold < SOLDIER_COST || !me.house}
-              title={`Recruit soldier — ${SOLDIER_COST}g · +1 attack / +1 defense`}
-              onClick={() =>
-                void act("recruit_soldier").then((d) => {
-                  if (d) showToast("Soldier recruited · +1 attack");
-                })
-              }
-            >
-              <SoldierSprite className="h-9 w-9" />
-              {me.soldiers > 0 && (
-                <span className="cameo-badge">×{me.soldiers}</span>
-              )}
-              <span className="cameo-cost">{SOLDIER_COST}g</span>
-              <span className="cameo-label">Soldier</span>
-            </button>
-            <button
-              type="button"
-              className={`cameo ${
-                displayGold >= TANK_COST ? "cameo-blink" : ""
-              }`}
-              disabled={busy || displayGold < TANK_COST || !me.house}
-              title={`Build tank — ${TANK_COST}g · +3 attack / +2 defense`}
-              onClick={() =>
-                void act("build_tank").then((d) => {
-                  if (d) showToast("Tank ready · +3 attack");
-                })
-              }
-            >
-              <TankSprite className="h-9 w-11" />
-              {me.tanks > 0 && (
-                <span className="cameo-badge">×{me.tanks}</span>
-              )}
-              <span className="cameo-cost">{TANK_COST}g</span>
-              <span className="cameo-label">Tank</span>
-            </button>
-            {gemsFound > 0 && (
-              <div className="cameo" title={`${gemsFound} resource site(s) found`}>
-                <ResourceGem gem="diamond" size={26} pulse />
-                <span className="cameo-badge">×{gemsFound}</span>
-                <span className="cameo-label">Finds</span>
+        <div className="pointer-events-none absolute inset-x-2 bottom-2 z-20 flex flex-col-reverse gap-2 sm:inset-x-3 sm:bottom-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="pointer-events-auto max-w-full overflow-x-auto">
+            <div className="hud-panel inline-flex items-end gap-1.5 p-1.5 sm:gap-2 sm:p-2">
+              <div className="cameo" title={`${me.villagers} villager(s) gathering`}>
+                <VillagerSprite walking className="h-9 w-9" />
+                <span className="cameo-badge">×{me.villagers}</span>
+                <span className="cameo-label">Villager</span>
               </div>
-            )}
+              <div
+                className="cameo"
+                title={
+                  me.house
+                    ? `House ${me.houseHp}/${HOUSE_MAX_HP} hp · defense ${myDefense}`
+                    : "House destroyed — rebuild to gather"
+                }
+              >
+                <HouseSprite className="h-9 w-10" />
+                {me.house ? (
+                  <span className="cameo-badge">
+                    {me.houseHp}/{HOUSE_MAX_HP}
+                  </span>
+                ) : (
+                  <span className="cameo-badge">✕</span>
+                )}
+                <span className="cameo-label">House</span>
+              </div>
+              <button
+                type="button"
+                className={`cameo ${
+                  displayGold >= SOLDIER_COST ? "cameo-blink" : ""
+                }`}
+                disabled={busy || displayGold < SOLDIER_COST || !me.house}
+                title={`Recruit soldier — ${SOLDIER_COST}g · +1 attack / +1 defense`}
+                onClick={() =>
+                  void act("recruit_soldier").then((d) => {
+                    if (d) showToast("Soldier recruited · +1 attack");
+                  })
+                }
+              >
+                <SoldierSprite className="h-9 w-9" />
+                {me.soldiers > 0 && (
+                  <span className="cameo-badge">×{me.soldiers}</span>
+                )}
+                <span className="cameo-cost">{SOLDIER_COST}g</span>
+                <span className="cameo-label">Soldier</span>
+              </button>
+              <button
+                type="button"
+                className={`cameo ${
+                  displayGold >= TANK_COST ? "cameo-blink" : ""
+                }`}
+                disabled={busy || displayGold < TANK_COST || !me.house}
+                title={`Build tank — ${TANK_COST}g · +3 attack / +2 defense`}
+                onClick={() =>
+                  void act("build_tank").then((d) => {
+                    if (d) showToast("Tank ready · +3 attack");
+                  })
+                }
+              >
+                <TankSprite className="h-9 w-11" />
+                {me.tanks > 0 && (
+                  <span className="cameo-badge">×{me.tanks}</span>
+                )}
+                <span className="cameo-cost">{TANK_COST}g</span>
+                <span className="cameo-label">Tank</span>
+              </button>
+              {gemsFound > 0 && (
+                <div className="cameo" title={`${gemsFound} resource site(s) found`}>
+                  <ResourceGem gem="diamond" size={26} pulse />
+                  <span className="cameo-badge">×{gemsFound}</span>
+                  <span className="cameo-label">Finds</span>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
 
-      {/* ---- Bottom-right: build sidebar ---- */}
-      {claimed && me && (
-        <div className="absolute bottom-2 right-2 z-20 sm:bottom-3 sm:right-3">
-          <div className="hud-panel p-1.5 sm:p-2">
-            <p className="px-1 pb-1 text-center font-mono text-[8px] uppercase tracking-[0.24em] text-[var(--ink-faint)]">
-              Build · tap then place
-            </p>
-            <div className="grid grid-cols-2 gap-1.5">
-              {(snap?.buildingCatalog ?? []).map((b) => {
-                const affordable = displayGold >= b.cost;
-                const active = placing?.kind === b.type;
-                const homeSector = snap?.sectors.find(
-                  (s) => s.id === me.homeSectorId
-                );
-                return (
-                  <button
-                    key={b.type}
-                    type="button"
-                    className={`cameo ${active ? "cameo-active" : ""} ${
-                      affordable && !active ? "cameo-blink" : ""
-                    }`}
-                    disabled={
-                      busy || !affordable || !homeSector || !me.house
-                    }
-                    title={
-                      !me.house
-                        ? "Rebuild your house first"
-                        : `${b.name} — ${b.blurb} · ${b.footprintM}m ground`
-                    }
-                    onClick={() =>
-                      setPlacing((cur) =>
-                        cur?.kind === b.type || !homeSector || !me.house
-                          ? null
-                          : { kind: b.type, sector: homeSector }
-                      )
-                    }
-                  >
-                    <BuildingThumb type={b.type} className="h-9 w-10" />
-                    <span className="cameo-cost">{b.cost}g</span>
-                    <span className="cameo-label">{b.name}</span>
-                  </button>
-                );
-              })}
+          <div className="pointer-events-auto self-end sm:self-auto">
+            <div className="hud-panel p-1.5 sm:p-2">
+              <p className="px-1 pb-1 text-center font-mono text-[8px] uppercase tracking-[0.24em] text-[var(--ink-faint)]">
+                Build · tap then place
+              </p>
+              <div className="grid grid-cols-2 gap-1.5">
+                {(snap?.buildingCatalog ?? []).map((b) => {
+                  const affordable = displayGold >= b.cost;
+                  const active = placing?.kind === b.type;
+                  const homeSector = snap?.sectors.find(
+                    (s) => s.id === me.homeSectorId
+                  );
+                  return (
+                    <button
+                      key={b.type}
+                      type="button"
+                      className={`cameo ${active ? "cameo-active" : ""} ${
+                        affordable && !active ? "cameo-blink" : ""
+                      }`}
+                      disabled={
+                        busy || !affordable || !homeSector || !me.house
+                      }
+                      title={
+                        !me.house
+                          ? "Rebuild your house first"
+                          : `${b.name} — ${b.blurb} · ${b.footprintM}m ground`
+                      }
+                      onClick={() =>
+                        setPlacing((cur) =>
+                          cur?.kind === b.type || !homeSector || !me.house
+                            ? null
+                            : { kind: b.type, sector: homeSector }
+                        )
+                      }
+                    >
+                      <BuildingThumb type={b.type} className="h-9 w-10" />
+                      <span className="cameo-cost">{b.cost}g</span>
+                      <span className="cameo-label">{b.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>

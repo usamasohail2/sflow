@@ -77,7 +77,7 @@ export type Player = {
   name: string;
   email?: string;
   image?: string | null;
-  /** Permanent home — set once, never changed */
+  /** Home sector — set once; many players may share a sector */
   homeSectorId: string | null;
   house: LatLng | null;
   /** House hit points — 0 / missing house means rebuild required */
@@ -124,6 +124,8 @@ export type PublicPlayer = {
   homeSectorId: string | null;
   house: LatLng | null;
   houseHp: number;
+  /** Visible so others can see your villager on the map */
+  villagerPost: LatLng | null;
   villagers: number;
   soldiers: number;
   tanks: number;

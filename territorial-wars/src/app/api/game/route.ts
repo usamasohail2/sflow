@@ -126,6 +126,7 @@ export async function POST(req: Request) {
     roamMeters?: number;
     exploreMs?: number;
     targetId?: string;
+    targetPlayerId?: string;
   };
 
   // Dev/test helper: hop between guest accounts (auth is disabled)
@@ -274,13 +275,19 @@ export async function POST(req: Request) {
   } else if (body.action === "build_tank") {
     result = await buildTank(id);
   } else if (body.action === "attack") {
-    if (!body.sectorId) {
+    const targetPlayerId =
+      typeof body.targetPlayerId === "string"
+        ? body.targetPlayerId
+        : typeof body.targetId === "string"
+          ? body.targetId
+          : "";
+    if (!targetPlayerId) {
       return withGuestCookie(
-        NextResponse.json({ error: "Pick a target sector" }, { status: 400 }),
+        NextResponse.json({ error: "Pick a settler to attack" }, { status: 400 }),
         setCookie
       );
     }
-    result = await attackSector(id, body.sectorId);
+    result = await attackSector(id, targetPlayerId);
   } else if (body.action === "rename") {
     result = await renamePlayer(id, String(body.name || ""));
   } else {
