@@ -78,6 +78,7 @@ import { ringCentroid } from "@/lib/mapMath";
 import {
   buildingPlacementError,
   housePlacementError,
+  isOccupiedGroundError,
 } from "@/lib/placement";
 import {
   isMusicOn,
@@ -626,6 +627,9 @@ export function PlayShell() {
   const busyRef = useRef(false);
   const settleGuardUntil = useRef(0);
   const lastGoodMe = useRef<Player | null>(null);
+  const lastActionErrorRef = useRef<string | null>(null);
+  const snapRef = useRef(snap);
+  snapRef.current = snap;
   const lastInviteCount = useRef<number | null>(null);
   const tipsArmed = useRef(false);
   /** Next map pin drop should force Azad (from “Play Azad instead”) */
@@ -1194,6 +1198,7 @@ export function PlayShell() {
       if (label) setSavingLabel(label);
     }
     setError(null);
+    lastActionErrorRef.current = null;
     try {
       const invite = readStoredInvite();
       const res = await fetch("/api/game", {
@@ -1208,7 +1213,9 @@ export function PlayShell() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Action failed");
+        const msg = String(data.error || "Action failed");
+        lastActionErrorRef.current = msg;
+        setError(msg);
         window.setTimeout(() => setError(null), 3200);
         return null;
       }
@@ -1223,6 +1230,7 @@ export function PlayShell() {
       applySnap(data as GameSnapshot);
       return data;
     } catch {
+      lastActionErrorRef.current = "Network error — try again";
       setError("Network error — try again");
       window.setTimeout(() => setError(null), 3200);
       return null;
@@ -1489,7 +1497,7 @@ export function PlayShell() {
       }
       const occupied = housePlacementError(
         pos,
-        snap?.players ?? [],
+        snapRef.current?.players ?? snap?.players ?? [],
         me?.id
       );
       if (occupied) {
@@ -1538,6 +1546,10 @@ export function PlayShell() {
           showToast("House rebuilt — villagers are gathering again");
           setPlacing(null);
           setPendingHouse(null);
+        } else if (isOccupiedGroundError(lastActionErrorRef.current)) {
+          // Bad house spot — unlock so they can move it
+          setPendingHouse(null);
+          setPlacing({ kind: "house", sector: placing.sector });
         }
         return;
       }
@@ -1607,8 +1619,12 @@ export function PlayShell() {
           tipsArmed.current = true;
           window.setTimeout(() => setShowWalkthrough(true), 400);
         }
+      } else if (isOccupiedGroundError(lastActionErrorRef.current)) {
+        // House was on occupied ground — don't leave them stuck on step 2
+        setPendingHouse(null);
+        setPlacing({ kind: "house", sector: placing.sector });
       }
-      // On error stay in villager placement so they can adjust
+      // Other errors (villager distance, GPS): stay on villager to adjust
       return;
     }
 
@@ -1626,7 +1642,7 @@ export function PlayShell() {
     const buildBlocked = buildingPlacementError(
       { lat, lng },
       cat.footprintM,
-      snap.players,
+      snapRef.current?.players ?? snap.players,
       me.id
     );
     if (buildBlocked) {
@@ -1721,8 +1737,14 @@ export function PlayShell() {
   const cancelPlacement = () => {
     setPlacing(null);
     setPendingHouse(null);
-    if (!claimed) setSettleSector(null);
+    // First-time settle: keep the sector dock so a bad house drop isn't a dead end
+    if (!isSettlePlacing && !claimed) setSettleSector(null);
   };
+
+  const flashPlaceBlocked = useCallback((message: string) => {
+    setError(message);
+    window.setTimeout(() => setError(null), 3200);
+  }, []);
 
   /** First-time settle: bottom tiles drive house → villager one by one */
   const isSettlePlacing = Boolean(settleSector && !claimed);
@@ -2300,6 +2322,7 @@ export function PlayShell() {
           onSelectShovel={openShovel}
           selectedRazeBuildingId={razeTarget?.buildingId ?? null}
           onPlace={(lat, lng) => void handlePlace(lat, lng)}
+          onPlaceBlocked={flashPlaceBlocked}
           onSpawnFind={(p) => spawnFind(p)}
           onCollectHidden={(spotId) => void claimHidden(spotId)}
           claimingSpotIds={claimingSpotIds}
@@ -3537,24 +3560,32 @@ export function PlayShell() {
                 <button
                   type="button"
                   data-guide="guide-settle-house"
-                  disabled={busy || Boolean(pendingHouse)}
+                  disabled={busy}
                   onClick={() => {
-                    if (pendingHouse || !settleSector) return;
+                    if (!settleSector) return;
+                    if (pendingHouse) {
+                      setPendingHouse(null);
+                      setPlacing({ kind: "house", sector: settleSector });
+                      showToast("Tap a clear spot to move your house");
+                      return;
+                    }
                     setPlacing({ kind: "house", sector: settleSector });
                     showToast("Tap the map to plant your house");
                   }}
                   className={`cameo cameo-dock min-w-[5.5rem] flex-1 ${
-                    !pendingHouse ? "cameo-blink is-guide-hot" : ""
-                  } ${pendingHouse ? "opacity-70" : ""}`}
+                    !pendingHouse || placing?.kind === "house"
+                      ? "cameo-blink is-guide-hot"
+                      : ""
+                  }`}
                   title={
                     pendingHouse
-                      ? "House placed"
+                      ? "Tap to move your house"
                       : "Select house, then tap the map"
                   }
                 >
                   <HouseSprite className="h-9 w-10 sm:h-10 sm:w-11" />
                   <span className="cameo-label">
-                    {pendingHouse ? "House ✓" : "House"}
+                    {pendingHouse ? "Move" : "House"}
                   </span>
                 </button>
                 <button
@@ -3585,11 +3616,26 @@ export function PlayShell() {
               </div>
               <button
                 type="button"
-                onClick={cancelPlacement}
+                onClick={() => {
+                  setPlacing(null);
+                  setPendingHouse(null);
+                }}
                 disabled={busy}
                 className="mt-2 w-full text-center font-mono text-[10px] text-[var(--signal-bright)] hover:underline disabled:opacity-40"
               >
-                Cancel
+                {pendingHouse ? "Clear house & retry" : "Cancel placement"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPlacing(null);
+                  setPendingHouse(null);
+                  setSettleSector(null);
+                }}
+                disabled={busy}
+                className="mt-1 w-full text-center font-mono text-[10px] text-[var(--ink-faint)] hover:underline disabled:opacity-40"
+              >
+                Exit settle
               </button>
             </div>
           </div>

@@ -5,31 +5,45 @@ import { distMeters } from "@/lib/mapMath";
 export type FootprintPlayer = {
   id: string;
   name?: string;
+  homeSectorId?: string | null;
   house?: LatLng | null;
   buildings: Array<{ lat: number; lng: number; type: BuildingType }>;
 };
 
 /**
- * Match server `assertClearGround` — other settlers' houses/buildings only.
- * Returns an error message when the house footprint overlaps occupied ground.
+ * Clear-ground check for a house drop.
+ * Includes every settled structure on the map (same rings the client draws).
+ * `skipPlayerId` only skips that player's own house — their buildings still block
+ * when rebuilding next to leftover mills/wells.
  */
 export function housePlacementError(
   pos: LatLng,
   players: FootprintPlayer[],
-  selfId?: string | null
+  skipPlayerId?: string | null
 ): string | null {
   for (const p of players) {
-    if (selfId && p.id === selfId) continue;
-    for (const b of p.buildings) {
+    if (!p.house && (!p.buildings || p.buildings.length === 0)) continue;
+
+    for (const b of p.buildings || []) {
       if (
-        distMeters(pos, { lat: b.lat, lng: b.lng }) <
-        HOUSE_FOOTPRINT_M + catalogItem(b.type).footprintM
+        !Number.isFinite(b.lat) ||
+        !Number.isFinite(b.lng)
       ) {
+        continue;
+      }
+      const need =
+        HOUSE_FOOTPRINT_M + catalogItem(b.type).footprintM;
+      if (distMeters(pos, { lat: b.lat, lng: b.lng }) < need) {
         return "That ground is occupied — pick a clear spot";
       }
     }
-    if (p.house && distMeters(pos, p.house) < HOUSE_FOOTPRINT_M * 2) {
-      return "Too close to another house";
+
+    if (p.house && Number.isFinite(p.house.lat) && Number.isFinite(p.house.lng)) {
+      // Skip only your own standing house (rebuild); everyone else's house blocks
+      if (skipPlayerId && p.id === skipPlayerId) continue;
+      if (distMeters(pos, p.house) < HOUSE_FOOTPRINT_M * 2) {
+        return "Too close to another house";
+      }
     }
   }
   return null;
@@ -45,7 +59,8 @@ export function buildingPlacementError(
   selfId?: string | null
 ): string | null {
   for (const p of players) {
-    for (const b of p.buildings) {
+    for (const b of p.buildings || []) {
+      if (!Number.isFinite(b.lat) || !Number.isFinite(b.lng)) continue;
       if (
         distMeters(pos, { lat: b.lat, lng: b.lng }) <
         footprintM + catalogItem(b.type).footprintM
@@ -55,11 +70,21 @@ export function buildingPlacementError(
           : `Too close to ${p.name || "another settler"}'s building`;
       }
     }
-    if (p.house && distMeters(pos, p.house) < footprintM + HOUSE_FOOTPRINT_M) {
+    if (
+      p.house &&
+      Number.isFinite(p.house.lat) &&
+      Number.isFinite(p.house.lng) &&
+      distMeters(pos, p.house) < footprintM + HOUSE_FOOTPRINT_M
+    ) {
       return p.id === selfId
         ? "Too close to your house"
         : `Too close to ${p.name || "another settler"}'s house`;
     }
   }
   return null;
+}
+
+export function isOccupiedGroundError(msg: string | null | undefined): boolean {
+  if (!msg) return false;
+  return /occupied|too close|clear spot/i.test(msg);
 }

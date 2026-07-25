@@ -44,6 +44,10 @@ import {
   isAzadHomeId,
 } from "@/lib/gameTypes";
 import {
+  buildingPlacementError,
+  housePlacementError,
+} from "@/lib/placement";
+import {
   closeRing,
   pointInOrNearRing,
   pointInRing,
@@ -213,6 +217,8 @@ type Props = {
   onCameraReport?: (camera: { lat: number; lng: number }) => void;
   selectedRazeBuildingId?: string | null;
   onPlace?: (lat: number, lng: number) => void;
+  /** Called when a house/building drop is blocked by occupied ground */
+  onPlaceBlocked?: (message: string) => void;
   /** Pre-settle: tap map to drop a location pin when GPS is unavailable */
   pinDropActive?: boolean;
   onDropPin?: (lat: number, lng: number) => void;
@@ -328,6 +334,7 @@ export function GameMap({
   onSelectShovel,
   selectedRazeBuildingId = null,
   onPlace,
+  onPlaceBlocked,
   pinDropActive = false,
   onDropPin,
   onSpawnFind,
@@ -356,6 +363,12 @@ export function GameMap({
   onCameraReportRef.current = onCameraReport;
   const onSelectBusinessRef = useRef(onSelectBusiness);
   onSelectBusinessRef.current = onSelectBusiness;
+  const onPlaceRef = useRef(onPlace);
+  onPlaceRef.current = onPlace;
+  const onPlaceBlockedRef = useRef(onPlaceBlocked);
+  onPlaceBlockedRef.current = onPlaceBlocked;
+  const playersRef = useRef(players);
+  playersRef.current = players;
   const mapRef = useRef<MapRef>(null);
   const [zoom, setZoom] = useState(INTRO_GLOBE_ZOOM);
   const showDetail = zoom >= DETAIL_ZOOM;
@@ -931,26 +944,10 @@ export function GameMap({
       }
       let clear = inSector;
       // Villager only needs to stand inside the sector / near pin
-      if (clear && placing.kind !== "villager") {
-        for (const p of players) {
-          for (const b of p.buildings) {
-            if (
-              distMeters(hover, { lat: b.lat, lng: b.lng }) <
-              fp + catalogItem(b.type).footprintM
-            ) {
-              clear = false;
-              break;
-            }
-          }
-          if (
-            clear &&
-            p.house &&
-            distMeters(hover, p.house) < fp + HOUSE_FOOTPRINT_M
-          ) {
-            clear = false;
-          }
-          if (!clear) break;
-        }
+      if (clear && placing.kind === "house") {
+        clear = !housePlacementError(hover, players, me?.id);
+      } else if (clear && placing.kind !== "villager") {
+        clear = !buildingPlacementError(hover, fp, players, me?.id);
         if (
           clear &&
           previewHouse &&
@@ -1290,9 +1287,34 @@ export function GameMap({
           setHover({ lat: ll.lat, lng: ll.lng });
         }}
         onClick={(e: MapMouseEvent) => {
-          if (placing && onPlace) {
-            setHover({ lat: e.lngLat.lat, lng: e.lngLat.lng });
-            onPlace(e.lngLat.lat, e.lngLat.lng);
+          if (placing) {
+            const pos = { lat: e.lngLat.lat, lng: e.lngLat.lng };
+            setHover(pos);
+            // Block occupied drops here so a stale PlayShell closure can't accept them
+            if (placing.kind === "house") {
+              const blocked = housePlacementError(
+                pos,
+                playersRef.current,
+                meRef.current?.id
+              );
+              if (blocked) {
+                onPlaceBlockedRef.current?.(blocked);
+                return;
+              }
+            } else if (placing.kind !== "villager") {
+              const fp = placingFootprint(placing.kind);
+              const blocked = buildingPlacementError(
+                pos,
+                fp,
+                playersRef.current,
+                meRef.current?.id
+              );
+              if (blocked) {
+                onPlaceBlockedRef.current?.(blocked);
+                return;
+              }
+            }
+            onPlaceRef.current?.(pos.lat, pos.lng);
             return;
           }
           if (pinDropActive && onDropPin) {
@@ -1655,6 +1677,15 @@ export function GameMap({
                       }`}
                       onClick={(e) => {
                         e.stopPropagation();
+                        // While placing a house/building, tapping a structure is occupied ground
+                        if (placing && placing.kind !== "villager") {
+                          onPlaceBlockedRef.current?.(
+                            placing.kind === "house"
+                              ? "Too close to another house"
+                              : "That ground is occupied — pick a clear spot"
+                          );
+                          return;
+                        }
                         if (
                           p.id !== me?.id &&
                           p.homeSectorId &&
@@ -1667,15 +1698,17 @@ export function GameMap({
                         }
                       }}
                       title={
-                        isKing
-                          ? p.id === me?.id
-                            ? "Your house — top settler"
-                            : `${p.name}'s house — top settler`
-                          : p.id === me?.id
-                            ? "Your house"
-                            : relation === "ally"
-                              ? `${p.name} (ally — same sector)`
-                              : `Tap to target ${p.name}`
+                        placing && placing.kind !== "villager"
+                          ? "Occupied — pick a clear spot"
+                          : isKing
+                            ? p.id === me?.id
+                              ? "Your house — top settler"
+                              : `${p.name}'s house — top settler`
+                            : p.id === me?.id
+                              ? "Your house"
+                              : relation === "ally"
+                                ? `${p.name} (ally — same sector)`
+                                : `Tap to target ${p.name}`
                       }
                     >
                       {relation === "ally" && (
@@ -1739,6 +1772,12 @@ export function GameMap({
                         } ${syncing ? "building-syncing" : ""}`}
                         onClick={(e) => {
                           e.stopPropagation();
+                          if (placing && placing.kind !== "villager") {
+                            onPlaceBlockedRef.current?.(
+                              "That ground is occupied — pick a clear spot"
+                            );
+                            return;
+                          }
                           if (syncing) return;
                           if (
                             p.id === me?.id &&
@@ -1765,17 +1804,19 @@ export function GameMap({
                           }
                         }}
                         title={
-                          syncing
-                            ? `Syncing ${bName}…`
-                            : p.id === me?.id && b.type === "shovel"
-                              ? "Tap to dig — +1 gold each click"
-                              : p.id === me?.id
-                                ? `Your ${bName}`
-                                : canRaid
-                                  ? `Tap to raid ${p.name}`
-                                  : canRaze
-                                    ? `Rocket ${p.name}'s ${bName} to free ground`
-                                    : `${p.name}'s ${bName}`
+                          placing && placing.kind !== "villager"
+                            ? "Occupied — pick a clear spot"
+                            : syncing
+                              ? `Syncing ${bName}…`
+                              : p.id === me?.id && b.type === "shovel"
+                                ? "Tap to dig — +1 gold each click"
+                                : p.id === me?.id
+                                  ? `Your ${bName}`
+                                  : canRaid
+                                    ? `Tap to raid ${p.name}`
+                                    : canRaze
+                                      ? `Rocket ${p.name}'s ${bName} to free ground`
+                                      : `${p.name}'s ${bName}`
                         }
                       >
                         {relation === "ally" && !syncing && (
