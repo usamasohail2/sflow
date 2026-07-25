@@ -54,6 +54,10 @@ export const GEM_META: Record<
 export const EXPLORE_ZOOM = 15.2;
 /** Play map starts here — sector-level, walls readable */
 export const PLAY_ZOOM = 14.4;
+/** Default 3D tilt — matches Islamabad Explore */
+export const PLAY_PITCH = 77;
+/** Default heading (clockwise from north) — matches Islamabad Explore */
+export const PLAY_BEARING = -28;
 /** Don't pull out past a couple of sectors */
 export const PLAY_MIN_ZOOM = 13.2;
 /** Intro opens on the globe, then flies into the home sector */

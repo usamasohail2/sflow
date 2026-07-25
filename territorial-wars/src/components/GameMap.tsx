@@ -24,8 +24,10 @@ import {
   INTRO_FLY_MS,
   INTRO_GLOBE_ZOOM,
   INTRO_TITLE_HOLD_MS,
+  PLAY_BEARING,
   PLAY_MAX_ZOOM,
   PLAY_MIN_ZOOM,
+  PLAY_PITCH,
   PLAY_ZOOM,
   ROAM_METERS_TO_SPAWN,
   ROAM_MIN_EXPLORE_MS,
@@ -336,8 +338,22 @@ export function GameMap({
     const map = mapRef.current;
     if (map) {
       const z = map.getZoom();
-      if (z < PLAY_MIN_ZOOM) {
-        map.easeTo({ zoom: PLAY_MIN_ZOOM, duration: 220 });
+      const pitch = map.getPitch();
+      const bearing = map.getBearing();
+      // If intro aborted early (e.g. Strict Mode), snap to the play camera
+      if (
+        z < PLAY_MIN_ZOOM ||
+        pitch < PLAY_PITCH * 0.5 ||
+        Math.abs(bearing - PLAY_BEARING) > 40
+      ) {
+        const { lat, lng } = introFocusRef.current;
+        map.easeTo({
+          center: [lng, lat],
+          zoom: Math.max(z, PLAY_MIN_ZOOM),
+          pitch: PLAY_PITCH,
+          bearing: PLAY_BEARING,
+          duration: 280,
+        });
       }
     }
     onIntroCompleteRef.current?.();
@@ -382,8 +398,8 @@ export function GameMap({
       map.flyTo({
         center: [lng, lat],
         zoom: PLAY_ZOOM,
-        pitch: 55,
-        bearing: -28,
+        pitch: PLAY_PITCH,
+        bearing: PLAY_BEARING,
         duration: INTRO_FLY_MS,
         curve: 1.35,
         essential: true,
@@ -430,6 +446,9 @@ export function GameMap({
         PLAY_MAX_ZOOM,
         Math.max(map.getZoom(), PLAY_ZOOM)
       ),
+      pitch: map.getPitch() || PLAY_PITCH,
+      bearing:
+        Math.abs(map.getBearing()) > 0.5 ? map.getBearing() : PLAY_BEARING,
       duration: 1200,
       essential: true,
     });
@@ -447,6 +466,9 @@ export function GameMap({
         PLAY_MAX_ZOOM,
         Math.max(map.getZoom(), PLAY_ZOOM)
       ),
+      pitch: map.getPitch() || PLAY_PITCH,
+      bearing:
+        Math.abs(map.getBearing()) > 0.5 ? map.getBearing() : PLAY_BEARING,
       duration: 800,
     });
   }, [selectedId, userLocationFocus, introActive]); // eslint-disable-line react-hooks/exhaustive-deps
