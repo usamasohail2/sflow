@@ -177,6 +177,12 @@ export type GameEvent = {
   destroyed: string | null;
   lootedGold: number;
   defenderSoldiersLost: number;
+  /** Optional — present on newer battle events */
+  attackPower?: number;
+  defensePower?: number;
+  soldiersLost?: number;
+  tanksLost?: number;
+  damagedBuildings?: string[];
 };
 
 export type GameSnapshot = {

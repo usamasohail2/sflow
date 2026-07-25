@@ -1171,6 +1171,11 @@ export async function attackSector(
     destroyed,
     lootedGold,
     defenderSoldiersLost,
+    attackPower: atk,
+    defensePower: def,
+    soldiersLost,
+    tanksLost,
+    damagedBuildings: damagedNames,
   });
 
   return {

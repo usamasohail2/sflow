@@ -23,10 +23,21 @@ import { ResourceGem } from "@/components/ResourceGem";
 import type {
   BattleReport,
   BuildingType,
+  GameEvent,
   GameSnapshot,
 } from "@/lib/gameTypes";
 import { SOLDIER_COST, TANK_COST, buildingBonus } from "@/lib/gameTypes";
 import { ringCentroid } from "@/lib/mapMath";
+
+type BattleSummary = {
+  id: string;
+  role: "attacker" | "defender";
+  headline: string;
+  sectorName: string;
+  opponent: string;
+  win: boolean;
+  rows: string[];
+};
 
 function BuildingThumb({
   type,
@@ -41,6 +52,101 @@ function BuildingThumb({
   return <WellSprite className={className} />;
 }
 
+function summaryFromAttack(
+  battle: BattleReport,
+  sectorName: string,
+  defenderName: string,
+  id = `atk_${Date.now()}`
+): BattleSummary {
+  const losses = [
+    battle.soldiersLost > 0 ? `${battle.soldiersLost} soldier(s)` : null,
+    battle.tanksLost > 0 ? `${battle.tanksLost} tank(s)` : null,
+  ]
+    .filter(Boolean)
+    .join(" + ");
+  const rows = [
+    battle.attackPower > 0 || battle.defensePower > 0
+      ? `Your attack ${battle.attackPower} vs defense ${battle.defensePower}`
+      : null,
+    battle.damage > 0 ? `Dealt ${battle.damage} damage` : "No structure damage",
+    battle.destroyed ? `Destroyed: ${battle.destroyed}` : null,
+    battle.damagedBuildings.length
+      ? `Damaged: ${battle.damagedBuildings.join(", ")}`
+      : null,
+    battle.defenderSoldiersLost > 0
+      ? `Enemy lost ${battle.defenderSoldiersLost} soldier(s)`
+      : null,
+    battle.lootedGold > 0 ? `Looted +${battle.lootedGold}g` : null,
+    losses ? `Your losses: ${losses}` : null,
+  ].filter(Boolean) as string[];
+
+  return {
+    id,
+    role: "attacker",
+    headline: battle.win ? "Victory" : "Repelled",
+    sectorName,
+    opponent: defenderName,
+    win: battle.win,
+    rows,
+  };
+}
+
+function summaryFromEvent(e: GameEvent, asDefender = true): BattleSummary {
+  if (!asDefender) {
+    return summaryFromAttack(
+      {
+        win: e.win,
+        attackPower: e.attackPower ?? 0,
+        defensePower: e.defensePower ?? 0,
+        damage: e.damage,
+        destroyed: e.destroyed,
+        damagedBuildings: e.damagedBuildings ?? [],
+        lootedGold: e.lootedGold,
+        soldiersLost: e.soldiersLost ?? 0,
+        tanksLost: e.tanksLost ?? 0,
+        defenderSoldiersLost: e.defenderSoldiersLost,
+      },
+      e.sectorName,
+      e.defenderName,
+      e.id
+    );
+  }
+
+  const rows = [
+    e.attackPower != null && e.defensePower != null
+      ? `Enemy attack ${e.attackPower} vs your defense ${e.defensePower}`
+      : null,
+    e.damage > 0 ? `Took ${e.damage} damage` : "No structure damage",
+    e.destroyed ? `Destroyed: ${e.destroyed}` : null,
+    e.damagedBuildings?.length
+      ? `Damaged: ${e.damagedBuildings.join(", ")}`
+      : null,
+    e.defenderSoldiersLost > 0
+      ? `Lost ${e.defenderSoldiersLost} soldier(s)`
+      : null,
+    e.lootedGold > 0 ? `${e.lootedGold}g looted` : null,
+    e.win ? "Enemy broke through" : "Your defenses held",
+  ].filter(Boolean) as string[];
+
+  return {
+    id: e.id,
+    role: "defender",
+    headline: e.win ? "Under attack — breach" : "Under attack — held",
+    sectorName: e.sectorName,
+    opponent: e.attackerName,
+    win: !e.win,
+    rows,
+  };
+}
+
+function eventLogLine(e: GameEvent, myId: string | undefined): string {
+  const asAttacker = e.attackerId === myId;
+  if (asAttacker) {
+    return `${e.win ? "Won" : "Lost"} vs ${e.defenderName} @ ${e.sectorName} · ${e.damage} dmg`;
+  }
+  return `${e.attackerName} hit ${e.sectorName} · ${e.damage} dmg · ${e.win ? "breached" : "held"}`;
+}
+
 export function PlayShell() {
   const [snap, setSnap] = useState<GameSnapshot | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -51,14 +157,18 @@ export function PlayShell() {
   const [showMissions, setShowMissions] = useState(false);
   const [showRanks, setShowRanks] = useState(false);
   const [showPlayers, setShowPlayers] = useState(false);
+  const [showBattles, setShowBattles] = useState(false);
   const [placing, setPlacing] = useState<Placing | null>(null);
   const [pendingHouse, setPendingHouse] = useState<LatLng | null>(null);
   const [march, setMarch] = useState<MarchAnim | null>(null);
   const [impact, setImpact] = useState<ImpactAnim | null>(null);
-  const [alert, setAlert] = useState<string | null>(null);
+  const [battleSummary, setBattleSummary] = useState<BattleSummary | null>(
+    null
+  );
   const identityChecked = useRef(false);
   const seenEvents = useRef<Set<string>>(new Set());
   const eventsPrimed = useRef(false);
+  const meIdRef = useRef<string | null>(null);
 
   const IDENT_KEY = "itw_player_id";
 
@@ -69,31 +179,35 @@ export function PlayShell() {
       (cur) => cur ?? data.me?.homeSectorId ?? data.sectors[0]?.id ?? null
     );
 
-    // Surface battles I wasn't watching (I'm the defender, or an attack
-    // resolved in another window)
+    const nextId = data.me?.id ?? null;
+    if (nextId !== meIdRef.current) {
+      // New identity (first load or player switch) — don't replay history
+      meIdRef.current = nextId;
+      seenEvents.current = new Set();
+      eventsPrimed.current = false;
+    }
+
     const events = data.events ?? [];
     if (!eventsPrimed.current) {
-      // Don't replay history on first load
       for (const e of events) seenEvents.current.add(e.id);
       eventsPrimed.current = true;
+      // After a player switch, surface a very recent hit on this account
+      const recentHit = [...events]
+        .reverse()
+        .find(
+          (e) =>
+            data.me &&
+            e.defenderId === data.me.id &&
+            Date.now() - e.ts < 180_000
+        );
+      if (recentHit) setBattleSummary(summaryFromEvent(recentHit));
       return;
     }
     for (const e of events) {
       if (seenEvents.current.has(e.id)) continue;
       seenEvents.current.add(e.id);
       if (data.me && e.defenderId === data.me.id) {
-        const parts = [
-          `⚔ ${e.attackerName} attacked ${e.sectorName}!`,
-          e.damage > 0 ? `−${e.damage} hp` : null,
-          e.destroyed ? `${e.destroyed} destroyed` : null,
-          e.defenderSoldiersLost > 0
-            ? `${e.defenderSoldiersLost} soldier(s) lost`
-            : null,
-          e.lootedGold > 0 ? `${e.lootedGold}g looted` : null,
-          !e.win ? "Your defenses held!" : null,
-        ].filter(Boolean);
-        setAlert(parts.join(" · "));
-        window.setTimeout(() => setAlert(null), 6000);
+        setBattleSummary(summaryFromEvent(e));
         if (data.me.house) {
           setImpact({ at: data.me.house, startedAt: Date.now() });
           window.setTimeout(() => setImpact(null), 1600);
@@ -370,6 +484,11 @@ export function PlayShell() {
   };
 
   const switchPlayer = async (targetId?: string) => {
+    // Force re-prime of battle events for the next identity
+    meIdRef.current = null;
+    eventsPrimed.current = false;
+    seenEvents.current = new Set();
+    setBattleSummary(null);
     const data = await act("switch_player", targetId ? { targetId } : {});
     if (data) {
       setShowPlayers(false);
@@ -388,6 +507,9 @@ export function PlayShell() {
   const launchAttack = async () => {
     if (!me?.house || !selected) return;
     const targetSector = selected;
+    const defenderName =
+      snap?.players.find((p) => p.homeSectorId === targetSector.id)?.name ??
+      "enemy";
     const target =
       snap?.players.find((p) => p.homeSectorId === targetSector.id)?.house ??
       ringCentroid(targetSector.ring);
@@ -401,51 +523,20 @@ export function PlayShell() {
     const data = await act("attack", { sectorId: targetSector.id });
     const battle = data?.battle as BattleReport | undefined;
 
-    // Impact lands when the march arrives
+    if (!data || !battle) {
+      setMarch(null);
+      return;
+    }
+
+    // Impact + battle summary land when the march arrives (not mid-flight)
     window.setTimeout(() => {
       setMarch(null);
-      if (battle) {
-        setImpact({ at: target, startedAt: Date.now() });
-        window.setTimeout(() => setImpact(null), 1600);
-      }
+      setImpact({ at: target, startedAt: Date.now() });
+      window.setTimeout(() => setImpact(null), 1600);
+      setBattleSummary(
+        summaryFromAttack(battle, targetSector.name, defenderName)
+      );
     }, durationMs);
-
-    if (battle) {
-      const losses = [
-        battle.soldiersLost > 0 ? `${battle.soldiersLost} soldier(s)` : null,
-        battle.tanksLost > 0 ? `${battle.tanksLost} tank(s)` : null,
-      ]
-        .filter(Boolean)
-        .join(" + ");
-      const dmg = battle.damage > 0 ? `Dealt ${battle.damage} damage` : "";
-      if (battle.win) {
-        showToast(
-          [
-            "Victory!",
-            dmg,
-            battle.destroyed ? `${battle.destroyed} destroyed` : null,
-            battle.damagedBuildings.length
-              ? `${battle.damagedBuildings.join(", ")} damaged`
-              : null,
-            battle.lootedGold > 0 ? `+${battle.lootedGold}g loot` : null,
-            losses ? `Lost ${losses}` : null,
-          ]
-            .filter(Boolean)
-            .join(" · ")
-        );
-      } else {
-        showToast(
-          [
-            `Repelled! ${battle.defensePower} def vs your ${battle.attackPower} atk`,
-            dmg,
-            battle.destroyed ? `${battle.destroyed} still destroyed` : null,
-            losses ? `Lost ${losses}` : null,
-          ]
-            .filter(Boolean)
-            .join(" · ")
-        );
-      }
-    }
   };
 
   const inviteLink =
@@ -524,9 +615,23 @@ export function PlayShell() {
           <button
             type="button"
             onClick={() => {
+              setShowBattles((v) => !v);
+              setShowRanks(false);
+              setShowMissions(false);
+              setShowPlayers(false);
+            }}
+            className="hud-chip px-3 py-1.5 font-mono text-[10px] text-[var(--ink-muted)] hover:text-[var(--sand)]"
+            title="Recent battle reports"
+          >
+            ⚔ {(snap?.events ?? []).length}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
               setShowRanks((v) => !v);
               setShowMissions(false);
               setShowPlayers(false);
+              setShowBattles(false);
             }}
             className="hud-chip px-3 py-1.5 font-mono text-[10px] text-[var(--ink-muted)] hover:text-[var(--sand)]"
           >
@@ -538,6 +643,7 @@ export function PlayShell() {
               setShowMissions((v) => !v);
               setShowRanks(false);
               setShowPlayers(false);
+              setShowBattles(false);
             }}
             className="hud-chip px-3 py-1.5 font-mono text-[10px] text-[var(--ink-muted)] hover:text-[var(--sand)]"
           >
@@ -549,6 +655,7 @@ export function PlayShell() {
               setShowPlayers((v) => !v);
               setShowRanks(false);
               setShowMissions(false);
+              setShowBattles(false);
             }}
             className="hud-chip px-3 py-1.5 font-mono text-[10px] text-[var(--ink-muted)] hover:text-[var(--sand)]"
             title="Switch player (testing)"
@@ -563,6 +670,50 @@ export function PlayShell() {
           </Link>
         </div>
       </div>
+
+      {/* Recent battles log */}
+      {showBattles && (
+        <div className="absolute right-2 top-14 z-30 w-80 max-w-[calc(100%-1rem)] hud-panel p-3 sm:right-3">
+          <h2 className="font-mono text-[9px] uppercase tracking-[0.22em] text-[var(--ink-muted)]">
+            Recent battles
+          </h2>
+          {(snap?.events ?? []).length === 0 ? (
+            <p className="mt-2 text-[11px] text-[var(--ink-faint)]">
+              No attacks yet. Raid a rival sector to see a report here.
+            </p>
+          ) : (
+            <ul className="mt-2 max-h-72 space-y-1.5 overflow-y-auto">
+              {[...(snap?.events ?? [])].reverse().map((e) => (
+                <li
+                  key={e.id}
+                  className="rounded-sm border border-[var(--line)] px-2 py-1.5 text-[11px] text-[var(--ink-muted)]"
+                >
+                  <p className="font-semibold text-[var(--ink)]">
+                    {eventLogLine(e, me?.id)}
+                  </p>
+                  <p className="mt-0.5 font-mono text-[9px] text-[var(--ink-faint)]">
+                    {new Date(e.ts).toLocaleTimeString()}
+                    {e.destroyed ? ` · destroyed ${e.destroyed}` : ""}
+                    {e.lootedGold > 0 ? ` · ${e.lootedGold}g loot` : ""}
+                  </p>
+                  <button
+                    type="button"
+                    className="mt-1 text-[9px] font-bold text-[var(--sand)]"
+                    onClick={() => {
+                      setBattleSummary(
+                        summaryFromEvent(e, e.defenderId === me?.id)
+                      );
+                      setShowBattles(false);
+                    }}
+                  >
+                    Open report
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       {/* Player switcher (testing) */}
       {showPlayers && (
@@ -686,17 +837,59 @@ export function PlayShell() {
         </div>
       )}
 
-      {/* Under-attack alert (defender) */}
-      {alert && (
-        <div className="pointer-events-none absolute left-1/2 top-14 z-50 w-[min(26rem,calc(100%-1rem))] -translate-x-1/2">
-          <p className="attack-alert px-4 py-2.5 text-center text-xs font-bold text-white">
-            {alert}
-          </p>
+      {/* Persistent battle report (attacker + defender) */}
+      {battleSummary && (
+        <div className="pointer-events-none absolute inset-x-0 top-14 z-50 flex justify-center px-2">
+          <div
+            className={`battle-report pointer-events-auto w-[min(22rem,calc(100%-1rem))] p-3 ${
+              battleSummary.role === "defender"
+                ? "battle-report-defense"
+                : battleSummary.win
+                  ? "battle-report-win"
+                  : "battle-report-loss"
+            }`}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-white/70">
+                  Battle report
+                </p>
+                <p className="font-display text-xl text-white">
+                  {battleSummary.headline}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="rounded-sm border border-white/30 px-2 py-0.5 text-[10px] font-bold text-white/90"
+                onClick={() => setBattleSummary(null)}
+              >
+                ✕
+              </button>
+            </div>
+            <p className="mt-1 text-[11px] text-white/85">
+              {battleSummary.role === "attacker" ? "vs" : "from"}{" "}
+              <span className="font-semibold">{battleSummary.opponent}</span>
+              {" · "}
+              {battleSummary.sectorName}
+            </p>
+            <ul className="mt-2 space-y-0.5 border-t border-white/20 pt-2 text-[11px] text-white/90">
+              {battleSummary.rows.map((row) => (
+                <li key={row}>· {row}</li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              className="mt-3 w-full rounded-sm bg-white/15 px-3 py-1.5 text-xs font-bold text-white"
+              onClick={() => setBattleSummary(null)}
+            >
+              Dismiss
+            </button>
+          </div>
         </div>
       )}
 
       {/* Toast / error */}
-      {(toast || error) && !alert && (
+      {(toast || error) && !battleSummary && (
         <div className="pointer-events-none absolute left-1/2 top-14 z-40 -translate-x-1/2">
           <p
             className={`hud-chip px-4 py-2 text-xs font-semibold ${

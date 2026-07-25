@@ -423,31 +423,48 @@ button.cameo:not(:disabled):hover {
   transition: width 0.6s ease;
 }
 
-/* Defender's "you're under attack" banner */
-.attack-alert {
-  border-radius: 6px;
-  border: 1px solid rgba(255, 82, 69, 0.9);
-  background: linear-gradient(180deg, rgba(168, 36, 28, 0.95), rgba(90, 16, 12, 0.95));
-  box-shadow:
-    0 0 0 1px rgba(255, 82, 69, 0.4),
-    0 0 22px rgba(226, 59, 47, 0.55),
-    0 4px 14px rgba(0, 0, 0, 0.6);
-  animation: attack-alert-pulse 0.9s ease-in-out 4;
+/* Persistent battle report card */
+.battle-report {
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+  animation: battle-report-in 0.35s ease-out;
+}
+
+.battle-report-win {
+  background: linear-gradient(180deg, rgba(45, 110, 58, 0.96), rgba(18, 48, 28, 0.97));
+  border-color: rgba(90, 180, 100, 0.55);
+}
+
+.battle-report-loss {
+  background: linear-gradient(180deg, rgba(120, 70, 28, 0.96), rgba(55, 28, 12, 0.97));
+  border-color: rgba(220, 160, 80, 0.5);
+}
+
+.battle-report-defense {
+  background: linear-gradient(180deg, rgba(168, 36, 28, 0.96), rgba(70, 14, 12, 0.97));
+  border-color: rgba(255, 82, 69, 0.7);
+  animation: battle-report-in 0.35s ease-out, attack-alert-pulse 0.9s ease-in-out 3;
+}
+
+@keyframes battle-report-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 @keyframes attack-alert-pulse {
   0%,
   100% {
-    box-shadow:
-      0 0 0 1px rgba(255, 82, 69, 0.4),
-      0 0 22px rgba(226, 59, 47, 0.55),
-      0 4px 14px rgba(0, 0, 0, 0.6);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 82, 69, 0.35);
   }
   50% {
-    box-shadow:
-      0 0 0 2px rgba(255, 82, 69, 0.9),
-      0 0 34px rgba(226, 59, 47, 0.9),
-      0 4px 14px rgba(0, 0, 0, 0.6);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55), 0 0 28px rgba(226, 59, 47, 0.75);
   }
 }
 
