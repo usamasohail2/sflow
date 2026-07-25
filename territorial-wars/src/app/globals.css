@@ -325,6 +325,38 @@ body {
   }
 }
 
+/* Dock tile while that building type is syncing to the server */
+.cameo-building {
+  border-color: #e8cf8a !important;
+  box-shadow:
+    inset 0 1px 0 rgba(232, 235, 228, 0.25),
+    0 0 0 1px rgba(232, 207, 138, 0.55),
+    0 0 12px rgba(232, 207, 138, 0.25) !important;
+  filter: none !important;
+  cursor: wait !important;
+}
+
+.cameo-dock-loader {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  border-radius: 3px;
+  background: rgba(10, 14, 10, 0.55);
+  pointer-events: none;
+}
+
+.cameo-dock-spinner {
+  width: 1.2rem;
+  height: 1.2rem;
+  border-radius: 999px;
+  border: 2px solid rgba(232, 207, 138, 0.25);
+  border-top-color: #e8cf8a;
+  animation: building-sync-spin 0.7s linear infinite;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+}
+
 .gem-claiming {
   opacity: 0.75;
   pointer-events: none;

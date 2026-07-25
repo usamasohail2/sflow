@@ -555,8 +555,12 @@ export function PlayShell() {
   const [showBattles, setShowBattles] = useState(false);
   const [showWalkthrough, setShowWalkthrough] = useState(false);
   const [placing, setPlacing] = useState<Placing | null>(null);
-  /** Building ids currently syncing to the server (optimistic place) */
-  const [syncingBuildIds, setSyncingBuildIds] = useState<string[]>([]);
+  /** Buildings currently syncing to the server (optimistic place) */
+  const [syncingBuilds, setSyncingBuilds] = useState<
+    Array<{ id: string; type: BuildingType }>
+  >([]);
+  const syncingBuildIds = syncingBuilds.map((b) => b.id);
+  const syncingBuildTypes = new Set(syncingBuilds.map((b) => b.type));
   /** Gem/resource spot ids currently claiming on the server */
   const [claimingSpotIds, setClaimingSpotIds] = useState<string[]>([]);
   const claimingSpotIdsRef = useRef<string[]>([]);
@@ -1583,7 +1587,7 @@ export function PlayShell() {
     lastGoodMe.current = nextMe;
     settleGuardUntil.current = Date.now() + 20_000;
     setPlacing(null);
-    setSyncingBuildIds((ids) => [...ids, tempId]);
+    setSyncingBuilds((list) => [...list, { id: tempId, type: kind }]);
     playBuildSound();
 
     const data = await act(
@@ -1592,7 +1596,7 @@ export function PlayShell() {
       undefined,
       { silent: true }
     );
-    setSyncingBuildIds((ids) => ids.filter((id) => id !== tempId));
+    setSyncingBuilds((list) => list.filter((b) => b.id !== tempId));
     if (!data) {
       // Roll back optimistic place
       setSnap((prev) => {
@@ -4281,6 +4285,7 @@ export function PlayShell() {
                   {(snap?.buildingCatalog ?? []).map((b) => {
                     const affordable = displayGold >= b.cost;
                     const active = placing?.kind === b.type;
+                    const syncing = syncingBuildTypes.has(b.type);
                     const homeSector = isAzadHomeId(me.homeSectorId)
                       ? makeAzadPlacementSector(me.house)
                       : snap?.sectors.find((s) => s.id === me.homeSectorId);
@@ -4300,14 +4305,22 @@ export function PlayShell() {
                         type="button"
                         className={`cameo cameo-dock ${
                           active ? "cameo-active" : ""
-                        } ${affordable && !active ? "cameo-blink" : ""}`}
+                        } ${syncing ? "cameo-building" : ""} ${
+                          affordable && !active && !syncing ? "cameo-blink" : ""
+                        }`}
                         disabled={
-                          busy || !affordable || !homeSector || !me.house
+                          busy ||
+                          syncing ||
+                          !affordable ||
+                          !homeSector ||
+                          !me.house
                         }
                         title={
-                          !me.house
-                            ? "Rebuild your house first"
-                            : `${b.name} — ${b.blurb} · ${b.footprintM}m ground`
+                          syncing
+                            ? `Building ${b.name}…`
+                            : !me.house
+                              ? "Rebuild your house first"
+                              : `${b.name} — ${b.blurb} · ${b.footprintM}m ground`
                         }
                         onClick={() =>
                           setPlacing((cur) =>
@@ -4325,7 +4338,17 @@ export function PlayShell() {
                           <GoldCoinIcon size={10} />
                           {b.cost}
                         </span>
-                        <span className="cameo-label">{shortLabel}</span>
+                        <span className="cameo-label">
+                          {syncing ? "Building…" : shortLabel}
+                        </span>
+                        {syncing && (
+                          <span
+                            className="cameo-dock-loader"
+                            aria-hidden
+                          >
+                            <span className="cameo-dock-spinner" />
+                          </span>
+                        )}
                       </button>
                     );
                   })}
