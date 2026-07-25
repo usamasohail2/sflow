@@ -121,50 +121,6 @@ export function RocketSprite({
   );
 }
 
-/** Guard turret tower with cannon. */
-export function TurretSprite({
-  className = "",
-  title = "Guard turret",
-}: SpriteProps) {
-  return (
-    <svg
-      className={`house-sprite ${className}`}
-      viewBox="0 0 36 32"
-      width="52"
-      height="46"
-      role="img"
-      aria-label={title}
-    >
-      <title>{title}</title>
-      <ellipse cx="18" cy="30" rx="8" ry="1.8" fill="rgba(0,0,0,0.35)" />
-      {/* base */}
-      <path d="M12 28 L13.5 18 H22.5 L24 28 Z" fill="#5d6a63" />
-      <path d="M12 28 L13.5 18 H18 V28 Z" fill="#4a5550" />
-      {/* platform */}
-      <rect x="11.5" y="16" width="13" height="3" rx="1" fill="#77857c" />
-      {/* dome */}
-      <path d="M13.5 16 a4.5 4.5 0 0 1 9 0 Z" fill="#3d5c46" />
-      {/* cannon */}
-      <g transform="translate(18 12.5) rotate(-24)">
-        <rect x="0" y="-1.1" width="10" height="2.2" rx="1" fill="#2f3a34" />
-        <rect x="9" y="-1.5" width="2" height="3" rx="0.8" fill="#202823" />
-      </g>
-      {/* light */}
-      <circle cx="18" cy="14.4" r="0.9" fill="#ff5245">
-        <animate
-          attributeName="opacity"
-          values="1;0.25;1"
-          dur="1.6s"
-          repeatCount="indefinite"
-        />
-      </circle>
-      {/* rivets */}
-      <circle cx="14" cy="22" r="0.5" fill="#8f9c93" />
-      <circle cx="21.5" cy="24" r="0.5" fill="#8f9c93" />
-    </svg>
-  );
-}
-
 /** Pine tree cluster — wood resource. */
 export function TreeSprite({
   className = "",
