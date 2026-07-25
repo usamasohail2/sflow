@@ -24,7 +24,8 @@ export function accrueGather(
   let changed = false;
 
   for (const [id, p] of Object.entries(players)) {
-    if (!p.homeSectorId || p.villagers <= 0) continue;
+    // No house → gathering paused until they rebuild
+    if (!p.homeSectorId || !p.house || p.villagers <= 0) continue;
 
     const last = p.lastGatherAt || p.createdAt;
     const elapsed = Math.max(0, now - last);

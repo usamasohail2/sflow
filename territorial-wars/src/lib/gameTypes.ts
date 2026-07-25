@@ -80,6 +80,8 @@ export type Player = {
   /** Permanent home — set once, never changed */
   homeSectorId: string | null;
   house: LatLng | null;
+  /** House hit points — 0 / missing house means rebuild required */
+  houseHp: number;
   /** Where the villager idles / starts gather trips (player-placed) */
   villagerPost: LatLng | null;
   villagers: number;
@@ -121,6 +123,7 @@ export type PublicPlayer = {
   name: string;
   homeSectorId: string | null;
   house: LatLng | null;
+  houseHp: number;
   villagers: number;
   soldiers: number;
   tanks: number;
@@ -150,12 +153,16 @@ export type BattleReport = {
   win: boolean;
   attackPower: number;
   defensePower: number;
-  /** Total hp damage dealt to enemy buildings */
+  /** Total hp damage dealt to structures (incl. house) */
   damage: number;
   /** Names of buildings fully destroyed */
   destroyed: string | null;
   /** Buildings damaged but still standing */
   damagedBuildings: string[];
+  /** True when the defender's house was razed */
+  houseDestroyed: boolean;
+  /** House took damage but is still standing */
+  houseDamaged: boolean;
   lootedGold: number;
   soldiersLost: number;
   tanksLost: number;
@@ -183,6 +190,8 @@ export type GameEvent = {
   soldiersLost?: number;
   tanksLost?: number;
   damagedBuildings?: string[];
+  houseDestroyed?: boolean;
+  houseDamaged?: boolean;
 };
 
 export type GameSnapshot = {
@@ -211,10 +220,17 @@ export const INVITE_VILLAGER_BONUS = 1;
 /** House ground radius (m) for overlap checks */
 export const HOUSE_FOOTPRINT_M = 30;
 
+/** Simple house HP — each attack point chips 1 HP */
+export const HOUSE_MAX_HP = 5;
+
 export const SOLDIER_COST = 30;
 export const TANK_COST = 90;
 export const ATTACK_COOLDOWN_MS = 60_000;
 
+/**
+ * Building HP uses the same small scale as attack/defense points
+ * so "Attack 3 vs Defense 2 → dealt 3 damage" is readable.
+ */
 export const BUILDING_CATALOG: BuildingCatalogItem[] = [
   {
     type: "mill",
@@ -223,7 +239,7 @@ export const BUILDING_CATALOG: BuildingCatalogItem[] = [
     blurb: "+2 gold each trip",
     tripBonus: 2,
     footprintM: 34,
-    hp: 120,
+    hp: 3,
     defense: 0,
   },
   {
@@ -233,7 +249,7 @@ export const BUILDING_CATALOG: BuildingCatalogItem[] = [
     blurb: "+3 gold each trip",
     tripBonus: 3,
     footprintM: 42,
-    hp: 160,
+    hp: 4,
     defense: 0,
   },
   {
@@ -243,18 +259,18 @@ export const BUILDING_CATALOG: BuildingCatalogItem[] = [
     blurb: "+2 gold each trip",
     tripBonus: 2,
     footprintM: 26,
-    hp: 100,
+    hp: 2,
     defense: 0,
   },
   {
     type: "turret",
     name: "Guard turret",
     cost: 60,
-    blurb: "Defends your sector (+25 def)",
+    blurb: "Defends your sector (+2 def)",
     tripBonus: 0,
     footprintM: 22,
-    hp: 150,
-    defense: 25,
+    hp: 4,
+    defense: 2,
   },
 ];
 
@@ -272,15 +288,59 @@ export function buildingBonus(buildings: Building[]): number {
   return n;
 }
 
+/**
+ * Simple combat:
+ *  Attack = soldiers×1 + tanks×3
+ *  Defense = house(1 if standing) + soldiers×1 + tanks×2 + turrets×2
+ */
+export function attackPower(soldiers: number, tanks = 0): number {
+  return Math.max(0, soldiers) + Math.max(0, tanks) * 3;
+}
+
 export function defensePower(p: {
   soldiers: number;
   tanks?: number;
   buildings: Building[];
+  house?: LatLng | null;
+  houseHp?: number;
 }): number {
+  const houseUp = Boolean(p.house) && (p.houseHp ?? 0) > 0;
   const turrets = p.buildings.filter((b) => b.type === "turret").length;
-  return 15 + p.soldiers * 10 + (p.tanks || 0) * 30 + turrets * 25;
+  return (
+    (houseUp ? 1 : 0) +
+    Math.max(0, p.soldiers) +
+    Math.max(0, p.tanks || 0) * 2 +
+    turrets * 2
+  );
 }
 
-export function attackPower(soldiers: number, tanks = 0): number {
-  return soldiers * 10 + tanks * 40;
+/** Human-readable breakdown for HUD / battle reports */
+export function attackBreakdown(soldiers: number, tanks = 0): string {
+  const parts = [
+    soldiers > 0 ? `${soldiers} soldier${soldiers === 1 ? "" : "s"}` : null,
+    tanks > 0 ? `${tanks} tank${tanks === 1 ? "" : "s"}` : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" + ") : "no army";
+}
+
+export function defenseBreakdown(p: {
+  soldiers: number;
+  tanks?: number;
+  buildings: Building[];
+  house?: LatLng | null;
+  houseHp?: number;
+}): string {
+  const houseUp = Boolean(p.house) && (p.houseHp ?? 0) > 0;
+  const turrets = p.buildings.filter((b) => b.type === "turret").length;
+  const parts = [
+    houseUp ? "house" : null,
+    p.soldiers > 0
+      ? `${p.soldiers} soldier${p.soldiers === 1 ? "" : "s"}`
+      : null,
+    (p.tanks || 0) > 0
+      ? `${p.tanks} tank${p.tanks === 1 ? "" : "s"}`
+      : null,
+    turrets > 0 ? `${turrets} turret${turrets === 1 ? "" : "s"}` : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" + ") : "no defense";
 }

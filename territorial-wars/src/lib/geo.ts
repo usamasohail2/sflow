@@ -20,6 +20,40 @@ export function pointInRing(point: LatLng, ring: [number, number][]): boolean {
   return inside;
 }
 
+/** Approx meters between two lat/lng points */
+function haversineMeters(a: LatLng, b: LatLng): number {
+  const x =
+    (a.lng - b.lng) * 111_320 * Math.cos(((a.lat + b.lat) / 2) * (Math.PI / 180));
+  const y = (a.lat - b.lat) * 111_320;
+  return Math.hypot(x, y);
+}
+
+/**
+ * GPS-tolerant sector check: inside the ring, or within `slackM` of the boundary.
+ */
+export function pointInOrNearRing(
+  point: LatLng,
+  ring: [number, number][],
+  slackM = 120
+): boolean {
+  if (pointInRing(point, ring)) return true;
+  if (ring.length < 2) return false;
+  for (let i = 0; i < ring.length - 1; i++) {
+    const a = ring[i]!;
+    const b = ring[i + 1]!;
+    // Sample the edge (ends + midpoint) — good enough for GPS slack
+    const samples: LatLng[] = [
+      { lat: a[1], lng: a[0] },
+      { lat: b[1], lng: b[0] },
+      { lat: (a[1] + b[1]) / 2, lng: (a[0] + b[0]) / 2 },
+    ];
+    for (const s of samples) {
+      if (haversineMeters(point, s) <= slackM) return true;
+    }
+  }
+  return false;
+}
+
 export function closeRing(ring: [number, number][]): [number, number][] {
   if (ring.length === 0) return ring;
   const first = ring[0]!;

@@ -6,6 +6,7 @@ import {
   GATHER_TRIP_MS,
   GEM_META,
   HOUSE_FOOTPRINT_M,
+  HOUSE_MAX_HP,
   INVITE_VILLAGER_BONUS,
   MAX_ROAM_FINDS,
   ROAM_METERS_TO_SPAWN,
@@ -30,7 +31,7 @@ import {
   type Sector,
 } from "@/lib/gameTypes";
 import { AUTH_DISABLED, buildDummySectors } from "@/lib/devMode";
-import { pointInRing } from "@/lib/geo";
+import { pointInOrNearRing, pointInRing } from "@/lib/geo";
 import {
   distMeters,
   offsetBearing,
@@ -225,10 +226,22 @@ function normalizePlayer(raw: Player): Player {
   if (p.peakTanks == null) p.peakTanks = p.tanks;
   if (p.totalFarmed == null) p.totalFarmed = p.gold || 0;
   if (p.villagerPost === undefined) p.villagerPost = null;
-  p.buildings = (p.buildings || []).map((b) => ({
-    ...b,
-    hp: b.hp ?? catalogItem(b.type).hp,
-  }));
+  // Clamp building HP to the simplified scale (migrates old 100+ HP values)
+  p.buildings = (p.buildings || []).map((b) => {
+    const max = catalogItem(b.type).hp;
+    const hp = b.hp ?? max;
+    return { ...b, hp: Math.min(hp, max) };
+  });
+  if (p.house) {
+    const hp = p.houseHp == null ? HOUSE_MAX_HP : p.houseHp;
+    p.houseHp = Math.max(0, Math.min(HOUSE_MAX_HP, hp));
+    if (p.houseHp <= 0) {
+      p.house = null;
+      p.houseHp = 0;
+    }
+  } else {
+    p.houseHp = 0;
+  }
   return p;
 }
 
@@ -428,6 +441,7 @@ async function ensureRivalGarrison(): Promise<void> {
       name: "Rival Garrison",
       homeSectorId: BOT_SECTOR_ID,
       house: center,
+      houseHp: HOUSE_MAX_HP,
       villagerPost: null,
       villagers: 1,
       soldiers: 1,
@@ -452,12 +466,16 @@ async function ensureRivalGarrison(): Promise<void> {
   }
 
   const razed =
+    !bot.house ||
+    (bot.houseHp || 0) < HOUSE_MAX_HP ||
     bot.buildings.length < 3 ||
     (bot.soldiers || 0) < 1 ||
     bot.buildings.some((b) => b.hp < catalogItem(b.type).hp);
   if (razed && now - (bot.lastAttackAt || 0) > BOT_RESTOCK_MS) {
     await setPlayer({
       ...bot,
+      house: bot.house ?? center,
+      houseHp: HOUSE_MAX_HP,
       soldiers: Math.max(bot.soldiers || 0, 1),
       buildings: defaultBuildings(),
       updatedAt: now,
@@ -504,6 +522,7 @@ function publicPlayer(p: Player): PublicPlayer {
     name: p.name,
     homeSectorId: p.homeSectorId,
     house: p.house,
+    houseHp: p.houseHp ?? 0,
     villagers: p.villagers,
     soldiers: p.soldiers || 0,
     tanks: p.tanks || 0,
@@ -561,6 +580,7 @@ export async function ensurePlayer(
       image: image ?? null,
       homeSectorId: null,
       house: null,
+      houseHp: 0,
       villagerPost: null,
       villagers: 0,
       soldiers: 0,
@@ -651,11 +671,34 @@ export async function getSnapshot(meId?: string | null): Promise<GameSnapshot> {
   };
 }
 
+async function assertClearGround(
+  playerId: string,
+  house: { lat: number; lng: number }
+): Promise<{ error: string } | null> {
+  const everyone = await getAllPlayers();
+  for (const p of everyone) {
+    if (p.id === playerId) continue;
+    for (const b of p.buildings) {
+      if (
+        distMeters(house, { lat: b.lat, lng: b.lng }) <
+        HOUSE_FOOTPRINT_M + catalogItem(b.type).footprintM
+      ) {
+        return { error: "That ground is occupied — pick a clear spot" };
+      }
+    }
+    if (p.house && distMeters(house, p.house) < HOUSE_FOOTPRINT_M * 2) {
+      return { error: "Too close to another house" };
+    }
+  }
+  return null;
+}
+
 export async function claimSector(
   playerId: string,
   sectorId: string,
   housePos?: { lat: number; lng: number },
-  villagerPos?: { lat: number; lng: number }
+  villagerPos?: { lat: number; lng: number },
+  gpsPos?: { lat: number; lng: number }
 ): Promise<{ ok: true } | { error: string }> {
   await bootstrap();
   const me = await getPlayer(playerId);
@@ -672,6 +715,19 @@ export async function claimSector(
     return { error: "That sector is already claimed" };
   }
 
+  if (
+    !gpsPos ||
+    !Number.isFinite(gpsPos.lat) ||
+    !Number.isFinite(gpsPos.lng)
+  ) {
+    return { error: "Confirm your GPS location inside the sector first" };
+  }
+  if (!pointInOrNearRing(gpsPos, sector.ring, 120)) {
+    return {
+      error: `Your GPS is outside ${sector.name} — go there to claim it`,
+    };
+  }
+
   const house =
     housePos && Number.isFinite(housePos.lat) && Number.isFinite(housePos.lng)
       ? housePos
@@ -680,21 +736,8 @@ export async function claimSector(
     return { error: "Place your house inside the sector" };
   }
 
-  const everyone = await getAllPlayers();
-  for (const p of everyone) {
-    if (p.id === playerId) continue;
-    for (const b of p.buildings) {
-      if (
-        distMeters(house, { lat: b.lat, lng: b.lng }) <
-        HOUSE_FOOTPRINT_M + catalogItem(b.type).footprintM
-      ) {
-        return { error: "That ground is occupied — pick a clear spot" };
-      }
-    }
-    if (p.house && distMeters(house, p.house) < HOUSE_FOOTPRINT_M * 2) {
-      return { error: "Too close to another house" };
-    }
-  }
+  const blocked = await assertClearGround(playerId, house);
+  if (blocked) return blocked;
 
   let villagerPost: { lat: number; lng: number } | null = null;
   if (
@@ -730,6 +773,7 @@ export async function claimSector(
     ...me,
     homeSectorId: sectorId,
     house,
+    houseHp: HOUSE_MAX_HP,
     villagerPost,
     villagers: STARTING.villagers,
     soldiers: 0,
@@ -746,6 +790,63 @@ export async function claimSector(
     updatedAt: now,
   });
 
+  return { ok: true };
+}
+
+/** Rebuild house after it was destroyed in battle (keeps the same sector). */
+export async function placeHouse(
+  playerId: string,
+  housePos: { lat: number; lng: number },
+  villagerPos?: { lat: number; lng: number }
+): Promise<{ ok: true } | { error: string }> {
+  await bootstrap();
+  const me = await getPlayer(playerId);
+  if (!me?.homeSectorId) return { error: "Claim a sector first" };
+  if (me.house) return { error: "You already have a house" };
+
+  const sectors = await getSectors();
+  const sector = sectors.find((s) => s.id === me.homeSectorId);
+  if (!sector) return { error: "Sector missing" };
+
+  if (!Number.isFinite(housePos.lat) || !Number.isFinite(housePos.lng)) {
+    return { error: "Pick a spot for your house" };
+  }
+  if (!pointInRing(housePos, sector.ring)) {
+    return { error: "Place your house inside your sector" };
+  }
+
+  const blocked = await assertClearGround(playerId, housePos);
+  if (blocked) return blocked;
+
+  let villagerPost = me.villagerPost;
+  if (
+    villagerPos &&
+    Number.isFinite(villagerPos.lat) &&
+    Number.isFinite(villagerPos.lng)
+  ) {
+    if (!pointInRing(villagerPos, sector.ring)) {
+      return { error: "Place your villager inside the sector" };
+    }
+    if (distMeters(villagerPos, housePos) > 400) {
+      return { error: "Villager must stay near the house (within 400m)" };
+    }
+    villagerPost = villagerPos;
+  } else if (
+    villagerPost &&
+    distMeters(villagerPost, housePos) > 400
+  ) {
+    villagerPost = housePos;
+  }
+
+  const now = Date.now();
+  await setPlayer({
+    ...me,
+    house: housePos,
+    houseHp: HOUSE_MAX_HP,
+    villagerPost: villagerPost ?? housePos,
+    lastGatherAt: now,
+    updatedAt: now,
+  });
   return { ok: true };
 }
 
@@ -1064,6 +1165,9 @@ export async function attackSector(
   await bootstrap();
   const me = await getPlayer(playerId);
   if (!me?.homeSectorId) return { error: "Claim a sector first" };
+  if (!me.house) {
+    return { error: "Rebuild your house before attacking" };
+  }
   if ((me.soldiers || 0) + (me.tanks || 0) <= 0) {
     return { error: "Recruit soldiers or build tanks before attacking" };
   }
@@ -1086,10 +1190,13 @@ export async function attackSector(
   const def = defensePower(defender);
   const win = atk > def;
 
-  const damageBudget = win ? atk : Math.floor(atk / 2);
+  // 1 attack point = 1 HP. Losing raids still chip for half (min 1).
+  const damageBudget = win ? atk : Math.max(1, Math.floor(atk / 2));
   let remaining = damageBudget;
   const destroyedNames: string[] = [];
   const damagedNames: string[] = [];
+
+  // Turrets first, then other buildings, house last
   const targets = [...defender.buildings].sort((a, b) => {
     if (a.type === "turret" && b.type !== "turret") return -1;
     if (b.type === "turret" && a.type !== "turret") return 1;
@@ -1109,6 +1216,25 @@ export async function attackSector(
       return { ...b, hp };
     })
     .filter(Boolean) as Building[];
+
+  let nextHouse = defender.house;
+  let nextHouseHp = defender.houseHp ?? 0;
+  let houseDestroyed = false;
+  let houseDamaged = false;
+  if (remaining > 0 && nextHouse && nextHouseHp > 0) {
+    const dmg = Math.min(nextHouseHp, remaining);
+    remaining -= dmg;
+    nextHouseHp -= dmg;
+    if (dmg > 0) houseDamaged = true;
+    if (nextHouseHp <= 0) {
+      houseDestroyed = true;
+      houseDamaged = false;
+      nextHouse = null;
+      nextHouseHp = 0;
+      destroyedNames.push("House");
+    }
+  }
+
   const damageDealt = damageBudget - remaining;
 
   let soldiersLost: number;
@@ -1123,7 +1249,7 @@ export async function attackSector(
       defender.soldiers || 0,
       Math.floor(me.soldiers / 2) || 1
     );
-    if (defender.buildings.length === 0) {
+    if (survivingBuildings.length === 0 || houseDestroyed) {
       lootedGold = Math.min(defender.gold, 25);
     }
   } else {
@@ -1131,12 +1257,16 @@ export async function attackSector(
     tanksLost = Math.ceil((me.tanks || 0) / 2);
     defenderSoldiersLost = Math.min(
       defender.soldiers || 0,
-      Math.floor(atk / 20)
+      Math.max(1, Math.floor(atk / 3))
     );
   }
 
   await setPlayer({
     ...defender,
+    house: nextHouse,
+    houseHp: nextHouseHp,
+    // Gathering pauses without a house — reset anchor so rebuild isn't back-paid
+    lastGatherAt: houseDestroyed ? now : defender.lastGatherAt,
     buildings: survivingBuildings,
     soldiers: Math.max(0, (defender.soldiers || 0) - defenderSoldiersLost),
     gold: defender.gold - lootedGold,
@@ -1176,6 +1306,8 @@ export async function attackSector(
     soldiersLost,
     tanksLost,
     damagedBuildings: damagedNames,
+    houseDestroyed,
+    houseDamaged,
   });
 
   return {
@@ -1187,6 +1319,8 @@ export async function attackSector(
       damage: damageDealt,
       destroyed,
       damagedBuildings: damagedNames,
+      houseDestroyed,
+      houseDamaged,
       lootedGold,
       soldiersLost,
       tanksLost,
@@ -1194,5 +1328,6 @@ export async function attackSector(
     },
   };
 }
+
 
 export { buildingBonus };

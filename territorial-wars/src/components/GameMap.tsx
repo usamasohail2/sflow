@@ -19,6 +19,7 @@ import {
   GATHER_TRIP_MS,
   GEM_META,
   HOUSE_FOOTPRINT_M,
+  HOUSE_MAX_HP,
   ROAM_METERS_TO_SPAWN,
   ROAM_MIN_EXPLORE_MS,
   SPAWN_COOLDOWN_MS,
@@ -565,8 +566,13 @@ export function GameMap({
               latitude={p.house!.lat}
               anchor="bottom"
             >
-              <div className="relative">
+              <div className="relative flex flex-col items-center">
                 <HouseSprite className="h-10 w-11 drop-shadow-md" />
+                <HpBar
+                  hp={p.houseHp ?? HOUSE_MAX_HP}
+                  maxHp={HOUSE_MAX_HP}
+                  width={38}
+                />
                 {p.id !== me?.id && (
                   <span className="absolute -top-2 left-1/2 -translate-x-1/2 rounded-sm bg-[rgba(10,14,10,0.85)] px-1 font-mono text-[8px] text-[var(--signal-bright)]">
                     {p.name}

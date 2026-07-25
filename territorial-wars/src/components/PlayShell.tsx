@@ -28,7 +28,17 @@ import type {
   GameEvent,
   GameSnapshot,
 } from "@/lib/gameTypes";
-import { SOLDIER_COST, TANK_COST, buildingBonus } from "@/lib/gameTypes";
+import {
+  HOUSE_MAX_HP,
+  SOLDIER_COST,
+  TANK_COST,
+  attackBreakdown,
+  attackPower,
+  buildingBonus,
+  defenseBreakdown,
+  defensePower,
+} from "@/lib/gameTypes";
+import { pointInOrNearRing } from "@/lib/geo";
 import { ringCentroid } from "@/lib/mapMath";
 
 const BATTLE_ACK_KEY = "itw_battle_ack_ts";
@@ -86,9 +96,16 @@ function summaryFromAttack(
     .join(" + ");
   const rows = [
     battle.attackPower > 0 || battle.defensePower > 0
-      ? `Your attack ${battle.attackPower} vs defense ${battle.defensePower}`
+      ? `Attack ${battle.attackPower} vs Defense ${battle.defensePower}`
       : null,
-    battle.damage > 0 ? `Dealt ${battle.damage} damage` : "No structure damage",
+    battle.damage > 0
+      ? `Dealt ${battle.damage} damage`
+      : "No structure damage",
+    battle.houseDestroyed
+      ? "Their house was destroyed — they must rebuild"
+      : battle.houseDamaged
+        ? "Their house was damaged"
+        : null,
     battle.destroyed ? `Destroyed: ${battle.destroyed}` : null,
     battle.damagedBuildings.length
       ? `Damaged: ${battle.damagedBuildings.join(", ")}`
@@ -121,6 +138,8 @@ function summaryFromEvent(e: GameEvent, asDefender = true): BattleSummary {
         damage: e.damage,
         destroyed: e.destroyed,
         damagedBuildings: e.damagedBuildings ?? [],
+        houseDestroyed: Boolean(e.houseDestroyed),
+        houseDamaged: Boolean(e.houseDamaged),
         lootedGold: e.lootedGold,
         soldiersLost: e.soldiersLost ?? 0,
         tanksLost: e.tanksLost ?? 0,
@@ -134,9 +153,14 @@ function summaryFromEvent(e: GameEvent, asDefender = true): BattleSummary {
 
   const rows = [
     e.attackPower != null && e.defensePower != null
-      ? `Enemy attack ${e.attackPower} vs your defense ${e.defensePower}`
+      ? `Attack ${e.attackPower} vs Defense ${e.defensePower}`
       : null,
     e.damage > 0 ? `Took ${e.damage} damage` : "No structure damage",
+    e.houseDestroyed
+      ? "Your house was destroyed — rebuild it to gather again"
+      : e.houseDamaged
+        ? "Your house was damaged"
+        : null,
     e.destroyed ? `Destroyed: ${e.destroyed}` : null,
     e.damagedBuildings?.length
       ? `Damaged: ${e.damagedBuildings.join(", ")}`
@@ -185,6 +209,13 @@ export function PlayShell() {
   const [battleSummary, setBattleSummary] = useState<BattleSummary | null>(
     null
   );
+  /** GPS fix confirmed inside the sector being claimed */
+  const [gpsFix, setGpsFix] = useState<{
+    sectorId: string;
+    lat: number;
+    lng: number;
+  } | null>(null);
+  const [gpsBusy, setGpsBusy] = useState(false);
   const identityChecked = useRef(false);
   const seenEvents = useRef<Set<string>>(new Set());
   const eventsPrimed = useRef(false);
@@ -338,8 +369,31 @@ export function PlayShell() {
   const me = snap?.me ?? null;
   const selected = snap?.sectors.find((s) => s.id === selectedId) ?? null;
   const claimed = Boolean(me?.homeSectorId);
+  const needsHouseRebuild = Boolean(claimed && me && !me.house);
   const homeName =
     snap?.sectors.find((s) => s.id === me?.homeSectorId)?.name ?? null;
+  const myAttack = me ? attackPower(me.soldiers, me.tanks || 0) : 0;
+  const myDefense = me
+    ? defensePower({
+        soldiers: me.soldiers,
+        tanks: me.tanks,
+        buildings: me.buildings,
+        house: me.house,
+        houseHp: me.houseHp,
+      })
+    : 0;
+  const enemyPlayer = selected
+    ? snap?.players.find((p) => p.homeSectorId === selected.id)
+    : null;
+  const enemyDefense = enemyPlayer
+    ? defensePower({
+        soldiers: enemyPlayer.soldiers,
+        tanks: enemyPlayer.tanks,
+        buildings: enemyPlayer.buildings,
+        house: enemyPlayer.house,
+        houseHp: enemyPlayer.houseHp,
+      })
+    : 0;
 
   const sectorOwner = useMemo(() => {
     const map = new Map<string, { id: string; name: string }>();
@@ -463,6 +517,41 @@ export function PlayShell() {
     }
   };
 
+  const confirmGpsForSector = (sectorId: string, sectorName: string) => {
+    if (!navigator.geolocation) {
+      setError("GPS is not available on this device");
+      window.setTimeout(() => setError(null), 3200);
+      return;
+    }
+    setGpsBusy(true);
+    setError(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setGpsBusy(false);
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const sector = snap?.sectors.find((s) => s.id === sectorId);
+        if (!sector) return;
+        if (!pointInOrNearRing({ lat, lng }, sector.ring, 120)) {
+          setError(
+            `GPS says you're outside ${sectorName} — go there, then try again`
+          );
+          window.setTimeout(() => setError(null), 4200);
+          setGpsFix(null);
+          return;
+        }
+        setGpsFix({ sectorId, lat, lng });
+        showToast(`Location confirmed in ${sectorName}`);
+      },
+      () => {
+        setGpsBusy(false);
+        setError("Couldn't read GPS — allow location access and retry");
+        window.setTimeout(() => setError(null), 4200);
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 10_000 }
+    );
+  };
+
   const handlePlace = async (lat: number, lng: number) => {
     if (!placing) return;
 
@@ -479,17 +568,45 @@ export function PlayShell() {
         setPlacing({ kind: "house", sector: placing.sector });
         return;
       }
+
+      // Rebuild after house was destroyed (already own the sector)
+      if (me?.homeSectorId === placing.sector.id) {
+        const data = await act("place_house", {
+          lat: pendingHouse.lat,
+          lng: pendingHouse.lng,
+          villagerLat: lat,
+          villagerLng: lng,
+        });
+        if (data) {
+          showToast("House rebuilt — villagers are gathering again");
+          setPlacing(null);
+          setPendingHouse(null);
+        }
+        return;
+      }
+
+      if (!gpsFix || gpsFix.sectorId !== placing.sector.id) {
+        setError("Confirm your GPS location in this sector first");
+        window.setTimeout(() => setError(null), 3200);
+        setPlacing(null);
+        setPendingHouse(null);
+        return;
+      }
+
       const data = await act("claim_sector", {
         sectorId: placing.sector.id,
         lat: pendingHouse.lat,
         lng: pendingHouse.lng,
         villagerLat: lat,
         villagerLng: lng,
+        gpsLat: gpsFix.lat,
+        gpsLng: gpsFix.lng,
       });
       if (data) {
         showToast(`${placing.sector.name} claimed — your village is live!`);
         setPlacing(null);
         setPendingHouse(null);
+        setGpsFix(null);
       }
       // On error stay in villager placement so they can adjust
       return;
@@ -587,7 +704,7 @@ export function PlayShell() {
       : "";
 
   const perTrip =
-    me?.homeSectorId && snap
+    me?.homeSectorId && me.house && snap
       ? me.villagers *
         (Math.max(
           1,
@@ -1017,26 +1134,55 @@ export function PlayShell() {
             <p className="mt-1 text-[11px] text-[var(--ink-muted)]">
               {sectorOwner.has(selected.id)
                 ? `Claimed by ${sectorOwner.get(selected.id)!.name}`
-                : "Open territory — claim it forever. You start with a house and a villager."}
+                : "Open territory — confirm you're here with GPS, then place your house."}
             </p>
-            <button
-              type="button"
-              disabled={busy || !me || sectorOwner.has(selected.id)}
-              onClick={() => {
-                setPendingHouse(null);
-                setPlacing({ kind: "house", sector: selected });
-                showToast("Tap the map to place your house");
-              }}
-              className="mt-3 w-full rounded-sm bg-[var(--signal)] px-3 py-2.5 text-sm font-bold text-white shadow-[0_2px_8px_rgba(0,0,0,0.5)] disabled:opacity-40"
-            >
-              ⚑ Claim {selected.name} — place your house
-            </button>
+            {!sectorOwner.has(selected.id) && (
+              <>
+                <button
+                  type="button"
+                  disabled={busy || !me || gpsBusy}
+                  onClick={() =>
+                    confirmGpsForSector(selected.id, selected.name)
+                  }
+                  className={`mt-3 w-full rounded-sm px-3 py-2.5 text-sm font-bold shadow-[0_2px_8px_rgba(0,0,0,0.5)] disabled:opacity-40 ${
+                    gpsFix?.sectorId === selected.id
+                      ? "bg-[var(--field)] text-white"
+                      : "bg-[var(--wash)] text-[var(--ink)] border border-[var(--line-strong)]"
+                  }`}
+                >
+                  {gpsBusy
+                    ? "Reading GPS…"
+                    : gpsFix?.sectorId === selected.id
+                      ? "✓ Location confirmed"
+                      : "📍 Confirm I'm in this sector"}
+                </button>
+                <button
+                  type="button"
+                  disabled={
+                    busy ||
+                    !me ||
+                    gpsFix?.sectorId !== selected.id
+                  }
+                  onClick={() => {
+                    setPendingHouse(null);
+                    setPlacing({ kind: "house", sector: selected });
+                    showToast("Tap the map to place your house");
+                  }}
+                  className="mt-2 w-full rounded-sm bg-[var(--signal)] px-3 py-2.5 text-sm font-bold text-white shadow-[0_2px_8px_rgba(0,0,0,0.5)] disabled:opacity-40"
+                >
+                  ⚑ Claim {selected.name} — place your house
+                </button>
+              </>
+            )}
             <div className="mt-2 flex flex-wrap justify-center gap-1.5">
               {(snap?.sectors ?? []).map((s) => (
                 <button
                   key={s.id}
                   type="button"
-                  onClick={() => setSelectedId(s.id)}
+                  onClick={() => {
+                    setSelectedId(s.id);
+                    if (gpsFix && gpsFix.sectorId !== s.id) setGpsFix(null);
+                  }}
                   className={`rounded-sm border px-2 py-1 font-mono text-[9px] ${
                     s.id === selectedId
                       ? "border-[var(--sand)] text-[var(--sand)]"
@@ -1052,8 +1198,39 @@ export function PlayShell() {
         </div>
       )}
 
+      {/* ---- Rebuild house after it was destroyed ---- */}
+      {needsHouseRebuild && me?.homeSectorId && !placing && (
+        <div className="absolute bottom-24 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-sm -translate-x-1/2 sm:bottom-8">
+          <div className="hud-panel p-4 text-center">
+            <p className="font-display text-xl text-[var(--signal-bright)]">
+              House destroyed
+            </p>
+            <p className="mt-1 text-[11px] text-[var(--ink-muted)]">
+              Gathering is paused. Rebuild your house in {homeName} to continue.
+            </p>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                const sector = snap?.sectors.find(
+                  (s) => s.id === me.homeSectorId
+                );
+                if (!sector) return;
+                setSelectedId(sector.id);
+                setPendingHouse(null);
+                setPlacing({ kind: "house", sector });
+                showToast("Tap the map to rebuild your house");
+              }}
+              className="mt-3 w-full rounded-sm bg-[var(--signal)] px-3 py-2.5 text-sm font-bold text-white disabled:opacity-40"
+            >
+              🏠 Rebuild house
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ---- Attack panel: enemy sector selected ---- */}
-      {enemySelected && !placing && (
+      {enemySelected && !placing && !needsHouseRebuild && (
         <div className="absolute bottom-24 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-xs -translate-x-1/2 sm:bottom-8">
           <div className="hud-panel p-3 text-center">
             <p className="font-display text-lg text-[var(--ink)]">
@@ -1062,22 +1239,39 @@ export function PlayShell() {
             <p className="text-[10px] text-[var(--ink-muted)]">
               Held by {sectorOwner.get(selected!.id)!.name}
             </p>
+            <p className="mt-2 font-mono text-[10px] text-[var(--sand)]">
+              Your attack {myAttack}
+              <span className="text-[var(--ink-faint)]">
+                {" "}
+                ({attackBreakdown(me?.soldiers ?? 0, me?.tanks ?? 0)})
+              </span>
+            </p>
+            <p className="font-mono text-[10px] text-[var(--ink-muted)]">
+              Their defense {enemyDefense}
+              {enemyPlayer && (
+                <span className="text-[var(--ink-faint)]">
+                  {" "}
+                  ({defenseBreakdown(enemyPlayer)})
+                </span>
+              )}
+            </p>
+            <p className="mt-1 text-[9px] text-[var(--ink-faint)]">
+              Soldier = 1 atk · Tank = 3 atk · House/soldier = 1 def · Tank/turret
+              = 2 def
+            </p>
             <button
               type="button"
               disabled={
                 busy ||
                 !me ||
+                !me.house ||
                 me.soldiers + me.tanks <= 0 ||
                 Boolean(march)
               }
               onClick={() => void launchAttack()}
               className="mt-2 w-full rounded-sm bg-[var(--signal)] px-3 py-2 text-sm font-bold text-white disabled:opacity-40"
             >
-              ⚔ Attack — {me?.soldiers ?? 0} soldier
-              {(me?.soldiers ?? 0) === 1 ? "" : "s"}
-              {me && me.tanks > 0
-                ? ` + ${me.tanks} tank${me.tanks === 1 ? "" : "s"}`
-                : ""}
+              ⚔ Attack ({myAttack} vs {enemyDefense})
             </button>
             {me && me.soldiers + me.tanks <= 0 && (
               <p className="mt-1 text-[9px] text-[var(--ink-faint)]">
@@ -1097,8 +1291,22 @@ export function PlayShell() {
               <span className="cameo-badge">×{me.villagers}</span>
               <span className="cameo-label">Villager</span>
             </div>
-            <div className="cameo" title="Your house">
+            <div
+              className="cameo"
+              title={
+                me.house
+                  ? `House ${me.houseHp}/${HOUSE_MAX_HP} hp · defense ${myDefense}`
+                  : "House destroyed — rebuild to gather"
+              }
+            >
               <HouseSprite className="h-9 w-10" />
+              {me.house ? (
+                <span className="cameo-badge">
+                  {me.houseHp}/{HOUSE_MAX_HP}
+                </span>
+              ) : (
+                <span className="cameo-badge">✕</span>
+              )}
               <span className="cameo-label">House</span>
             </div>
             <button
@@ -1106,11 +1314,11 @@ export function PlayShell() {
               className={`cameo ${
                 displayGold >= SOLDIER_COST ? "cameo-blink" : ""
               }`}
-              disabled={busy || displayGold < SOLDIER_COST}
-              title={`Recruit soldier — ${SOLDIER_COST}g · +10 attack`}
+              disabled={busy || displayGold < SOLDIER_COST || !me.house}
+              title={`Recruit soldier — ${SOLDIER_COST}g · +1 attack / +1 defense`}
               onClick={() =>
                 void act("recruit_soldier").then((d) => {
-                  if (d) showToast("Soldier recruited");
+                  if (d) showToast("Soldier recruited · +1 attack");
                 })
               }
             >
@@ -1126,11 +1334,11 @@ export function PlayShell() {
               className={`cameo ${
                 displayGold >= TANK_COST ? "cameo-blink" : ""
               }`}
-              disabled={busy || displayGold < TANK_COST}
-              title={`Build tank — ${TANK_COST}g · +40 attack, +30 defense`}
+              disabled={busy || displayGold < TANK_COST || !me.house}
+              title={`Build tank — ${TANK_COST}g · +3 attack / +2 defense`}
               onClick={() =>
                 void act("build_tank").then((d) => {
-                  if (d) showToast("Tank rolled off the line");
+                  if (d) showToast("Tank ready · +3 attack");
                 })
               }
             >
@@ -1173,11 +1381,17 @@ export function PlayShell() {
                     className={`cameo ${active ? "cameo-active" : ""} ${
                       affordable && !active ? "cameo-blink" : ""
                     }`}
-                    disabled={busy || !affordable || !homeSector}
-                    title={`${b.name} — ${b.blurb} · ${b.footprintM}m ground`}
+                    disabled={
+                      busy || !affordable || !homeSector || !me.house
+                    }
+                    title={
+                      !me.house
+                        ? "Rebuild your house first"
+                        : `${b.name} — ${b.blurb} · ${b.footprintM}m ground`
+                    }
                     onClick={() =>
                       setPlacing((cur) =>
-                        cur?.kind === b.type || !homeSector
+                        cur?.kind === b.type || !homeSector || !me.house
                           ? null
                           : { kind: b.type, sector: homeSector }
                       )

@@ -12,6 +12,7 @@ import {
   discoverSpot,
   ensurePlayer,
   getSnapshot,
+  placeHouse,
   recruitSoldier,
   renamePlayer,
   spawnRoamFind,
@@ -118,6 +119,8 @@ export async function POST(req: Request) {
     lng?: number;
     villagerLat?: number;
     villagerLng?: number;
+    gpsLat?: number;
+    gpsLng?: number;
     bearing?: number;
     zoom?: number;
     roamMeters?: number;
@@ -189,7 +192,33 @@ export async function POST(req: Request) {
       Number.isFinite(body.villagerLat) && Number.isFinite(body.villagerLng)
         ? { lat: Number(body.villagerLat), lng: Number(body.villagerLng) }
         : undefined;
-    result = await claimSector(id, body.sectorId, housePos, villagerPos);
+    const gpsPos =
+      Number.isFinite(body.gpsLat) && Number.isFinite(body.gpsLng)
+        ? { lat: Number(body.gpsLat), lng: Number(body.gpsLng) }
+        : undefined;
+    result = await claimSector(
+      id,
+      body.sectorId,
+      housePos,
+      villagerPos,
+      gpsPos
+    );
+  } else if (body.action === "place_house") {
+    if (!Number.isFinite(body.lat) || !Number.isFinite(body.lng)) {
+      return withGuestCookie(
+        NextResponse.json({ error: "Pick a house spot" }, { status: 400 }),
+        setCookie
+      );
+    }
+    const villagerPos =
+      Number.isFinite(body.villagerLat) && Number.isFinite(body.villagerLng)
+        ? { lat: Number(body.villagerLat), lng: Number(body.villagerLng) }
+        : undefined;
+    result = await placeHouse(
+      id,
+      { lat: Number(body.lat), lng: Number(body.lng) },
+      villagerPos
+    );
   } else if (body.action === "spawn_find") {
     const lat = Number(body.lat);
     const lng = Number(body.lng);
