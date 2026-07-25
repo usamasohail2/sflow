@@ -1046,15 +1046,16 @@ export function PlayShell() {
 
         <div className="pointer-events-auto flex flex-col items-end gap-1.5">
           <div className="flex items-center gap-1.5 sm:gap-2">
-            <div className="hud-chip px-2.5 py-1.5 sm:px-3">
-              <p className="hud-gold font-mono text-sm font-bold text-[#e8cf8a] sm:text-base">
-                ⛃ {Math.floor(displayGold)}
-              </p>
-              {claimed && (
-                <p className="text-right font-mono text-[8px] text-[var(--ink-faint)]">
-                  +{perTrip}/trip
-                </p>
-              )}
+            <div
+              className="flex h-[31px] items-center gap-1 px-0.5 font-mono text-[11px] font-bold text-[#e8cf8a]"
+              title={claimed ? `${Math.floor(displayGold)} gold · +${perTrip}/trip` : `${Math.floor(displayGold)} gold`}
+            >
+              <span aria-hidden className="text-[13px] leading-none">
+                ⛃
+              </span>
+              <span className="leading-none tabular-nums">
+                {Math.floor(displayGold)}
+              </span>
             </div>
             <button
               type="button"
