@@ -12,9 +12,10 @@ export default function EditPage() {
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [savedMsg, setSavedMsg] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const res = await fetch("/api/sectors");
+    const res = await fetch("/api/sectors", { cache: "no-store" });
     const data = (await res.json()) as { sectors: Sector[] };
     setSectors(data.sectors || []);
   }, []);
@@ -26,6 +27,12 @@ export default function EditPage() {
   const save = async () => {
     setSaving(true);
     setError(null);
+    setSavedMsg(null);
+    if (status !== "authenticated") {
+      setError("Sign in with Google before saving — otherwise nothing is stored.");
+      setSaving(false);
+      return;
+    }
     try {
       const res = await fetch("/api/sectors", {
         method: "PUT",
@@ -37,9 +44,16 @@ export default function EditPage() {
         setError(data.error || "Save failed");
       } else {
         setSectors(data.sectors);
+        setSavedMsg(
+          `Saved permanently · ${data.sectors.length} sector${
+            data.sectors.length === 1 ? "" : "s"
+          }`
+        );
+        // Reload from server to prove round-trip
+        window.setTimeout(() => void load(), 400);
       }
     } catch {
-      setError("Network error");
+      setError("Network error — save did not reach the server");
     } finally {
       setSaving(false);
     }
@@ -55,6 +69,9 @@ export default function EditPage() {
           <span className="font-display text-sm text-[var(--ink)]">
             Define territories
           </span>
+          <span className="hidden font-mono text-[9px] text-[var(--ink-faint)] sm:inline">
+            {sectors.length} loaded · durable storage
+          </span>
         </div>
         {status === "authenticated" && session?.user ? (
           <span className="font-mono text-[10px] text-[var(--sand)]">
@@ -69,9 +86,17 @@ export default function EditPage() {
           {error}
         </p>
       )}
+      {savedMsg && (
+        <p className="border-b border-[var(--field)]/40 bg-[var(--field)]/15 px-4 py-2 text-xs text-[var(--field-bright)]">
+          ✓ {savedMsg}
+        </p>
+      )}
       <SectorEditor
         sectors={sectors}
-        onChange={setSectors}
+        onChange={(next) => {
+          setSectors(next);
+          setSavedMsg(null);
+        }}
         onSave={save}
         saving={saving}
       />
