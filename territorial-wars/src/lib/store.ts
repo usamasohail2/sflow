@@ -1816,7 +1816,7 @@ export async function claimBusinessReview(
     const sector = sectors.find((s) => s.id === me.homeSectorId);
     if (!sector) return { error: "Sector missing" };
     if (
-      !pointInOrNearRing({ lat: input.lat, lng: input.lng }, sector.ring, 40)
+      !pointInOrNearRing({ lat: input.lat, lng: input.lng }, sector.ring, 120)
     ) {
       return { error: "That business is outside your sector" };
     }

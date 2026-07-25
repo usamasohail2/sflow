@@ -945,57 +945,80 @@ export function GameMap({
     });
   }, [spots, me]);
 
-  /** Walking villagers for every settled player (mine + rivals) */
+  /** Walking villagers — one sprite per villager unit (bonus villagers deploy automatically) */
   const villagerMarkers = useMemo(() => {
-    return players
-      .filter(
-        (p) =>
-          p.homeSectorId &&
-          p.villagers > 0 &&
-          (p.house || p.villagerPost)
-      )
-      .map((p) => {
-        const origin = p.villagerPost ?? p.house!;
-        const sector = sectors.find((s) => s.id === p.homeSectorId);
-        const easySpots = spots
-          .filter((s) => s.sectorId === p.homeSectorId && s.kind === "easy")
-          .map((s) => ({ lat: s.lat, lng: s.lng }));
+    const markers: {
+      id: string;
+      playerId: string;
+      name: string;
+      relation: ReturnType<typeof playerRelation>;
+      unitIndex: number;
+      pos: LatLng;
+      digging: boolean;
+      walking: boolean;
+    }[] = [];
 
-        // Shared clock with a per-player offset so loops don't sync perfectly
-        let offset = 0;
-        for (let i = 0; i < p.id.length; i++) offset += p.id.charCodeAt(i);
-        const phase =
-          p.id === me?.id && me
-            ? gatherPhase(me, now)
-            : (((now + offset * 37) % GATHER_TRIP_MS) / GATHER_TRIP_MS);
-        const tripIndex =
-          p.id === me?.id && me
-            ? gatherTripIndex(me, now)
-            : Math.floor((now + offset * 37) / GATHER_TRIP_MS);
+    for (const p of players) {
+      if (!p.homeSectorId || p.villagers <= 0 || (!p.house && !p.villagerPost)) {
+        continue;
+      }
+      const baseOrigin = p.villagerPost ?? p.house!;
+      const sector = sectors.find((s) => s.id === p.homeSectorId);
+      const easySpots = spots
+        .filter((s) => s.sectorId === p.homeSectorId && s.kind === "easy")
+        .map((s) => ({ lat: s.lat, lng: s.lng }));
 
+      let offset = 0;
+      for (let i = 0; i < p.id.length; i++) offset += p.id.charCodeAt(i);
+
+      const basePhase =
+        p.id === me?.id && me
+          ? gatherPhase(me, now)
+          : ((now + offset * 37) % GATHER_TRIP_MS) / GATHER_TRIP_MS;
+      const baseTrip =
+        p.id === me?.id && me
+          ? gatherTripIndex(me, now)
+          : Math.floor((now + offset * 37) / GATHER_TRIP_MS);
+
+      const relation = playerRelation(p, me);
+      const count = Math.max(1, Math.floor(p.villagers));
+
+      for (let u = 0; u < count; u++) {
+        // Stagger each extra villager so they don't stack on the same path
+        const phase = (basePhase + u * 0.31) % 1;
+        const tripIndex = baseTrip + u;
+        const origin =
+          u === 0
+            ? baseOrigin
+            : offsetMeters(
+                baseOrigin,
+                Math.cos(u * 2.1) * (10 + u * 6),
+                Math.sin(u * 1.7) * (10 + u * 6)
+              );
         const target = sector
           ? farmTargetForTrip(
               sector.ring,
               origin,
               easySpots,
-              `${p.id}:${tripIndex}`
+              `${p.id}:${tripIndex}:u${u}`
             )
-          : easySpots[tripIndex % Math.max(1, easySpots.length)] ??
-            offsetMeters(origin, 36, 18);
+          : easySpots[(tripIndex + u) % Math.max(1, easySpots.length)] ??
+            offsetMeters(origin, 36 + u * 8, 18 - u * 5);
 
         const pose = gatherPose(phase);
-        const relation = playerRelation(p, me);
-        return {
-          id: p.id,
+        markers.push({
+          id: `${p.id}-v${u}`,
+          playerId: p.id,
           name: p.name,
           relation,
-          villagers: p.villagers,
+          unitIndex: u,
           pos: walkPosition(origin, target, phase),
-          target,
           digging: pose === "dig",
           walking: pose === "walk",
-        };
-      });
+        });
+      }
+    }
+    return markers;
   }, [players, spots, sectors, me, now]);
 
   // Villager working audio — only audible up close (zoom + distance falloff)
@@ -1814,29 +1837,26 @@ export function GameMap({
                         : `${v.name}'s villager`
                   }
                 >
-                  <span
-                    className={`absolute -top-3.5 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-sm px-1 font-mono text-[8px] ${
-                      v.relation === "self"
-                        ? "bg-[rgba(10,14,18,0.85)] text-[#7ec8ff]"
-                        : v.relation === "ally"
-                          ? "bg-[rgba(10,14,10,0.85)] text-[var(--field-bright)] ring-1 ring-[var(--field)]"
-                          : "bg-[rgba(10,14,10,0.9)] text-[var(--signal-bright)] ring-1 ring-[var(--signal)]"
-                    }`}
-                  >
-                    {topPlayerId === v.id ? "👑 " : ""}
-                    Villager
-                  </span>
+                  {v.unitIndex === 0 && (
+                    <span
+                      className={`absolute -top-3.5 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-sm px-1 font-mono text-[8px] ${
+                        v.relation === "self"
+                          ? "bg-[rgba(10,14,18,0.85)] text-[#7ec8ff]"
+                          : v.relation === "ally"
+                            ? "bg-[rgba(10,14,10,0.85)] text-[var(--field-bright)] ring-1 ring-[var(--field)]"
+                            : "bg-[rgba(10,14,10,0.9)] text-[var(--signal-bright)] ring-1 ring-[var(--signal)]"
+                      }`}
+                    >
+                      {topPlayerId === v.playerId ? "👑 " : ""}
+                      Villager
+                    </span>
+                  )}
                   <VillagerSprite
                     walking={v.walking}
                     digging={v.digging}
                     className="h-10 w-10 drop-shadow-md"
                   />
                   {v.digging && <span className="villager-dirt" aria-hidden />}
-                  {v.villagers > 1 && (
-                    <span className="absolute -right-1 -top-1 rounded-full bg-[var(--surface)] px-1 font-mono text-[9px] text-[var(--field-bright)]">
-                      ×{v.villagers}
-                    </span>
-                  )}
                 </div>
               </Marker>
             ))}
