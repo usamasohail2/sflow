@@ -57,10 +57,10 @@ export const PLAY_ZOOM = 14.4;
 /** Don't pull out past a couple of sectors */
 export const PLAY_MIN_ZOOM = 13.2;
 /**
- * Below this zoom, settlements collapse to a name+dot pin.
- * Houses, villagers, buildings, and resources stay hidden.
+ * At/above this zoom Mapbox 3D buildings read clearly — show houses,
+ * villagers, and settlement detail. Below it: dots + sector economy only.
  */
-export const DETAIL_ZOOM = 13.85;
+export const DETAIL_ZOOM = 15.0;
 /** Street-close ceiling (keeps explore zoom reachable) */
 export const PLAY_MAX_ZOOM = 16.2;
 /** How far (m) you must roam while zoomed before a gem can appear */

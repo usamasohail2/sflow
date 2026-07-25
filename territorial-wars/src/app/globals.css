@@ -501,6 +501,11 @@ button.cameo:not(:disabled):hover {
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
 }
 
+.player-pin-dot-only .player-pin-dot {
+  width: 11px;
+  height: 11px;
+}
+
 .player-pin.is-mine .player-pin-dot {
   background: #5a9a63;
 }

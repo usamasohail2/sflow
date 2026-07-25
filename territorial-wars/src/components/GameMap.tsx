@@ -167,6 +167,13 @@ function playerAnchor(p: PublicPlayer): LatLng | null {
   return b ? { lat: b.lat, lng: b.lng } : null;
 }
 
+/** Compact gold/economy label for overview sector tags */
+function formatEconomy(n: number): string {
+  if (n >= 10_000) return `${Math.round(n / 1000)}k`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(Math.max(0, Math.floor(n)));
+}
+
 /** Walk out → dig at farm site → return to base */
 function walkPosition(house: LatLng, target: LatLng, phase: number): LatLng {
   if (phase < GATHER_WALK_OUT_END) {
@@ -287,24 +294,40 @@ export function GameMap({
     [sectors, me]
   );
 
+  /** Sector economy = total resources farmed by settlers there */
+  const sectorEconomy = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const s of sectors) map.set(s.id, 0);
+    for (const p of players) {
+      if (!p.homeSectorId) continue;
+      map.set(p.homeSectorId, (map.get(p.homeSectorId) || 0) + (p.totalFarmed || 0));
+    }
+    return map;
+  }, [sectors, players]);
+
   const fc = useMemo<FeatureCollection>(
     () => ({
       type: "FeatureCollection",
-      features: sectors.map((s) => ({
-        type: "Feature" as const,
-        id: s.id,
-        properties: {
+      features: sectors.map((s) => {
+        const farmed = sectorEconomy.get(s.id) || 0;
+        return {
+          type: "Feature" as const,
           id: s.id,
-          name: s.name,
-          mine: me?.homeSectorId === s.id ? 1 : 0,
-        },
-        geometry: {
-          type: "Polygon" as const,
-          coordinates: [s.ring],
-        },
-      })),
+          properties: {
+            id: s.id,
+            name: s.name,
+            mine: me?.homeSectorId === s.id ? 1 : 0,
+            economy: farmed,
+            overviewLabel: `${s.name}\n${formatEconomy(farmed)}g`,
+          },
+          geometry: {
+            type: "Polygon" as const,
+            coordinates: [s.ring],
+          },
+        };
+      }),
     }),
-    [sectors, me]
+    [sectors, me, sectorEconomy]
   );
 
   /** Single perimeter line per sector (no hollow band → no double edges) */
@@ -689,20 +712,25 @@ export function GameMap({
               ] as never,
             }}
           />
+          {/* Overview only: sector name + economy (hidden once settlement detail shows) */}
           <Layer
             id="sector-label"
             type="symbol"
             slot="top"
+            maxzoom={DETAIL_ZOOM}
             layout={{
-              "text-field": ["get", "name"],
+              "text-field": ["get", "overviewLabel"],
               "text-size": 13,
+              "text-line-height": 1.15,
               "text-font": ["DIN Pro Medium", "Arial Unicode MS Regular"],
+              "text-allow-overlap": true,
+              "text-ignore-placement": true,
             }}
             paint={{
               "text-color": sectorLabelColor,
               "text-halo-color": "#0c100e",
-              "text-halo-width": 1.2,
-              "text-opacity": exploring ? 0.35 : 1,
+              "text-halo-width": 1.4,
+              "text-opacity": 1,
             }}
           />
         </Source>
@@ -780,7 +808,7 @@ export function GameMap({
           />
         </Source>
 
-        {/* Overview: zoomed-out player pins (dot + name + info) */}
+        {/* Overview: dots only — names/economy live on sector labels */}
         {!showDetail &&
           players
             .filter((p) => p.homeSectorId)
@@ -797,14 +825,6 @@ export function GameMap({
                 Boolean(p.homeSectorId) &&
                 Boolean(me?.homeSectorId) &&
                 !sameSector;
-              const houseUp = Boolean(p.house) && (p.houseHp ?? 0) > 0;
-              const info = [
-                `${p.rockets || 0}🚀`,
-                `${p.gold}g`,
-                !houseUp ? "razed" : null,
-              ]
-                .filter(Boolean)
-                .join(" · ");
               return (
                 <Marker
                   key={`pin-${p.id}`}
@@ -814,9 +834,9 @@ export function GameMap({
                 >
                   <button
                     type="button"
-                    className={`player-pin ${mine ? "is-mine" : "is-rival"} ${
-                      selectedPlayerId === p.id ? "is-selected" : ""
-                    }`}
+                    className={`player-pin player-pin-dot-only ${
+                      mine ? "is-mine" : "is-rival"
+                    } ${selectedPlayerId === p.id ? "is-selected" : ""}`}
                     onClick={(e) => {
                       e.stopPropagation();
                       if (canTarget) onSelectPlayer?.(p.id);
@@ -829,12 +849,9 @@ export function GameMap({
                           ? `${p.name} (same sector — can't attack)`
                           : `Tap to target ${p.name}`
                     }
+                    aria-label={mine ? "You" : p.name}
                   >
                     <span className="player-pin-dot" />
-                    <span className="player-pin-name">
-                      {mine ? "You" : p.name}
-                    </span>
-                    <span className="player-pin-info">{info}</span>
                   </button>
                 </Marker>
               );
@@ -1149,7 +1166,7 @@ export function GameMap({
           )}
           {!showDetail ? (
             <p className="hud-chip px-3 py-1.5 text-center font-mono text-[9px] text-[var(--ink-muted)]">
-              Overview — dots show settlers · zoom in for houses & villagers
+              Overview — sector economy · zoom in for 3D streets & settlements
             </p>
           ) : zoom < EXPLORE_ZOOM ? (
             <p className="hud-chip px-3 py-1.5 text-center font-mono text-[9px] text-[var(--ink-muted)]">
