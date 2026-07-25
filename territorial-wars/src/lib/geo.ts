@@ -62,6 +62,56 @@ export function closeRing(ring: [number, number][]): [number, number][] {
   return [...ring, first];
 }
 
+/**
+ * Shrink a ring toward its centroid by ~insetM meters.
+ * Good enough for convex/near-convex sector rectangles.
+ */
+export function shrinkRing(
+  ring: [number, number][],
+  insetM: number
+): [number, number][] {
+  const closed = closeRing(ring);
+  const pts = closed.slice(0, -1);
+  if (pts.length < 3) return closed;
+
+  let lngSum = 0;
+  let latSum = 0;
+  for (const [lng, lat] of pts) {
+    lngSum += lng;
+    latSum += lat;
+  }
+  const cLng = lngSum / pts.length;
+  const cLat = latSum / pts.length;
+  const cos = Math.cos((cLat * Math.PI) / 180);
+
+  const shrunk = pts.map(([lng, lat]) => {
+    const east = (lng - cLng) * 111_320 * cos;
+    const north = (lat - cLat) * 111_320;
+    const dist = Math.hypot(east, north) || 1;
+    const factor = Math.max(0.08, (dist - insetM) / dist);
+    return [
+      cLng + (east * factor) / (111_320 * cos),
+      cLat + (north * factor) / 111_320,
+    ] as [number, number];
+  });
+  return closeRing(shrunk);
+}
+
+/**
+ * Thin wall band polygon: outer boundary + inset hole.
+ * Extrude this for boundary walls instead of a solid sector block.
+ */
+export function wallBandCoordinates(
+  ring: [number, number][],
+  thicknessM: number
+): [number, number][][] {
+  const outer = closeRing(ring);
+  const inner = shrinkRing(ring, thicknessM);
+  // Hole winding opposite of exterior
+  const hole = [...inner].reverse();
+  return [outer, hole];
+}
+
 export function ringToFeature(
   id: string,
   name: string,

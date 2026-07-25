@@ -25,8 +25,17 @@ import {
   SPAWN_COOLDOWN_MS,
   catalogItem,
 } from "@/lib/gameTypes";
-import { pointInRing } from "@/lib/geo";
+import { pointInRing, wallBandCoordinates } from "@/lib/geo";
 import { distMeters, lerpLatLng, offsetMeters } from "@/lib/mapMath";
+
+/** Hollow perimeter band thickness (meters) */
+const SECTOR_WALL_M = 28;
+/** Stacked extrusions — opaque at the base, fading upward */
+const SECTOR_WALL_STACK = [
+  { id: "sector-wall-low", base: 0, height: 36, opacity: 0.78 },
+  { id: "sector-wall-mid", base: 36, height: 72, opacity: 0.4 },
+  { id: "sector-wall-high", base: 72, height: 120, opacity: 0.14 },
+] as const;
 import { gatherPhase } from "@/lib/rules";
 import {
   HouseSprite,
@@ -266,6 +275,36 @@ export function GameMap({
     }),
     [sectors, me]
   );
+
+  /** Hollow wall bands for extrusion (not solid filled blocks) */
+  const wallFc = useMemo<FeatureCollection>(
+    () => ({
+      type: "FeatureCollection",
+      features: sectors.map((s) => ({
+        type: "Feature" as const,
+        id: `${s.id}-wall`,
+        properties: {
+          id: s.id,
+          name: s.name,
+          mine: me?.homeSectorId === s.id ? 1 : 0,
+        },
+        geometry: {
+          type: "Polygon" as const,
+          coordinates: wallBandCoordinates(s.ring, SECTOR_WALL_M),
+        },
+      })),
+    }),
+    [sectors, me]
+  );
+
+  const sectorWallColor = [
+    "case",
+    ["==", ["get", "mine"], 1],
+    exploring ? "#5fd0ff" : "#7ec89a",
+    ["==", ["get", "id"], selectedId || ""],
+    exploring ? "#ff8a7a" : "#e25a4f",
+    exploring ? "#6aa8c8" : "#c4b089",
+  ] as never;
 
   // Footprint circles for every settlement on the map (+ placement ghost)
   const footprints = useMemo<FeatureCollection>(() => {
@@ -526,30 +565,15 @@ export function GameMap({
         }}
         style={{ width: "100%", height: "100%" }}
       >
+        {/* Invisible hit target — keep sector tap without a filled block */}
         <Source id="sectors" type="geojson" data={fc}>
           <Layer
             id="sector-fill"
             type="fill"
             slot="top"
             paint={{
-              "fill-color": [
-                "case",
-                ["==", ["get", "mine"], 1],
-                "#3d6b45",
-                ["==", ["get", "id"], selectedId || ""],
-                "#e23b2f",
-                "#2a3530",
-              ] as never,
-              "fill-opacity": exploring ? 0.18 : 0.34,
-            }}
-          />
-          <Layer
-            id="sector-line"
-            type="line"
-            slot="top"
-            paint={{
-              "line-color": exploring ? "#7ec8ff" : "#e8ebe4",
-              "line-width": exploring ? 2 : 2.5,
+              "fill-color": "#000000",
+              "fill-opacity": 0.01,
             }}
           />
           <Layer
@@ -568,6 +592,46 @@ export function GameMap({
               "text-opacity": exploring ? 0.35 : 1,
             }}
           />
+        </Source>
+
+        {/* Boundary walls: hollow band + stacked extrusions fading upward */}
+        <Source id="sector-walls" type="geojson" data={wallFc}>
+          <Layer
+            id="sector-wall-glow"
+            type="line"
+            slot="top"
+            paint={{
+              "line-color": sectorWallColor,
+              "line-width": 10,
+              "line-blur": 6,
+              "line-opacity": exploring ? 0.35 : 0.55,
+            }}
+          />
+          <Layer
+            id="sector-wall-base"
+            type="line"
+            slot="top"
+            paint={{
+              "line-color": sectorWallColor,
+              "line-width": exploring ? 2.5 : 3.5,
+              "line-opacity": 0.95,
+            }}
+          />
+          {SECTOR_WALL_STACK.map((band) => (
+            <Layer
+              key={band.id}
+              id={band.id}
+              type="fill-extrusion"
+              slot="top"
+              paint={{
+                "fill-extrusion-color": sectorWallColor,
+                "fill-extrusion-base": band.base,
+                "fill-extrusion-height": band.height,
+                "fill-extrusion-opacity": band.opacity,
+                "fill-extrusion-vertical-gradient": true,
+              }}
+            />
+          ))}
         </Source>
 
         {/* Building footprints (visible when zoomed in a bit) */}
