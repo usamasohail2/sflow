@@ -29,7 +29,7 @@ import {
   SPAWN_COOLDOWN_MS,
   catalogItem,
 } from "@/lib/gameTypes";
-import { pointInRing, wallBandCoordinates } from "@/lib/geo";
+import { closeRing, pointInRing } from "@/lib/geo";
 import {
   distMeters,
   farmTargetForTrip,
@@ -37,15 +37,6 @@ import {
   offsetMeters,
 } from "@/lib/mapMath";
 import { setVillagerWorkLevel, stopVillagerWork } from "@/lib/sound";
-
-/** Hollow perimeter band thickness (meters) */
-const SECTOR_WALL_M = 28;
-/** Stacked extrusions — opaque at the base, fading upward */
-const SECTOR_WALL_STACK = [
-  { id: "sector-wall-low", base: 0, height: 36, opacity: 0.78 },
-  { id: "sector-wall-mid", base: 36, height: 72, opacity: 0.4 },
-  { id: "sector-wall-high", base: 72, height: 120, opacity: 0.14 },
-] as const;
 import {
   GATHER_DIG_END,
   GATHER_WALK_OUT_END,
@@ -316,8 +307,8 @@ export function GameMap({
     [sectors, me]
   );
 
-  /** Hollow wall bands for extrusion (not solid filled blocks) */
-  const wallFc = useMemo<FeatureCollection>(
+  /** Single perimeter line per sector (no hollow band → no double edges) */
+  const wallLineFc = useMemo<FeatureCollection>(
     () => ({
       type: "FeatureCollection",
       features: sectors.map((s) => ({
@@ -329,53 +320,53 @@ export function GameMap({
           mine: me?.homeSectorId === s.id ? 1 : 0,
         },
         geometry: {
-          type: "Polygon" as const,
-          coordinates: wallBandCoordinates(s.ring, SECTOR_WALL_M),
+          type: "LineString" as const,
+          coordinates: closeRing(s.ring),
         },
       })),
     }),
     [sectors, me]
   );
 
-  /** Home = friendly green; everyone else = enemy red; selected tint before settle */
+  /** Home = bright green; rivals = bright coral; selected before settle = gold */
   const settled = Boolean(me?.homeSectorId);
   const sectorWallColor = [
     "case",
     ["==", ["get", "mine"], 1],
-    exploring ? "#5fd0ff" : "#3ecf7a",
+    exploring ? "#7ef0ff" : "#4dff8a",
     ["==", ["get", "id"], selectedId || ""],
     settled
       ? exploring
-        ? "#ff8a7a"
-        : "#ff5a4a"
+        ? "#ff9a7a"
+        : "#ff5e4d"
       : exploring
-        ? "#e8cf8a"
-        : "#c4b089",
+        ? "#ffe08a"
+        : "#ffd060",
     settled
       ? exploring
-        ? "#c45a52"
-        : "#b33a32"
+        ? "#ff7a6e"
+        : "#ff4d3d"
       : exploring
-        ? "#6aa8c8"
-        : "#8a8578",
+        ? "#9ec8e8"
+        : "#d0c4a8",
   ] as never;
 
   const sectorFillColor = [
     "case",
     ["==", ["get", "mine"], 1],
-    "#2f8f55",
+    "#3ddb7a",
     ["==", ["get", "id"], selectedId || ""],
-    settled ? "#c43a30" : "#c4b089",
-    settled ? "#8a2e28" : "#5a564c",
+    settled ? "#ff5a45" : "#ffd060",
+    settled ? "#ff4d3d" : "#8a8578",
   ] as never;
 
   const sectorLabelColor = [
     "case",
     ["==", ["get", "mine"], 1],
-    "#8fe098",
+    "#b8ffd0",
     ["==", ["get", "id"], selectedId || ""],
-    settled ? "#ff9d8a" : "#e8cf8a",
-    settled ? "#e07068" : "#cdd4c5",
+    settled ? "#ffc4b8" : "#ffe6a0",
+    settled ? "#ffb0a4" : "#f0f2ea",
   ] as never;
 
   // Footprint circles for every settlement on the map (+ placement ghost)
@@ -656,7 +647,7 @@ export function GameMap({
             ) => void;
           };
           try {
-            m.setConfigProperty("basemap", "lightPreset", "dusk");
+            m.setConfigProperty("basemap", "lightPreset", "dawn");
             m.setConfigProperty("basemap", "show3dObjects", true);
           } catch {
             /* older style fallback — ignore */
@@ -691,10 +682,10 @@ export function GameMap({
               "fill-opacity": [
                 "case",
                 ["==", ["get", "mine"], 1],
-                exploring ? 0.1 : 0.16,
+                exploring ? 0.12 : 0.2,
                 ["==", ["get", "id"], selectedId || ""],
-                exploring ? 0.08 : 0.14,
-                settled ? (exploring ? 0.06 : 0.1) : 0.02,
+                exploring ? 0.1 : 0.16,
+                settled ? (exploring ? 0.08 : 0.12) : 0.03,
               ] as never,
             }}
           />
@@ -716,26 +707,55 @@ export function GameMap({
           />
         </Source>
 
-        {/* Boundary walls: hollow band + stacked extrusions fading upward */}
-        <Source id="sector-walls" type="geojson" data={wallFc}>
+        {/* Single perimeter wall: soft glow + crisp stroke (gradient feel) */}
+        <Source id="sector-walls" type="geojson" data={wallLineFc}>
           <Layer
-            id="sector-wall-glow"
+            id="sector-wall-glow-outer"
             type="line"
             slot="top"
+            layout={{
+              "line-join": "round",
+              "line-cap": "round",
+            }}
             paint={{
               "line-color": sectorWallColor,
               "line-width": [
                 "case",
                 ["==", ["get", "mine"], 1],
-                14,
-                9,
+                16,
+                12,
               ] as never,
-              "line-blur": 6,
+              "line-blur": 8,
               "line-opacity": [
                 "case",
                 ["==", ["get", "mine"], 1],
-                exploring ? 0.45 : 0.7,
-                exploring ? 0.3 : 0.5,
+                exploring ? 0.35 : 0.55,
+                exploring ? 0.25 : 0.4,
+              ] as never,
+            }}
+          />
+          <Layer
+            id="sector-wall-glow"
+            type="line"
+            slot="top"
+            layout={{
+              "line-join": "round",
+              "line-cap": "round",
+            }}
+            paint={{
+              "line-color": sectorWallColor,
+              "line-width": [
+                "case",
+                ["==", ["get", "mine"], 1],
+                8,
+                6,
+              ] as never,
+              "line-blur": 3,
+              "line-opacity": [
+                "case",
+                ["==", ["get", "mine"], 1],
+                exploring ? 0.55 : 0.8,
+                exploring ? 0.4 : 0.65,
               ] as never,
             }}
           />
@@ -743,42 +763,21 @@ export function GameMap({
             id="sector-wall-base"
             type="line"
             slot="top"
+            layout={{
+              "line-join": "round",
+              "line-cap": "round",
+            }}
             paint={{
               "line-color": sectorWallColor,
               "line-width": [
                 "case",
                 ["==", ["get", "mine"], 1],
-                exploring ? 3.5 : 4.5,
-                exploring ? 2.2 : 3.2,
+                exploring ? 2.5 : 3.5,
+                exploring ? 2 : 2.8,
               ] as never,
-              "line-opacity": 0.95,
+              "line-opacity": 0.98,
             }}
           />
-          {SECTOR_WALL_STACK.map((band) => (
-            <Layer
-              key={band.id}
-              id={band.id}
-              type="fill-extrusion"
-              slot="top"
-              paint={{
-                "fill-extrusion-color": sectorWallColor,
-                "fill-extrusion-base": band.base,
-                "fill-extrusion-height": [
-                  "case",
-                  ["==", ["get", "mine"], 1],
-                  band.height + 12,
-                  band.height,
-                ] as never,
-                "fill-extrusion-opacity": [
-                  "case",
-                  ["==", ["get", "mine"], 1],
-                  Math.min(0.92, band.opacity + 0.08),
-                  band.opacity,
-                ] as never,
-                "fill-extrusion-vertical-gradient": true,
-              }}
-            />
-          ))}
         </Source>
 
         {/* Overview: zoomed-out player pins (dot + name + info) */}
