@@ -431,6 +431,77 @@ button.cameo:not(:disabled):hover {
   transition: width 0.6s ease;
 }
 
+/* Zoomed-out player pin — minimal dot + name + info */
+.player-pin {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.55));
+}
+
+.player-pin-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 9999px;
+  border: 1.5px solid rgba(232, 235, 228, 0.92);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+
+.player-pin.is-mine .player-pin-dot {
+  background: #5a9a63;
+}
+
+.player-pin.is-rival .player-pin-dot {
+  background: #e23b2f;
+}
+
+.player-pin.is-selected .player-pin-dot {
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.35),
+    0 0 0 3px rgba(196, 176, 137, 0.85);
+}
+
+.player-pin-name {
+  max-width: 7.5rem;
+  padding: 0 4px;
+  border-radius: 2px;
+  background: rgba(10, 14, 10, 0.88);
+  color: #e8ebe4;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.player-pin.is-mine .player-pin-name {
+  color: #8fe098;
+}
+
+.player-pin.is-rival .player-pin-name {
+  color: #ff9d8a;
+}
+
+.player-pin-info {
+  padding: 0 3px;
+  border-radius: 2px;
+  background: rgba(10, 14, 10, 0.72);
+  color: #a8b09c;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 8px;
+  letter-spacing: 0.03em;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
 /* GPS "you are here" pin during sector selection */
 .you-are-here {
   position: relative;

@@ -15,6 +15,7 @@ import type {
   Sector,
 } from "@/lib/gameTypes";
 import {
+  DETAIL_ZOOM,
   EXPLORE_ZOOM,
   GATHER_TRIP_MS,
   GEM_META,
@@ -157,6 +158,14 @@ function BuildingSprite({ type }: { type: Building["type"] }) {
   return <WellSprite className="h-9 w-10 drop-shadow-md" />;
 }
 
+/** Anchor for overview pins when house/villager detail is hidden */
+function playerAnchor(p: PublicPlayer): LatLng | null {
+  if (p.house) return p.house;
+  if (p.villagerPost) return p.villagerPost;
+  const b = p.buildings[0];
+  return b ? { lat: b.lat, lng: b.lng } : null;
+}
+
 /** Outbound 0–0.45, gather pause 0.45–0.55, return 0.55–1 */
 function walkPosition(house: LatLng, target: LatLng, phase: number): LatLng {
   if (phase < 0.45) return lerpLatLng(house, target, phase / 0.45);
@@ -205,6 +214,7 @@ export function GameMap({
 }: Props) {
   const mapRef = useRef<MapRef>(null);
   const [zoom, setZoom] = useState(PLAY_ZOOM);
+  const showDetail = zoom >= DETAIL_ZOOM;
   const [now, setNow] = useState(() => Date.now());
   const [roamMeters, setRoamMeters] = useState(0);
   const [exploreMs, setExploreMs] = useState(0);
@@ -411,7 +421,7 @@ export function GameMap({
   // Villager working audio — only audible up close (zoom + distance falloff)
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || villagerMarkers.length === 0) {
+    if (!showDetail || !map || villagerMarkers.length === 0) {
       stopVillagerWork();
       return;
     }
@@ -426,7 +436,7 @@ export function GameMap({
     const distFactor = Math.max(0, 1 - Math.max(0, nearest - 60) / 260);
     const zoomFactor = Math.max(0, Math.min(1, (zoom - 14.6) / 1.2));
     setVillagerWorkLevel(distFactor * zoomFactor);
-  }, [villagerMarkers, zoom]);
+  }, [villagerMarkers, zoom, showDetail]);
 
   useEffect(() => () => stopVillagerWork(), []);
 
@@ -667,231 +677,290 @@ export function GameMap({
           ))}
         </Source>
 
-        {/* Building footprints (visible when zoomed in a bit) */}
-        {zoom >= 13.4 && (
-          <Source id="footprints" type="geojson" data={footprints}>
-            <Layer
-              id="footprint-fill"
-              type="fill"
-              slot="top"
-              paint={{
-                "fill-color": [
-                  "case",
-                  ["==", ["get", "ghost"], 1],
-                  ["case", ["==", ["get", "ok"], 1], "#5a9a63", "#e23b2f"],
-                  ["==", ["get", "mine"], 1],
-                  "#5a9a63",
-                  "#e23b2f",
-                ] as never,
-                "fill-opacity": [
-                  "case",
-                  ["==", ["get", "ghost"], 1],
-                  0.3,
-                  0.1,
-                ] as never,
-              }}
-            />
-            <Layer
-              id="footprint-line"
-              type="line"
-              slot="top"
-              paint={{
-                "line-color": [
-                  "case",
-                  ["==", ["get", "ghost"], 1],
-                  ["case", ["==", ["get", "ok"], 1], "#8fe098", "#ff5245"],
-                  ["==", ["get", "mine"], 1],
-                  "#5a9a63",
-                  "#e23b2f",
-                ] as never,
-                "line-width": [
-                  "case",
-                  ["==", ["get", "ghost"], 1],
-                  2,
-                  1,
-                ] as never,
-                "line-dasharray": [2, 1.5] as never,
-              }}
-            />
-          </Source>
-        )}
-
-        {/* All settlements: houses + buildings (mine and rivals) */}
-        {players
-          .filter((p) => p.homeSectorId && p.house)
-          .map((p) => (
-            <Marker
-              key={`house-${p.id}`}
-              longitude={p.house!.lng}
-              latitude={p.house!.lat}
-              anchor="bottom"
-            >
-              <button
-                type="button"
-                className={`relative flex flex-col items-center bg-transparent p-0 ${
-                  selectedPlayerId === p.id ? "ring-2 ring-[var(--sand)] rounded-sm" : ""
-                }`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  // Only houses open attack UI — sector taps stay quiet
-                  if (
-                    p.id !== me?.id &&
-                    p.homeSectorId &&
-                    me?.homeSectorId &&
-                    p.homeSectorId !== me.homeSectorId
-                  ) {
-                    onSelectPlayer?.(p.id);
-                  } else {
-                    onSelectPlayer?.(null);
-                  }
-                }}
-                title={
-                  p.id === me?.id
-                    ? "Your house"
-                    : p.homeSectorId &&
-                        me?.homeSectorId &&
-                        p.homeSectorId === me.homeSectorId
-                      ? `${p.name} (same sector — can't attack)`
-                      : `Tap to target ${p.name}`
-                }
-              >
-                <HouseSprite className="h-10 w-11 drop-shadow-md" />
-                <HpBar
-                  hp={p.houseHp ?? HOUSE_MAX_HP}
-                  maxHp={HOUSE_MAX_HP}
-                  width={38}
-                />
-              </button>
-            </Marker>
-          ))}
-        {players
-          .filter((p) => p.homeSectorId)
-          .flatMap((p) =>
-            p.buildings.map((b) => {
-              const maxHp = catalogItem(b.type).hp;
+        {/* Overview: zoomed-out player pins (dot + name + info) */}
+        {!showDetail &&
+          players
+            .filter((p) => p.homeSectorId)
+            .map((p) => {
+              const at = playerAnchor(p);
+              if (!at) return null;
+              const mine = p.id === me?.id;
+              const sameSector =
+                Boolean(p.homeSectorId) &&
+                Boolean(me?.homeSectorId) &&
+                p.homeSectorId === me?.homeSectorId;
+              const canTarget =
+                !mine &&
+                Boolean(p.homeSectorId) &&
+                Boolean(me?.homeSectorId) &&
+                !sameSector;
+              const houseUp = Boolean(p.house) && (p.houseHp ?? 0) > 0;
+              const info = [
+                `${p.rockets || 0}🚀`,
+                `${p.gold}g`,
+                !houseUp ? "razed" : null,
+              ]
+                .filter(Boolean)
+                .join(" · ");
               return (
                 <Marker
-                  key={b.id}
-                  longitude={b.lng}
-                  latitude={b.lat}
-                  anchor="bottom"
+                  key={`pin-${p.id}`}
+                  longitude={at.lng}
+                  latitude={at.lat}
+                  anchor="center"
                 >
-                  <div className="relative flex flex-col items-center">
-                    <BuildingSprite type={b.type} />
-                    <HpBar hp={b.hp ?? maxHp} maxHp={maxHp} width={38} />
-                    {p.id !== me?.id && (
-                      <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-[var(--signal-bright)] ring-1 ring-[var(--surface)]" />
-                    )}
-                  </div>
+                  <button
+                    type="button"
+                    className={`player-pin ${mine ? "is-mine" : "is-rival"} ${
+                      selectedPlayerId === p.id ? "is-selected" : ""
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (canTarget) onSelectPlayer?.(p.id);
+                      else onSelectPlayer?.(null);
+                    }}
+                    title={
+                      mine
+                        ? "You"
+                        : sameSector
+                          ? `${p.name} (same sector — can't attack)`
+                          : `Tap to target ${p.name}`
+                    }
+                  >
+                    <span className="player-pin-dot" />
+                    <span className="player-pin-name">
+                      {mine ? "You" : p.name}
+                    </span>
+                    <span className="player-pin-info">{info}</span>
+                  </button>
                 </Marker>
               );
-            })
-          )}
+            })}
 
-        {/* Rocket arsenal stockpile (mine + rivals) */}
-        {players
-          .filter((p) => p.homeSectorId && p.house && (p.rockets || 0) > 0)
-          .map((p) => {
-            const pos = offsetMeters(p.house!, 26, -12);
-            return (
+        {/* Detail: footprints, houses, buildings, villagers, resources */}
+        {showDetail && (
+          <>
+            <Source id="footprints" type="geojson" data={footprints}>
+              <Layer
+                id="footprint-fill"
+                type="fill"
+                slot="top"
+                paint={{
+                  "fill-color": [
+                    "case",
+                    ["==", ["get", "ghost"], 1],
+                    ["case", ["==", ["get", "ok"], 1], "#5a9a63", "#e23b2f"],
+                    ["==", ["get", "mine"], 1],
+                    "#5a9a63",
+                    "#e23b2f",
+                  ] as never,
+                  "fill-opacity": [
+                    "case",
+                    ["==", ["get", "ghost"], 1],
+                    0.3,
+                    0.1,
+                  ] as never,
+                }}
+              />
+              <Layer
+                id="footprint-line"
+                type="line"
+                slot="top"
+                paint={{
+                  "line-color": [
+                    "case",
+                    ["==", ["get", "ghost"], 1],
+                    ["case", ["==", ["get", "ok"], 1], "#8fe098", "#ff5245"],
+                    ["==", ["get", "mine"], 1],
+                    "#5a9a63",
+                    "#e23b2f",
+                  ] as never,
+                  "line-width": [
+                    "case",
+                    ["==", ["get", "ghost"], 1],
+                    2,
+                    1,
+                  ] as never,
+                  "line-dasharray": [2, 1.5] as never,
+                }}
+              />
+            </Source>
+
+            {players
+              .filter((p) => p.homeSectorId && p.house)
+              .map((p) => (
+                <Marker
+                  key={`house-${p.id}`}
+                  longitude={p.house!.lng}
+                  latitude={p.house!.lat}
+                  anchor="bottom"
+                >
+                  <button
+                    type="button"
+                    className={`relative flex flex-col items-center bg-transparent p-0 ${
+                      selectedPlayerId === p.id
+                        ? "ring-2 ring-[var(--sand)] rounded-sm"
+                        : ""
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (
+                        p.id !== me?.id &&
+                        p.homeSectorId &&
+                        me?.homeSectorId &&
+                        p.homeSectorId !== me.homeSectorId
+                      ) {
+                        onSelectPlayer?.(p.id);
+                      } else {
+                        onSelectPlayer?.(null);
+                      }
+                    }}
+                    title={
+                      p.id === me?.id
+                        ? "Your house"
+                        : p.homeSectorId &&
+                            me?.homeSectorId &&
+                            p.homeSectorId === me.homeSectorId
+                          ? `${p.name} (same sector — can't attack)`
+                          : `Tap to target ${p.name}`
+                    }
+                  >
+                    <HouseSprite className="h-10 w-11 drop-shadow-md" />
+                    <HpBar
+                      hp={p.houseHp ?? HOUSE_MAX_HP}
+                      maxHp={HOUSE_MAX_HP}
+                      width={38}
+                    />
+                  </button>
+                </Marker>
+              ))}
+
+            {players
+              .filter((p) => p.homeSectorId)
+              .flatMap((p) =>
+                p.buildings.map((b) => {
+                  const maxHp = catalogItem(b.type).hp;
+                  return (
+                    <Marker
+                      key={b.id}
+                      longitude={b.lng}
+                      latitude={b.lat}
+                      anchor="bottom"
+                    >
+                      <div className="relative flex flex-col items-center">
+                        <BuildingSprite type={b.type} />
+                        <HpBar hp={b.hp ?? maxHp} maxHp={maxHp} width={38} />
+                        {p.id !== me?.id && (
+                          <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-[var(--signal-bright)] ring-1 ring-[var(--surface)]" />
+                        )}
+                      </div>
+                    </Marker>
+                  );
+                })
+              )}
+
+            {players
+              .filter((p) => p.homeSectorId && p.house && (p.rockets || 0) > 0)
+              .map((p) => {
+                const pos = offsetMeters(p.house!, 26, -12);
+                return (
+                  <Marker
+                    key={`rockets-${p.id}`}
+                    longitude={pos.lng}
+                    latitude={pos.lat}
+                    anchor="bottom"
+                  >
+                    <div className="relative flex flex-col items-center">
+                      <RocketSprite className="h-8 w-8" />
+                      <HpBar
+                        hp={p.rockets}
+                        maxHp={Math.max(p.peakRockets || 0, p.rockets)}
+                        width={30}
+                      />
+                      <span className="absolute -right-1.5 -top-1 rounded-full bg-[var(--surface)] px-1 font-mono text-[9px] text-[#ff9d5a]">
+                        ×{p.rockets}
+                      </span>
+                    </div>
+                  </Marker>
+                );
+              })}
+
+            {mySpots
+              .filter((s) => s.kind === "easy")
+              .map((s) => (
+                <Marker
+                  key={s.id}
+                  longitude={s.lng}
+                  latitude={s.lat}
+                  anchor="bottom"
+                >
+                  <ResourceNode gem={s.gem || "wood"} size={30} pulse />
+                </Marker>
+              ))}
+
+            {mySpots
+              .filter((s) => s.kind === "hidden")
+              .map((s) => {
+                const ready = s.availableAt <= now;
+                const gem = s.gem || "diamond";
+                return (
+                  <Marker
+                    key={s.id}
+                    longitude={s.lng}
+                    latitude={s.lat}
+                    anchor="center"
+                  >
+                    <ResourceNode
+                      gem={gem}
+                      size={ready ? 40 : 32}
+                      depleted={!ready}
+                      pulse={ready}
+                      title={
+                        ready
+                          ? `${GEM_META[gem].label} — tap to collect`
+                          : `${GEM_META[gem].label} refilling…`
+                      }
+                      onClick={() => {
+                        if (ready) onCollectHidden?.(s.id);
+                      }}
+                    />
+                  </Marker>
+                );
+              })}
+
+            {villagerMarkers.map((v) => (
               <Marker
-                key={`rockets-${p.id}`}
-                longitude={pos.lng}
-                latitude={pos.lat}
+                key={`villager-${v.id}`}
+                longitude={v.pos.lng}
+                latitude={v.pos.lat}
                 anchor="bottom"
               >
-                <div className="relative flex flex-col items-center">
-                  <RocketSprite className="h-8 w-8" />
-                  <HpBar
-                    hp={p.rockets}
-                    maxHp={Math.max(p.peakRockets || 0, p.rockets)}
-                    width={30}
-                  />
-                  <span className="absolute -right-1.5 -top-1 rounded-full bg-[var(--surface)] px-1 font-mono text-[9px] text-[#ff9d5a]">
-                    ×{p.rockets}
+                <div
+                  className={`relative ${v.mine ? "" : "rival-villager"}`}
+                  title={`${v.name}'s villager`}
+                >
+                  <span
+                    className={`absolute -top-3.5 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-sm px-1 font-mono text-[8px] ${
+                      v.mine
+                        ? "bg-[rgba(10,14,10,0.85)] text-[var(--field-bright)]"
+                        : "bg-[rgba(10,14,10,0.9)] text-[var(--signal-bright)] ring-1 ring-[var(--signal)]"
+                    }`}
+                  >
+                    {v.mine ? "You" : v.name}
                   </span>
+                  <VillagerSprite walking className="h-10 w-10 drop-shadow-md" />
+                  {v.villagers > 1 && (
+                    <span className="absolute -right-1 -top-1 rounded-full bg-[var(--surface)] px-1 font-mono text-[9px] text-[var(--field-bright)]">
+                      ×{v.villagers}
+                    </span>
+                  )}
                 </div>
               </Marker>
-            );
-          })}
+            ))}
+          </>
+        )}
 
-        {/* Easy resources near house — trees & rocks */}
-        {mySpots
-          .filter((s) => s.kind === "easy")
-          .map((s) => (
-            <Marker
-              key={s.id}
-              longitude={s.lng}
-              latitude={s.lat}
-              anchor="bottom"
-            >
-              <ResourceNode gem={s.gem || "wood"} size={30} pulse />
-            </Marker>
-          ))}
-
-        {/* Roam-found gems */}
-        {mySpots
-          .filter((s) => s.kind === "hidden")
-          .map((s) => {
-            const ready = s.availableAt <= now;
-            const gem = s.gem || "diamond";
-            return (
-              <Marker
-                key={s.id}
-                longitude={s.lng}
-                latitude={s.lat}
-                anchor="center"
-              >
-                <ResourceNode
-                  gem={gem}
-                  size={ready ? 40 : 32}
-                  depleted={!ready}
-                  pulse={ready}
-                  title={
-                    ready
-                      ? `${GEM_META[gem].label} — tap to collect`
-                      : `${GEM_META[gem].label} refilling…`
-                  }
-                  onClick={() => {
-                    if (ready) onCollectHidden?.(s.id);
-                  }}
-                />
-              </Marker>
-            );
-          })}
-
-        {/* Walking villagers — every settler (mine + rivals) */}
-        {villagerMarkers.map((v) => (
-          <Marker
-            key={`villager-${v.id}`}
-            longitude={v.pos.lng}
-            latitude={v.pos.lat}
-            anchor="bottom"
-          >
-            <div
-              className={`relative ${v.mine ? "" : "rival-villager"}`}
-              title={`${v.name}'s villager`}
-            >
-              <span
-                className={`absolute -top-3.5 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-sm px-1 font-mono text-[8px] ${
-                  v.mine
-                    ? "bg-[rgba(10,14,10,0.85)] text-[var(--field-bright)]"
-                    : "bg-[rgba(10,14,10,0.9)] text-[var(--signal-bright)] ring-1 ring-[var(--signal)]"
-                }`}
-              >
-                {v.mine ? "You" : v.name}
-              </span>
-              <VillagerSprite walking className="h-10 w-10 drop-shadow-md" />
-              {v.villagers > 1 && (
-                <span className="absolute -right-1 -top-1 rounded-full bg-[var(--surface)] px-1 font-mono text-[9px] text-[var(--field-bright)]">
-                  ×{v.villagers}
-                </span>
-              )}
-            </div>
-          </Marker>
-        ))}
-
-        {/* Pending house during claim flow */}
+        {/* Pending house during claim flow — always visible */}
         {previewHouse && (
           <Marker
             longitude={previewHouse.lng}
