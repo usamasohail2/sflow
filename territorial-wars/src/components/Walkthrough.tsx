@@ -9,8 +9,8 @@ import {
 } from "react";
 import { AZAD_ARENA_NAME } from "@/lib/gameTypes";
 
-/** Bumped so returning players see the off-map / Azad settle path */
-export const WALKTHROUGH_KEY = "itw_walkthrough_v3";
+/** Bumped: tips run after settle only (location setup is self-guided) */
+export const WALKTHROUGH_KEY = "itw_walkthrough_v4";
 
 export type GuidePhase =
   | "welcome"
@@ -232,7 +232,7 @@ export function Walkthrough({ open, onClose, ctx }: Props) {
   const [tick, setTick] = useState(0);
   const startedRef = useRef(false);
 
-  // Fresh run each time the tour opens
+  // Fresh run each time the tour opens — prefer post-settle tips
   useEffect(() => {
     if (!open) {
       startedRef.current = false;
@@ -240,7 +240,7 @@ export function Walkthrough({ open, onClose, ctx }: Props) {
     }
     if (startedRef.current) return;
     startedRef.current = true;
-    setPhase(ctx.claimed ? "tips-gather" : "welcome");
+    setPhase(ctx.claimed ? "live" : "welcome");
     setTick((t) => t + 1);
   }, [open, ctx.claimed]);
 
@@ -491,6 +491,7 @@ export function clearWalkthroughDone(): void {
   try {
     window.localStorage.removeItem(WALKTHROUGH_KEY);
     // Clear prior keys too
+    window.localStorage.removeItem("itw_walkthrough_v3");
     window.localStorage.removeItem("itw_walkthrough_v2");
     window.localStorage.removeItem("itw_walkthrough_v1");
   } catch {

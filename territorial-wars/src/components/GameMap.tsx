@@ -206,6 +206,9 @@ type Props = {
   onCameraReport?: (camera: { lat: number; lng: number }) => void;
   selectedRazeBuildingId?: string | null;
   onPlace?: (lat: number, lng: number) => void;
+  /** Pre-settle: tap map to drop a location pin when GPS is unavailable */
+  pinDropActive?: boolean;
+  onDropPin?: (lat: number, lng: number) => void;
   onSpawnFind?: (payload: {
     lat: number;
     lng: number;
@@ -315,6 +318,8 @@ export function GameMap({
   onSelectShovel,
   selectedRazeBuildingId = null,
   onPlace,
+  pinDropActive = false,
+  onDropPin,
   onSpawnFind,
   onCollectHidden,
   claimingSpotIds = [],
@@ -544,10 +549,12 @@ export function GameMap({
     });
   }, [userLocation, introActive]);
 
-  // Fly the camera to a selected sector (leaderboard / settle picker)
+  // Fly the camera to a selected sector (leaderboard / settled home)
+  // Skip while unsettled if a GPS pin is showing — pin is the truth.
   useEffect(() => {
     if (introActive) return;
     if (!selectedId) return;
+    if (!me?.homeSectorId && userLocation) return;
     const sector = sectors.find((s) => s.id === selectedId);
     if (!sector) return;
     const map = mapRef.current;
@@ -566,7 +573,7 @@ export function GameMap({
       essential: true,
     });
     // sectorFocus lets the parent re-fly when the same sector is tapped again
-  }, [selectedId, sectorFocus, introActive]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedId, sectorFocus, introActive, me?.homeSectorId, userLocation]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Re-center on GPS when parent bumps userLocationFocus
   useEffect(() => {
@@ -1070,7 +1077,13 @@ export function GameMap({
           }
           setMapReady(true);
         }}
-        cursor={introActive ? "default" : placing ? "crosshair" : "grab"}
+        cursor={
+          introActive
+            ? "default"
+            : placing || pinDropActive
+              ? "crosshair"
+              : "grab"
+        }
         onMove={onMove}
         onMouseMove={(e: MapMouseEvent) => {
           if (placing) {
@@ -1080,6 +1093,10 @@ export function GameMap({
         onClick={(e: MapMouseEvent) => {
           if (placing && onPlace) {
             onPlace(e.lngLat.lat, e.lngLat.lng);
+            return;
+          }
+          if (pinDropActive && onDropPin) {
+            onDropPin(e.lngLat.lat, e.lngLat.lng);
             return;
           }
 
