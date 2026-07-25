@@ -20,7 +20,6 @@ import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 import { PublicChat } from "@/components/PublicChat";
 import {
   Walkthrough,
-  clearWalkthroughDone,
   readWalkthroughDone,
 } from "@/components/Walkthrough";
 import { useMapPresence } from "@/hooks/useMapPresence";
@@ -557,7 +556,6 @@ export function PlayShell() {
   const [showRanks, setShowRanks] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
-  const [showPlayers, setShowPlayers] = useState(false);
   const [showBattles, setShowBattles] = useState(false);
   const [showWalkthrough, setShowWalkthrough] = useState(false);
   const [placing, setPlacing] = useState<Placing | null>(null);
@@ -1447,22 +1445,6 @@ export function PlayShell() {
     lockLocation(center.lat, center.lng, { keepManual: true });
   };
 
-  /** Demo-only: skip real GPS and treat the sector center as your location */
-  const bypassGpsForSector = (sectorId: string) => {
-    const sector = snap?.sectors.find((s) => s.id === sectorId);
-    if (!sector) return;
-    const center = ringCentroid(sector.ring);
-    lockLocation(center.lat, center.lng);
-    showToast(`Demo: GPS bypassed for ${sector.name}`);
-  };
-
-  /** Demo-only: treat current pin (or city center) as Azad GPS */
-  const bypassGpsForAzad = () => {
-    const center = liveLocation ?? { lat: 33.71, lng: 73.045 };
-    lockLocation(center.lat, center.lng, { forceAzad: true });
-    showToast(`Demo: GPS bypassed for ${AZAD_ARENA_NAME}`);
-  };
-
   // Audio: Volt-style UI clicks/hovers + unlock / resume music pref
   useEffect(() => {
     installUiSounds();
@@ -1749,33 +1731,6 @@ export function PlayShell() {
   /** First-time settle: bottom tiles drive house → villager one by one */
   const isSettlePlacing = Boolean(settleSector && !claimed);
 
-  const switchPlayer = async (targetId?: string) => {
-    // Force re-prime of battle events for the next identity
-    meIdRef.current = null;
-    eventsPrimed.current = false;
-    seenEvents.current = new Set();
-    setBattleSummary(null);
-    const data = await act("switch_player", targetId ? { targetId } : {});
-    if (data) {
-      setShowPlayers(false);
-      setPlacing(null);
-      setPendingHouse(null);
-      setSettleSector(null);
-      setMarch(null);
-      const nextMe = (data as GameSnapshot).me;
-      rememberIdentity(nextMe?.id);
-      const home = nextMe?.homeSectorId;
-      setSelectedId(home && !isAzadHomeId(home) ? home : null);
-      setAzadMode(Boolean(home && isAzadHomeId(home)));
-      setGpsFix(null);
-      setLiveLocation(null);
-      setLocStatus("idle");
-      setPickingPin(false);
-      tipsArmed.current = false;
-      showToast(`Now playing as ${nextMe?.name ?? "new settler"}`);
-    }
-  };
-
   const dismissBattle = useCallback(() => {
     writeBattleAck(Date.now());
     setBattleSummary(null);
@@ -1883,9 +1838,20 @@ export function PlayShell() {
     }, remaining);
   };
 
+  /** Prefer the public wars host so shared links never point at a Vercel preview */
+  const inviteOrigin = (() => {
+    const env = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "");
+    if (env) return env;
+    if (typeof window === "undefined") return "";
+    const origin = window.location.origin;
+    if (/vercel\.app$/i.test(window.location.hostname)) {
+      return "https://www.wars.usama.fun";
+    }
+    return origin;
+  })();
   const inviteLink =
-    typeof window !== "undefined" && me?.inviteCode
-      ? `${window.location.origin}/play?invite=${me.inviteCode}`
+    inviteOrigin && me?.inviteCode
+      ? `${inviteOrigin}/play?invite=${encodeURIComponent(me.inviteCode)}`
       : "";
 
   const perTrip =
@@ -2182,91 +2148,11 @@ export function PlayShell() {
     setShowInvite(false);
     setShowBattles(false);
     setShowRanks(false);
-    setShowPlayers(false);
     if (!claimed) {
       showToast("Settle first — tips open after your village is live");
       return;
     }
     setShowWalkthrough(true);
-  };
-
-  const clearLocalSettleState = () => {
-    clearWalkthroughDone();
-    tipsArmed.current = false;
-    pinDropAzad.current = false;
-    setShowWalkthrough(false);
-    setPlacing(null);
-    setPendingHouse(null);
-    setSettleSector(null);
-    setGpsFix(null);
-    setLiveLocation(null);
-    setAzadMode(false);
-    setLocStatus("idle");
-    setManualMode(false);
-    setPickingPin(false);
-    setSelectedId(null);
-    setSelectedPlayerId(null);
-    setRazeTarget(null);
-    lastGoodMe.current = null;
-    settleGuardUntil.current = 0;
-  };
-
-  /** Wipe settlement so GPS / settle can be tested from scratch */
-  const resetMyProgress = async () => {
-    const ok = window.confirm(
-      "Remove your village data and start over?\n\nYou’ll go back to the location setup screen. Name and invite code are kept."
-    );
-    if (!ok) return;
-    setShowMenu(false);
-    clearLocalSettleState();
-    const data = await act(
-      "reset_progress",
-      {},
-      "Removing your progress…"
-    );
-    if (!data) return;
-    showToast("Progress cleared — share location to settle again");
-  };
-
-  const startTutorialTest = async () => {
-    setShowMenu(false);
-    clearLocalSettleState();
-    const data = await act(
-      "begin_tutorial_test",
-      {},
-      "Starting tutorial test…"
-    );
-    if (!data) return;
-    showToast("Tutorial test — find location or pick a sector");
-  };
-
-  const stopTutorialTest = async () => {
-    setShowWalkthrough(false);
-    setPlacing(null);
-    setPendingHouse(null);
-    setSettleSector(null);
-    setGpsFix(null);
-    setLiveLocation(null);
-    setAzadMode(false);
-    setLocStatus("idle");
-    setManualMode(false);
-    setPickingPin(false);
-    const data = await act(
-      "end_tutorial_test",
-      {},
-      "Restoring your account…"
-    );
-    if (!data) return;
-    lastGoodMe.current = (data as GameSnapshot).me;
-    const nextMe = (data as GameSnapshot).me;
-    const home = nextMe?.homeSectorId;
-    setSelectedId(
-      home && !isAzadHomeId(home)
-        ? home
-        : (data as GameSnapshot).sectors[0]?.id || null
-    );
-    setAzadMode(Boolean(home && isAzadHomeId(home)));
-    showToast("Tutorial test ended — account restored");
   };
 
   return (
@@ -2409,7 +2295,6 @@ export function PlayShell() {
                 setShowRanks(false);
                 setShowMissions(false);
                 setShowInvite(false);
-                setShowPlayers(false);
               }}
               className={`hud-chip px-2.5 py-1.5 font-mono text-[11px] sm:px-3 ${
                 showActivity
@@ -2442,7 +2327,6 @@ export function PlayShell() {
                   setShowBattles(false);
                   setShowRanks(false);
                   setShowMissions(false);
-                  setShowPlayers(false);
                 }}
                 className={`hud-chip px-2.5 py-1.5 font-mono text-[11px] sm:px-3 ${
                   showInvite
@@ -2454,17 +2338,6 @@ export function PlayShell() {
                 Invite
               </button>
             )}
-            {me && (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void resetMyProgress()}
-                className="hud-chip px-2.5 py-1.5 font-mono text-[11px] text-[var(--signal-bright)] hover:text-white disabled:opacity-40 sm:px-3"
-                title="Wipe your village and retest location setup"
-              >
-                Retest GPS
-              </button>
-            )}
             <button
               type="button"
               onClick={() => {
@@ -2473,7 +2346,6 @@ export function PlayShell() {
                 setShowRanks(false);
                 setShowMissions(false);
                 setShowInvite(false);
-                setShowPlayers(false);
               }}
               className={`hud-chip px-2.5 py-1.5 font-mono text-[11px] sm:px-3 ${
                 showMenu
@@ -2500,7 +2372,6 @@ export function PlayShell() {
                   setShowBattles(false);
                   setShowMissions(false);
                   setShowInvite(false);
-                  setShowPlayers(false);
                 }}
                 className="font-mono text-[7px] text-white/45 underline decoration-dotted underline-offset-2 hover:text-white/80"
                 title="Open full leaderboard"
@@ -2612,60 +2483,17 @@ export function PlayShell() {
           {me && (
             <button
               type="button"
-              disabled={busy}
-              onClick={() => void resetMyProgress()}
-              className="flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-[12px] text-[var(--signal-bright)] hover:bg-[var(--wash)] disabled:opacity-40"
-            >
-              <span>Retest GPS</span>
-              <span className="font-mono text-[9px] text-[var(--ink-faint)]">
-                wipe progress
-              </span>
-            </button>
-          )}
-          {(snap?.authDisabled || snap?.isAdmin) &&
-            me &&
-            !snap?.tutorialTestActive && (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void startTutorialTest()}
-                className="flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-[12px] text-[var(--ink-muted)] hover:bg-[var(--wash)] hover:text-[var(--sand)] disabled:opacity-40"
-              >
-                <span>Test new account</span>
-              </button>
-            )}
-          {(snap?.authDisabled || snap?.isAdmin) &&
-            me &&
-            snap?.tutorialTestActive && (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void stopTutorialTest()}
-                className="flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-[12px] text-[var(--signal-bright)] hover:bg-[var(--wash)] disabled:opacity-40"
-              >
-                <span>End tutorial test</span>
-              </button>
-            )}
-          {snap?.authDisabled && (
-            <button
-              type="button"
               onClick={() => {
                 setShowMenu(false);
-                setShowPlayers(true);
+                setShowInvite(true);
               }}
               className="flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-[12px] text-[var(--ink-muted)] hover:bg-[var(--wash)] hover:text-[var(--sand)]"
             >
-              <span>Switch player</span>
+              <span>Invite a friend</span>
+              <span className="font-mono text-[9px] text-[var(--ink-faint)]">
+                +{INVITE_VILLAGER_BONUS} villager
+              </span>
             </button>
-          )}
-          {(snap?.authDisabled || snap?.isAdmin) && (
-            <Link
-              href="/edit"
-              className="flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-[12px] text-[var(--ink-muted)] hover:bg-[var(--wash)] hover:text-[var(--sand)]"
-              onClick={() => setShowMenu(false)}
-            >
-              <span>Map editor</span>
-            </Link>
           )}
           <div className="mt-1 border-t border-[var(--line)] pt-2">
             {me && !snap?.authDisabled ? (
@@ -2757,64 +2585,6 @@ export function PlayShell() {
               ))}
             </ul>
           )}
-        </div>
-      )}
-
-      {/* Player switcher (testing) */}
-      {showPlayers && (
-        <div className="absolute right-2 top-[4.75rem] z-30 w-72 hud-panel p-3 sm:right-3 sm:top-16">
-          <div className="flex items-center justify-between">
-            <h2 className="font-mono text-[9px] uppercase tracking-[0.22em] text-[var(--ink-muted)]">
-              Switch player · test accounts
-            </h2>
-            <button
-              type="button"
-              onClick={() => setShowPlayers(false)}
-              className="font-mono text-[11px] text-[var(--ink-faint)] hover:text-[var(--sand)]"
-            >
-              ✕
-            </button>
-          </div>
-          <ul className="mt-2 max-h-64 space-y-1 overflow-y-auto">
-            {(snap?.players ?? [])
-              .filter((p) => p.id.startsWith("guest_"))
-              .map((p) => (
-                <li key={p.id}>
-                  <button
-                    type="button"
-                    disabled={busy || p.id === me?.id}
-                    onClick={() => void switchPlayer(p.id)}
-                    className={`flex w-full items-center justify-between rounded-sm border px-2 py-1.5 text-left text-[11px] ${
-                      p.id === me?.id
-                        ? "border-[var(--sand)] text-[var(--sand)]"
-                        : "border-[var(--line)] text-[var(--ink-muted)] hover:border-[var(--sand)]"
-                    }`}
-                  >
-                    <span>
-                      {p.name}
-                      {p.id === me?.id ? " (you)" : ""}
-                      <span className="block text-[9px] text-[var(--ink-faint)]">
-                        {snap?.sectors.find((s) => s.id === p.homeSectorId)
-                          ?.name ?? "no sector"}{" "}
-                        · {GOLD_COIN} {p.gold} · {p.rockets || 0}🚀
-                      </span>
-                    </span>
-                  </button>
-                </li>
-              ))}
-          </ul>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void switchPlayer()}
-            className="mt-2 w-full rounded-sm bg-[var(--field)] px-2 py-1.5 text-xs font-semibold text-white"
-          >
-            ＋ New test player
-          </button>
-          <p className="mt-1.5 text-[9px] leading-snug text-[var(--ink-faint)]">
-            Open a second browser window and pick a different player there to
-            fight yourself.
-          </p>
         </div>
       )}
 
@@ -3045,22 +2815,28 @@ export function PlayShell() {
                   (snap?.inviteCount ?? 0) === 1 ? "" : "s"
                 } joined`}
           </p>
-          {inviteLink && (
+          {inviteLink ? (
             <p className="mt-2 break-all rounded-sm bg-[var(--wash)] px-2 py-1.5 font-mono text-[9px] text-[var(--ink-muted)]">
               {inviteLink}
+            </p>
+          ) : (
+            <p className="mt-2 text-[11px] text-[var(--signal-bright)]">
+              Sign in to get your invite link.
             </p>
           )}
           <div className="mt-3 flex gap-2">
             <button
               type="button"
-              className="flex-1 rounded-sm bg-[var(--signal)] px-2 py-2 text-[12px] font-bold text-white"
+              disabled={!inviteLink}
+              className="flex-1 rounded-sm bg-[var(--signal)] px-2 py-2 text-[12px] font-bold text-white disabled:opacity-40"
               onClick={() => void shareInvite()}
             >
               Share link
             </button>
             <button
               type="button"
-              className="rounded-sm border border-[var(--line-strong)] px-3 py-2 font-mono text-[10px] text-[var(--sand)]"
+              disabled={!inviteLink}
+              className="rounded-sm border border-[var(--line-strong)] px-3 py-2 font-mono text-[10px] text-[var(--sand)] disabled:opacity-40"
               onClick={() => {
                 if (!inviteLink) return;
                 void navigator.clipboard.writeText(inviteLink).then(
@@ -3072,6 +2848,10 @@ export function PlayShell() {
               Copy
             </button>
           </div>
+          <p className="mt-2 text-[10px] leading-snug text-[var(--ink-faint)]">
+            Friend opens the link → signs in with Google → you get +
+            {INVITE_VILLAGER_BONUS} villager when their account is created.
+          </p>
         </div>
       )}
 
@@ -3093,25 +2873,6 @@ export function PlayShell() {
           azadMode: azadMode || isAzadPlayer,
         }}
       />
-
-      {/* Always-visible exit while testing the new-account tutorial */}
-      {snap?.tutorialTestActive && (
-        <div className="pointer-events-none absolute left-1/2 top-[max(3.75rem,calc(env(safe-area-inset-top)+3.25rem))] z-[45] w-[calc(100%-1.5rem)] max-w-sm -translate-x-1/2">
-          <div className="pointer-events-auto flex items-center justify-between gap-2 rounded-sm border border-[var(--sand)]/50 bg-[rgba(12,16,14,0.92)] px-3 py-2 shadow-lg">
-            <p className="min-w-0 font-mono text-[10px] text-[var(--sand)]">
-              Tutorial test · dummy new account
-            </p>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void stopTutorialTest()}
-              className="shrink-0 rounded-sm bg-[var(--signal)] px-2.5 py-1 text-[11px] font-bold text-white disabled:opacity-40"
-            >
-              End test
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Battle report — corner toast, auto-dismisses */}
       {battleSummary && (
@@ -3702,14 +3463,6 @@ export function PlayShell() {
                 >
                   Choose a sector on the map
                 </button>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void resetMyProgress()}
-                  className="mt-2 text-[10px] font-mono text-[var(--signal-bright)] underline decoration-dotted underline-offset-2 hover:text-white disabled:opacity-40"
-                >
-                  Clear my village data
-                </button>
               </>
             )}
 
@@ -3852,21 +3605,6 @@ export function PlayShell() {
               </>
             )}
 
-            {(snap?.authDisabled || snap?.isAdmin) && (
-              <button
-                type="button"
-                disabled={busy || !me}
-                onClick={() =>
-                  azadMode || !selected
-                    ? bypassGpsForAzad()
-                    : bypassGpsForSector(selected.id)
-                }
-                className="mt-1.5 text-[9px] font-mono text-[var(--ink-faint)] underline decoration-dotted underline-offset-2 hover:text-[var(--sand)] disabled:opacity-40"
-                title="Dev only — skips the GPS check"
-              >
-                Demo: bypass location check
-              </button>
-            )}
           </div>
         </div>
       )}

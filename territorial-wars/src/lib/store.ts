@@ -1033,6 +1033,23 @@ export async function ensurePlayer(
     await setPlayer(me);
   }
 
+  // Backfill invite codes so Share / Invite always has a working link
+  if (!me.inviteCode) {
+    let inviteCode = makeInviteCode(me.name || me.id);
+    while (await hGet(K_INVITES, inviteCode)) {
+      inviteCode = makeInviteCode(me.id + Math.random());
+    }
+    me = { ...me, inviteCode, updatedAt: now };
+    await setPlayer(me);
+    await hSet(K_INVITES, inviteCode, id);
+  } else {
+    // Keep the invite index in sync (survives store migrations)
+    const mapped = await hGet(K_INVITES, me.inviteCode);
+    if (mapped !== id) {
+      await hSet(K_INVITES, me.inviteCode, id);
+    }
+  }
+
   if ((name && name !== me.name) || image !== undefined) {
     // Guest names are derived from the id — don't clobber custom renames
     const nextName = me.name?.startsWith("Settler ") && name ? name : me.name;
