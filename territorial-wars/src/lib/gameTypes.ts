@@ -112,6 +112,8 @@ export type Player = {
   name: string;
   email?: string;
   image?: string | null;
+  /** Distinct name/tag color assigned at account creation */
+  color: string;
   /** Home sector — set once; many players may share a sector */
   homeSectorId: string | null;
   house: LatLng | null;
@@ -159,6 +161,8 @@ export type GameState = {
 export type PublicPlayer = {
   id: string;
   name: string;
+  /** Distinct name/tag color assigned at account creation */
+  color: string;
   homeSectorId: string | null;
   house: LatLng | null;
   houseHp: number;
@@ -291,6 +295,31 @@ export const GOLD_COIN = "🪙";
 export const INVITE_VILLAGER_BONUS = 1;
 /** Villagers granted for reviewing a local business on Google Maps */
 export const REVIEW_VILLAGER_BONUS = 1;
+
+/** Readable name colors on dark HUD — hashed onto each account at creation */
+export const PLAYER_COLOR_PALETTE = [
+  "#5eb8ff",
+  "#ff6b5a",
+  "#e8cf8a",
+  "#8fe098",
+  "#f0a868",
+  "#7ed4c8",
+  "#f2a0c0",
+  "#b8d45a",
+  "#d4a0ff",
+  "#ff9e6b",
+  "#6ec6ff",
+  "#e8a07a",
+] as const;
+
+/** Stable color for a player id (used at create + as fallback). */
+export function colorForPlayerId(id: string): string {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) {
+    h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  }
+  return PLAYER_COLOR_PALETTE[h % PLAYER_COLOR_PALETTE.length]!;
+}
 
 /** House ground radius (m) for overlap checks */
 export const HOUSE_FOOTPRINT_M = 30;

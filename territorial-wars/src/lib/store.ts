@@ -21,6 +21,7 @@ import {
   attackPower,
   buildingBonus,
   catalogItem,
+  colorForPlayerId,
   defensePower,
   type BattleReport,
   type Building,
@@ -641,6 +642,7 @@ function normalizePlayer(raw: Player): Player {
   if (p.totalFarmed == null) p.totalFarmed = p.gold || 0;
   if (p.villagerPost === undefined) p.villagerPost = null;
   if (!Array.isArray(p.reviewedPlaceIds)) p.reviewedPlaceIds = [];
+  if (!p.color) p.color = colorForPlayerId(p.id);
   // Clamp building HP to the simplified scale (migrates old 100+ HP values)
   p.buildings = (p.buildings || []).map((b) => {
     const max = catalogItem(b.type).hp;
@@ -934,6 +936,7 @@ function publicPlayer(p: Player): PublicPlayer {
   return {
     id: p.id,
     name: p.name,
+    color: p.color || colorForPlayerId(p.id),
     homeSectorId: p.homeSectorId,
     house: p.house,
     houseHp: p.houseHp ?? 0,
@@ -992,6 +995,7 @@ export async function ensurePlayer(
       name: name || "Settler",
       email,
       image: image ?? null,
+      color: colorForPlayerId(id),
       homeSectorId: null,
       house: null,
       houseHp: 0,
@@ -1010,13 +1014,19 @@ export async function ensurePlayer(
       lastGatherAt: now,
       lastRoamSpawnAt: 0,
       lastAttackAt: 0,
-    lastRazeAt: 0,
+      lastRazeAt: 0,
       createdAt: now,
       updatedAt: now,
     };
     await setPlayer(me);
     await hSet(K_INVITES, inviteCode, id);
     return me;
+  }
+
+  // Backfill color for accounts created before the field existed
+  if (!me.color) {
+    me = { ...me, color: colorForPlayerId(me.id), updatedAt: now };
+    await setPlayer(me);
   }
 
   if ((name && name !== me.name) || image !== undefined) {

@@ -2,7 +2,14 @@
 
 import Link from "next/link";
 import { signOut } from "next-auth/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   GameMap,
   type ImpactAnim,
@@ -21,6 +28,7 @@ import type { LatLng } from "@/lib/gameTypes";
 import {
   INVITE_VILLAGER_BONUS,
   REVIEW_VILLAGER_BONUS,
+  colorForPlayerId,
 } from "@/lib/gameTypes";
 import {
   googleMapsReviewUrl,
@@ -166,6 +174,57 @@ function personName(name: string): string {
   return t;
 }
 
+function pickVariant<T>(seed: string, options: readonly T[]): T {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) {
+    h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  }
+  return options[h % options.length]!;
+}
+
+function playerColor(
+  id: string,
+  colors?: Map<string, string> | Record<string, string> | null
+): string {
+  if (colors instanceof Map) {
+    return colors.get(id) || colorForPlayerId(id);
+  }
+  if (colors && colors[id]) return colors[id]!;
+  return colorForPlayerId(id);
+}
+
+function NameChip({
+  id,
+  name,
+  myId,
+  colors,
+  possessive = false,
+}: {
+  id: string;
+  name: string;
+  myId?: string | null;
+  colors?: Map<string, string> | Record<string, string> | null;
+  possessive?: boolean;
+}) {
+  const isYou = Boolean(myId && id === myId);
+  const color = playerColor(id, colors);
+  if (isYou && possessive) {
+    return (
+      <span className="font-bold" style={{ color }}>
+        your
+      </span>
+    );
+  }
+  const label = isYou ? "You" : personName(name);
+  return (
+    <span className="font-bold" style={{ color }}>
+      {possessive ? `${label}'s` : label}
+    </span>
+  );
+}
+
+type ActivityColors = Map<string, string> | Record<string, string> | null;
+
 function summaryFromAttack(
   battle: BattleReport,
   sectorName: string,
@@ -236,40 +295,179 @@ function summaryFromEvent(e: GameEvent, asDefender = true): BattleSummary | null
   };
 }
 
-function eventLogLine(e: GameEvent, myId: string | undefined): string {
+const RAZE_VERBS = ["destroyed", "wrecked", "razed", "tore down"] as const;
+const ATTACK_WIN_VERBS = ["attacked", "breached", "wrecked", "smashed"] as const;
+const ATTACK_HOLD_VERBS = ["held off", "stopped", "repelled"] as const;
+
+function eventLogLine(
+  e: GameEvent,
+  myId: string | undefined,
+  colors?: ActivityColors
+): ReactNode {
   if (isRazeEvent(e)) {
-    const asActor = e.attackerId === myId;
-    if (asActor) {
-      return `You cleared ${personName(e.defenderName)}'s ${e.buildingName} in ${e.sectorName}`;
+    const verb = pickVariant(e.id, RAZE_VERBS);
+    if (e.attackerId === myId) {
+      return (
+        <>
+          <NameChip id={e.attackerId} name={e.attackerName} myId={myId} colors={colors} />{" "}
+          {verb}{" "}
+          <NameChip
+            id={e.defenderId}
+            name={e.defenderName}
+            myId={myId}
+            colors={colors}
+            possessive
+          />{" "}
+          {e.buildingName} in {e.sectorName}
+        </>
+      );
     }
-    return `Your ally, ${personName(e.attackerName)}, destroyed your ${e.buildingName}`;
+    return (
+      <>
+        Your ally,{" "}
+        <NameChip id={e.attackerId} name={e.attackerName} myId={myId} colors={colors} />,{" "}
+        {verb}{" "}
+        <NameChip
+          id={e.defenderId}
+          name={e.defenderName}
+          myId={myId}
+          colors={colors}
+          possessive
+        />{" "}
+        {e.buildingName}
+      </>
+    );
   }
   if (!isAttackEvent(e)) return "Activity";
   const asAttacker = e.attackerId === myId;
   if (asAttacker) {
-    return e.win
-      ? `You breached ${personName(e.defenderName)}'s village in ${e.sectorName}`
-      : `${personName(e.defenderName)} held against your raid in ${e.sectorName}`;
+    if (e.win) {
+      const verb = pickVariant(e.id, ATTACK_WIN_VERBS);
+      return (
+        <>
+          <NameChip id={e.attackerId} name={e.attackerName} myId={myId} colors={colors} />{" "}
+          {verb}{" "}
+          <NameChip
+            id={e.defenderId}
+            name={e.defenderName}
+            myId={myId}
+            colors={colors}
+            possessive
+          />{" "}
+          village in {e.sectorName}
+        </>
+      );
+    }
+    const hold = pickVariant(e.id, ATTACK_HOLD_VERBS);
+    return (
+      <>
+        <NameChip id={e.defenderId} name={e.defenderName} myId={myId} colors={colors} />{" "}
+        {hold}{" "}
+        <NameChip
+          id={e.attackerId}
+          name={e.attackerName}
+          myId={myId}
+          colors={colors}
+          possessive
+        />{" "}
+        raid in {e.sectorName}
+      </>
+    );
   }
-  return e.win
-    ? `${personName(e.attackerName)} breached your village in ${e.sectorName}`
-    : `You held against ${personName(e.attackerName)}'s raid in ${e.sectorName}`;
+  if (e.win) {
+    const verb = pickVariant(e.id, ATTACK_WIN_VERBS);
+    return (
+      <>
+        <NameChip id={e.attackerId} name={e.attackerName} myId={myId} colors={colors} />{" "}
+        {verb}{" "}
+        <NameChip
+          id={e.defenderId}
+          name={e.defenderName}
+          myId={myId}
+          colors={colors}
+          possessive
+        />{" "}
+        village in {e.sectorName}
+      </>
+    );
+  }
+  const hold = pickVariant(e.id, ATTACK_HOLD_VERBS);
+  return (
+    <>
+      <NameChip id={e.defenderId} name={e.defenderName} myId={myId} colors={colors} />{" "}
+      {hold}{" "}
+      <NameChip
+        id={e.attackerId}
+        name={e.attackerName}
+        myId={myId}
+        colors={colors}
+        possessive
+      />{" "}
+      raid in {e.sectorName}
+    </>
+  );
 }
 
-function activityLine(e: GameEvent, myId?: string | null): string {
+function activityLine(
+  e: GameEvent,
+  myId?: string | null,
+  colors?: ActivityColors
+): ReactNode {
   if (isRazeEvent(e)) {
-    if (myId && e.attackerId === myId) {
-      return `You cleared ${personName(e.defenderName)}'s ${e.buildingName} · ${e.sectorName}`;
+    const verb = pickVariant(e.id, RAZE_VERBS);
+    if (myId && e.defenderId === myId && e.attackerId !== myId) {
+      return (
+        <>
+          Your ally,{" "}
+          <NameChip id={e.attackerId} name={e.attackerName} myId={myId} colors={colors} />,{" "}
+          {verb}{" "}
+          <NameChip
+            id={e.defenderId}
+            name={e.defenderName}
+            myId={myId}
+            colors={colors}
+            possessive
+          />{" "}
+          {e.buildingName}
+        </>
+      );
     }
-    if (myId && e.defenderId === myId) {
-      return `Your ally, ${personName(e.attackerName)}, destroyed your ${e.buildingName}`;
-    }
-    return `${personName(e.attackerName)} cleared ${personName(e.defenderName)}'s ${e.buildingName} · ${e.sectorName}`;
+    return (
+      <>
+        <NameChip id={e.attackerId} name={e.attackerName} myId={myId} colors={colors} />{" "}
+        {verb}{" "}
+        <NameChip
+          id={e.defenderId}
+          name={e.defenderName}
+          myId={myId}
+          colors={colors}
+          possessive
+        />{" "}
+        {e.buildingName} · {e.sectorName}
+      </>
+    );
   }
   if (isAttackEvent(e)) {
-    return e.win
-      ? `${personName(e.attackerName)} breached ${personName(e.defenderName)} · ${e.sectorName}`
-      : `${personName(e.defenderName)} held against ${personName(e.attackerName)} · ${e.sectorName}`;
+    if (e.win) {
+      const verb = pickVariant(e.id, ATTACK_WIN_VERBS);
+      return (
+        <>
+          <NameChip id={e.attackerId} name={e.attackerName} myId={myId} colors={colors} />{" "}
+          {verb}{" "}
+          <NameChip id={e.defenderId} name={e.defenderName} myId={myId} colors={colors} /> ·{" "}
+          {e.sectorName}
+        </>
+      );
+    }
+    const hold = pickVariant(e.id, ATTACK_HOLD_VERBS);
+    return (
+      <>
+        <NameChip id={e.defenderId} name={e.defenderName} myId={myId} colors={colors} />{" "}
+        {hold}{" "}
+        <NameChip id={e.attackerId} name={e.attackerName} myId={myId} colors={colors} /> ·{" "}
+        {e.sectorName}
+      </>
+    );
   }
   return "Activity";
 }
@@ -602,6 +800,14 @@ export function PlayShell() {
 
   const me = snap?.me ?? null;
   const selected = snap?.sectors.find((s) => s.id === selectedId) ?? null;
+  const playerColors = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of snap?.players ?? []) {
+      map.set(p.id, p.color || colorForPlayerId(p.id));
+    }
+    if (me) map.set(me.id, me.color || colorForPlayerId(me.id));
+    return map;
+  }, [snap?.players, me]);
 
   // Prefer in-game settler name for chat / floating label
   useEffect(() => {
@@ -1822,7 +2028,7 @@ export function PlayShell() {
                   className="rounded-sm border border-[var(--line)] px-2 py-1.5 text-[11px] text-[var(--ink-muted)]"
                 >
                   <p className="font-semibold text-[var(--ink)]">
-                    {eventLogLine(e, me?.id)}
+                    {eventLogLine(e, me?.id, playerColors)}
                   </p>
                   <p className="mt-0.5 font-mono text-[9px] text-[var(--ink-faint)]">
                     {new Date(e.ts).toLocaleTimeString()}
@@ -2711,10 +2917,10 @@ export function PlayShell() {
                     className="rounded-sm border border-[var(--line)] px-2.5 py-2 text-[11px] text-[var(--ink-muted)]"
                   >
                     <p className="font-semibold text-[var(--ink)]">
-                      {activityLine(e, me?.id)}
+                      {activityLine(e, me?.id, playerColors)}
                     </p>
                     <p className="mt-0.5 font-mono text-[9px] text-[var(--ink-faint)]">
-                      {isRazeEvent(e) ? "Clear ground" : "Raid"} ·{" "}
+                      {isRazeEvent(e) ? "Sabotage" : "Attack"} ·{" "}
                       {new Date(e.ts).toLocaleString()}
                     </p>
                   </li>
