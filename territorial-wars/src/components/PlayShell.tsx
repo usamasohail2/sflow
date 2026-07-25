@@ -3073,6 +3073,13 @@ export function PlayShell() {
                     {me.house ? `${me.houseHp}/${HOUSE_MAX_HP}` : "✕"}
                   </span>
                 </div>
+                <div
+                  className="hud-status-chip"
+                  title={`Arsenal: ${me.rockets || 0} rocket(s) · ${myAttack} attack power`}
+                >
+                  <RocketSprite className="h-5 w-5" />
+                  <span>×{me.rockets || 0}</span>
+                </div>
               </div>
 
               <div className="pointer-events-auto w-full min-w-0">
@@ -3091,15 +3098,6 @@ export function PlayShell() {
                     </p>
                   </div>
                   <div className="flex items-end gap-1 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] sm:gap-1.5 [&::-webkit-scrollbar]:hidden">
-                    <div
-                      className="cameo"
-                      title={`Arsenal: ${me.rockets || 0} rocket(s) · ${myAttack} attack power`}
-                    >
-                      <RocketSprite className="h-8 w-8 sm:h-9 sm:w-9" />
-                      <span className="cameo-badge">×{me.rockets || 0}</span>
-                      <span className="cameo-label">Rockets</span>
-                    </div>
-
                     <button
                       type="button"
                       className={`cameo ${
