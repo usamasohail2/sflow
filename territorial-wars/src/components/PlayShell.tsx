@@ -2093,7 +2093,7 @@ export function PlayShell() {
       "Starting tutorial test…"
     );
     if (!data) return;
-    showToast("Tutorial test — share location, then settle");
+    showToast("Tutorial test — find location or pick a sector");
   };
 
   const stopTutorialTest = async () => {
@@ -2104,6 +2104,7 @@ export function PlayShell() {
     setLiveLocation(null);
     setAzadMode(false);
     setLocStatus("idle");
+    setManualMode(false);
     setPickingPin(false);
     const data = await act(
       "end_tutorial_test",
