@@ -670,7 +670,7 @@ export function GameMap({
             ) => void;
           };
           try {
-            m.setConfigProperty("basemap", "lightPreset", "dawn");
+            m.setConfigProperty("basemap", "lightPreset", "dusk");
             m.setConfigProperty("basemap", "show3dObjects", true);
           } catch {
             /* older style fallback — ignore */
