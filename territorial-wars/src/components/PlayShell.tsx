@@ -519,6 +519,25 @@ export function PlayShell() {
 
   const topSectors = sectorRanking.slice(0, 5);
 
+  /** HUD board: top 5, plus your sector with real rank if outside top 5 */
+  const sectorBoard = useMemo(() => {
+    const rows = topSectors.map((r, i) => ({
+      ...r,
+      rank: i + 1,
+      mine: me?.homeSectorId === r.id,
+    }));
+    const homeId = me?.homeSectorId;
+    if (!homeId) return rows;
+    if (rows.some((r) => r.id === homeId)) return rows;
+    const idx = sectorRanking.findIndex((r) => r.id === homeId);
+    if (idx < 0) return rows;
+    const mine = sectorRanking[idx]!;
+    return [
+      ...rows,
+      { ...mine, rank: idx + 1, mine: true },
+    ];
+  }, [topSectors, sectorRanking, me?.homeSectorId]);
+
   const missionList = useMemo(() => {
     if (!me) return [];
     return [
@@ -1069,7 +1088,7 @@ export function PlayShell() {
             </button>
           </div>
 
-          {/* Top 5 sector leaderboard — tap for full list */}
+          {/* Minimal top-sectors board — tap for full list */}
           <button
             type="button"
             onClick={() => {
@@ -1079,49 +1098,38 @@ export function PlayShell() {
               setShowMissions(false);
               setShowPlayers(false);
             }}
-            className="hud-panel w-[11.5rem] px-2.5 py-2 text-left sm:w-56"
+            className="sector-board w-[8.75rem] px-1.5 py-1.5 text-left sm:w-40"
             title="Open full sector leaderboard"
           >
-            <div className="mb-1 flex items-center justify-between">
-              <span className="font-mono text-[8px] uppercase tracking-[0.2em] text-[var(--ink-faint)]">
-                🏆 Top sectors
+            <div className="mb-0.5 flex items-center justify-between gap-1">
+              <span className="font-mono text-[7px] uppercase tracking-[0.18em] text-white/55">
+                Top sectors
               </span>
-              <span className="font-mono text-[8px] text-[var(--sand)]">
-                all →
-              </span>
+              <span className="font-mono text-[7px] text-white/45">all</span>
             </div>
-            {topSectors.length === 0 ? (
-              <p className="text-[10px] text-[var(--ink-faint)]">No farms yet</p>
+            {sectorBoard.length === 0 ? (
+              <p className="text-[9px] text-white/45">No farms yet</p>
             ) : (
-              <ol className="space-y-0.5">
-                {topSectors.map((r, i) => {
-                  const mine = me?.homeSectorId === r.id;
+              <ol className="space-y-px">
+                {sectorBoard.map((r) => {
+                  const medal =
+                    r.rank === 1
+                      ? "medal-gold"
+                      : r.rank === 2
+                        ? "medal-silver"
+                        : r.rank === 3
+                          ? "medal-bronze"
+                          : "";
                   return (
                     <li
-                      key={r.id}
-                      className={`flex items-center justify-between gap-2 font-mono text-[10px] sm:text-[11px] ${
-                        mine ? "text-[var(--sand)]" : "text-[var(--ink-muted)]"
+                      key={`${r.id}-${r.rank}`}
+                      className={`sector-board-row ${medal} ${
+                        r.mine ? "is-mine" : ""
                       }`}
                     >
-                      <span className="min-w-0 truncate">
-                        <span className="text-[var(--ink-faint)]">
-                          {i === 0
-                            ? "①"
-                            : i === 1
-                              ? "②"
-                              : i === 2
-                                ? "③"
-                                : i === 3
-                                  ? "④"
-                                  : "⑤"}
-                        </span>{" "}
-                        <strong className="font-semibold text-[var(--ink)]">
-                          {r.name}
-                        </strong>
-                      </span>
-                      <span className="shrink-0 text-[var(--ink-faint)]">
-                        {r.farmed}
-                      </span>
+                      <span className="sector-board-rank">{r.rank}</span>
+                      <span className="sector-board-name">{r.name}</span>
+                      <span className="sector-board-score">{r.farmed}</span>
                     </li>
                   );
                 })}

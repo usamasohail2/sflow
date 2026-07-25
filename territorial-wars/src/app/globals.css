@@ -311,6 +311,87 @@ body {
     0 4px 14px rgba(0, 0, 0, 0.55);
 }
 
+/* Compact transparent sector leaderboard (top-right HUD) */
+.sector-board {
+  background: rgba(8, 12, 10, 0.28);
+  border: 1px solid rgba(232, 235, 228, 0.12);
+  border-radius: 4px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: none;
+}
+
+.sector-board:hover {
+  background: rgba(8, 12, 10, 0.4);
+  border-color: rgba(232, 235, 228, 0.22);
+}
+
+.sector-board-row {
+  display: grid;
+  grid-template-columns: 1rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 1px 2px;
+  border-radius: 2px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px;
+  line-height: 1.25;
+  color: rgba(232, 235, 228, 0.72);
+}
+
+.sector-board-rank {
+  color: rgba(232, 235, 228, 0.45);
+  font-weight: 600;
+}
+
+.sector-board-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: rgba(245, 247, 242, 0.92);
+}
+
+.sector-board-score {
+  color: rgba(232, 235, 228, 0.5);
+  font-variant-numeric: tabular-nums;
+}
+
+.sector-board-row.medal-gold .sector-board-rank,
+.sector-board-row.medal-gold .sector-board-name,
+.sector-board-row.medal-gold .sector-board-score {
+  color: #f0c84a;
+}
+
+.sector-board-row.medal-silver .sector-board-rank,
+.sector-board-row.medal-silver .sector-board-name,
+.sector-board-row.medal-silver .sector-board-score {
+  color: #c8d0d8;
+}
+
+.sector-board-row.medal-bronze .sector-board-rank,
+.sector-board-row.medal-bronze .sector-board-name,
+.sector-board-row.medal-bronze .sector-board-score {
+  color: #d08a52;
+}
+
+.sector-board-row.is-mine {
+  background: rgba(196, 176, 137, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(196, 176, 137, 0.45);
+}
+
+.sector-board-row.is-mine .sector-board-name {
+  color: #e8cf8a;
+}
+
+.sector-board-row.is-mine:not(.medal-gold):not(.medal-silver):not(.medal-bronze)
+  .sector-board-rank,
+.sector-board-row.is-mine:not(.medal-gold):not(.medal-silver):not(.medal-bronze)
+  .sector-board-score {
+  color: rgba(232, 207, 138, 0.75);
+}
+
 .hud-chip {
   background: linear-gradient(180deg, #2c3830, #171f1a);
   border: 1px solid #46543f;
