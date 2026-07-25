@@ -2469,26 +2469,30 @@ export function PlayShell() {
           >
             <span>? How to play</span>
           </button>
-          {me && !snap?.tutorialTestActive && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void startTutorialTest()}
-              className="flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-[12px] text-[var(--ink-muted)] hover:bg-[var(--wash)] hover:text-[var(--sand)] disabled:opacity-40"
-            >
-              <span>🧪 Test new account</span>
-            </button>
-          )}
-          {me && snap?.tutorialTestActive && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void stopTutorialTest()}
-              className="flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-[12px] text-[var(--signal-bright)] hover:bg-[var(--wash)] disabled:opacity-40"
-            >
-              <span>⏹ End tutorial test</span>
-            </button>
-          )}
+          {(snap?.authDisabled || snap?.isAdmin) &&
+            me &&
+            !snap?.tutorialTestActive && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void startTutorialTest()}
+                className="flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-[12px] text-[var(--ink-muted)] hover:bg-[var(--wash)] hover:text-[var(--sand)] disabled:opacity-40"
+              >
+                <span>Test new account</span>
+              </button>
+            )}
+          {(snap?.authDisabled || snap?.isAdmin) &&
+            me &&
+            snap?.tutorialTestActive && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void stopTutorialTest()}
+                className="flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-[12px] text-[var(--signal-bright)] hover:bg-[var(--wash)] disabled:opacity-40"
+              >
+                <span>End tutorial test</span>
+              </button>
+            )}
           {snap?.authDisabled && (
             <button
               type="button"
@@ -2498,16 +2502,18 @@ export function PlayShell() {
               }}
               className="flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-[12px] text-[var(--ink-muted)] hover:bg-[var(--wash)] hover:text-[var(--sand)]"
             >
-              <span>👤 Switch player</span>
+              <span>Switch player</span>
             </button>
           )}
-          <Link
-            href="/edit"
-            className="flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-[12px] text-[var(--ink-muted)] hover:bg-[var(--wash)] hover:text-[var(--sand)]"
-            onClick={() => setShowMenu(false)}
-          >
-            <span>✎ Map editor</span>
-          </Link>
+          {(snap?.authDisabled || snap?.isAdmin) && (
+            <Link
+              href="/edit"
+              className="flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-[12px] text-[var(--ink-muted)] hover:bg-[var(--wash)] hover:text-[var(--sand)]"
+              onClick={() => setShowMenu(false)}
+            >
+              <span>Map editor</span>
+            </Link>
+          )}
           <div className="mt-1 border-t border-[var(--line)] pt-2">
             {me && !snap?.authDisabled ? (
               <div className="flex items-center justify-between px-2">
@@ -3488,19 +3494,21 @@ export function PlayShell() {
                 ⚑ Settle in {azadMode ? AZAD_ARENA_NAME : selected!.name} — place
                 house
               </button>
-              <button
-                type="button"
-                disabled={busy || !me}
-                onClick={() =>
-                  azadMode
-                    ? bypassGpsForAzad()
-                    : bypassGpsForSector(selected!.id)
-                }
-                className="mt-1.5 text-[9px] font-mono text-[var(--ink-faint)] underline decoration-dotted underline-offset-2 hover:text-[var(--sand)] disabled:opacity-40"
-                title="Demo only — skips the GPS check"
-              >
-                Demo: bypass location check
-              </button>
+              {(snap?.authDisabled || snap?.isAdmin) && (
+                <button
+                  type="button"
+                  disabled={busy || !me}
+                  onClick={() =>
+                    azadMode
+                      ? bypassGpsForAzad()
+                      : bypassGpsForSector(selected!.id)
+                  }
+                  className="mt-1.5 text-[9px] font-mono text-[var(--ink-faint)] underline decoration-dotted underline-offset-2 hover:text-[var(--sand)] disabled:opacity-40"
+                  title="Dev only — skips the GPS check"
+                >
+                  Demo: bypass location check
+                </button>
+              )}
               {!azadMode && locationOffMap && (
                 <button
                   type="button"

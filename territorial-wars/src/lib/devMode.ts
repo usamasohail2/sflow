@@ -9,6 +9,24 @@ export const AUTH_DISABLED =
   process.env.AUTH_DISABLED === "true" ||
   process.env.NEXT_PUBLIC_AUTH_DISABLED === "true";
 
+/**
+ * Comma-separated Google emails allowed to edit sectors.
+ * Defaults to the project owner — override with ADMIN_EMAILS in Vercel.
+ */
+export function isAdminEmail(email?: string | null): boolean {
+  if (AUTH_DISABLED) return true;
+  const raw =
+    process.env.ADMIN_EMAILS ||
+    process.env.NEXT_PUBLIC_ADMIN_EMAILS ||
+    "xalion.malik@gmail.com";
+  const allow = raw
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  const e = email?.trim().toLowerCase();
+  return Boolean(e && allow.includes(e));
+}
+
 /** Starter sectors with real-ish Islamabad names for local play */
 export function buildDummySectors(now = Date.now()): Sector[] {
   const f6: [number, number][] = [

@@ -26,12 +26,6 @@ export default function HomePage() {
           >
             Play now
           </Link>
-          <Link
-            href="/edit"
-            className="inline-flex items-center justify-center rounded-sm border border-[var(--line-strong)] px-6 py-3 text-sm font-semibold text-[var(--ink)]"
-          >
-            Draw sectors
-          </Link>
         </div>
       </div>
     </main>

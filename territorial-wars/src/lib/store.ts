@@ -37,7 +37,7 @@ import {
   type ResourceSpot,
   type Sector,
 } from "@/lib/gameTypes";
-import { AUTH_DISABLED, buildDummySectors } from "@/lib/devMode";
+import { AUTH_DISABLED, buildDummySectors, isAdminEmail } from "@/lib/devMode";
 import { pointInOrNearRing, pointInRing } from "@/lib/geo";
 import {
   distMeters,
@@ -1052,7 +1052,10 @@ export async function ensurePlayer(
   return player;
 }
 
-export async function getSnapshot(meId?: string | null): Promise<GameSnapshot> {
+export async function getSnapshot(
+  meId?: string | null,
+  opts?: { email?: string | null }
+): Promise<GameSnapshot> {
   await bootstrap();
   await removeDummyEnemySector();
 
@@ -1132,6 +1135,7 @@ export async function getSnapshot(meId?: string | null): Promise<GameSnapshot> {
     gatherTripMs: GATHER_TRIP_MS,
     buildingCatalog: BUILDING_CATALOG,
     authDisabled: AUTH_DISABLED,
+    isAdmin: isAdminEmail(opts?.email ?? me?.email),
     storageBackend: storageBackend(),
     inviteCount,
     tutorialTestActive,

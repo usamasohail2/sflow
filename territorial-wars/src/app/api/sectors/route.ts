@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import type { Sector } from "@/lib/gameTypes";
 import { closeRing } from "@/lib/geo";
-import { AUTH_DISABLED } from "@/lib/devMode";
+import { AUTH_DISABLED, isAdminEmail } from "@/lib/devMode";
 import { getSectors, saveSectors, storageBackend } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
@@ -22,8 +22,15 @@ export async function GET() {
 export async function PUT(req: Request) {
   if (!AUTH_DISABLED) {
     const session = await auth();
+    const email = session?.user?.email;
     if (!session?.user) {
       return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+    }
+    if (!isAdminEmail(email)) {
+      return NextResponse.json(
+        { error: "Map editing is restricted to admins" },
+        { status: 403 }
+      );
     }
   }
 

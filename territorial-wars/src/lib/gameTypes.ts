@@ -304,6 +304,8 @@ export type GameSnapshot = {
   gatherTripMs: number;
   buildingCatalog: BuildingCatalogItem[];
   authDisabled: boolean;
+  /** Signed-in user may edit the sector map */
+  isAdmin: boolean;
   /** Where game state is stored — supabase is the durable target */
   storageBackend: "supabase" | "redis" | "blob" | "memory";
   /** How many players joined with my invite code */

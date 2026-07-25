@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import type { BuildingType } from "@/lib/gameTypes";
-import { AUTH_DISABLED } from "@/lib/devMode";
+import { AUTH_DISABLED, isAdminEmail } from "@/lib/devMode";
 import {
   attackSector,
   beginTutorialTest,
@@ -108,7 +108,7 @@ export async function GET(req: Request) {
     identity.image,
     invite
   );
-  const snap = await getSnapshot(identity.id);
+  const snap = await getSnapshot(identity.id, { email: identity.email });
   return withGuestCookie(NextResponse.json(snap), setCookie);
 }
 
@@ -382,6 +382,15 @@ export async function POST(req: Request) {
       lng: Number(body.lng),
     });
   } else if (body.action === "begin_tutorial_test") {
+    if (!AUTH_DISABLED && !isAdminEmail(identity.email)) {
+      return withGuestCookie(
+        NextResponse.json(
+          { error: "Tutorial test is only available in guest/dev mode" },
+          { status: 403 }
+        ),
+        setCookie
+      );
+    }
     result = await beginTutorialTest(id);
   } else if (body.action === "end_tutorial_test") {
     result = await endTutorialTest(id);
@@ -399,7 +408,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const snap = await getSnapshot(id);
+  const snap = await getSnapshot(id, { email: identity.email });
   return withGuestCookie(
     NextResponse.json({
       ok: true,

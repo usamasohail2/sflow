@@ -14,6 +14,7 @@ export default function EditPage() {
   const [error, setError] = useState<string | null>(null);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
   const [storage, setStorage] = useState<string>("…");
+  const [forbidden, setForbidden] = useState(false);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/sectors", { cache: "no-store" });
@@ -33,6 +34,7 @@ export default function EditPage() {
     setSaving(true);
     setError(null);
     setSavedMsg(null);
+    setForbidden(false);
     if (status !== "authenticated") {
       setError("Sign in with Google before saving — otherwise nothing is stored.");
       setSaving(false);
@@ -46,6 +48,7 @@ export default function EditPage() {
       });
       const data = await res.json();
       if (!res.ok) {
+        if (res.status === 403) setForbidden(true);
         setError(data.error || "Save failed");
       } else {
         setSectors(data.sectors);
@@ -63,6 +66,26 @@ export default function EditPage() {
       setSaving(false);
     }
   };
+
+  if (status === "authenticated" && forbidden) {
+    return (
+      <main className="flex min-h-[100dvh] flex-col items-center justify-center px-5">
+        <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--ink-faint)]">
+          Map editor
+        </p>
+        <h1 className="mt-2 font-display text-3xl text-[var(--ink)]">
+          Admins only
+        </h1>
+        <p className="mt-2 max-w-sm text-center text-sm text-[var(--ink-muted)]">
+          Sector drawing is locked for launch. Ask the owner if you need a map
+          change.
+        </p>
+        <Link href="/play" className="mt-6 text-sm text-[var(--sand)]">
+          Back to play
+        </Link>
+      </main>
+    );
+  }
 
   return (
     <div className="min-h-[100dvh] bg-[var(--surface)]">
