@@ -389,7 +389,9 @@ export function Walkthrough({ open, onClose, ctx }: Props) {
           </div>
         ) : (
           <p className="mt-2 font-mono text-[9px] text-[var(--sand)]">
-            Waiting for you to tap the blinking control…
+            {phase === "place-house" || phase === "place-villager"
+              ? "Tap the blinking spot on the map to continue…"
+              : "Tap the blinking control to continue…"}
           </p>
         )}
       </div>
