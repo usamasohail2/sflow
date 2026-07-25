@@ -983,9 +983,10 @@ export async function ensurePlayer(
         const inviter = await getPlayer(ownerId);
         if (inviter) {
           invitedBy = ownerId;
+          // Referral reward: inviter gains a permanent villager
           await setPlayer({
             ...inviter,
-            villagers: inviter.villagers + INVITE_VILLAGER_BONUS,
+            villagers: (inviter.villagers || 0) + INVITE_VILLAGER_BONUS,
             updatedAt: now,
           });
         }
@@ -1001,6 +1002,7 @@ export async function ensurePlayer(
       house: null,
       houseHp: 0,
       villagerPost: null,
+      // Invitees still start at 0 until settle; inviter already got +1
       villagers: 0,
       rockets: 0,
       peakRockets: 0,
@@ -1089,6 +1091,10 @@ export async function getSnapshot(meId?: string | null): Promise<GameSnapshot> {
   // Persist any accrual/seed/bootstrap writes made during this request
   await flushStore();
 
+  const inviteCount = meId
+    ? playersAll.filter((p) => p.invitedBy === meId).length
+    : 0;
+
   return {
     sectors,
     spots,
@@ -1100,6 +1106,7 @@ export async function getSnapshot(meId?: string | null): Promise<GameSnapshot> {
     buildingCatalog: BUILDING_CATALOG,
     authDisabled: AUTH_DISABLED,
     storageBackend: storageBackend(),
+    inviteCount,
   };
 }
 
@@ -1200,7 +1207,8 @@ export async function claimSector(
     house,
     houseHp: HOUSE_MAX_HP,
     villagerPost,
-    villagers: STARTING.villagers,
+    // Keep referral villagers earned before settling
+    villagers: Math.max(STARTING.villagers, me.villagers || 0),
     rockets: 0,
     peakRockets: 0,
     gold: STARTING.gold,

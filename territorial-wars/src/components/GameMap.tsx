@@ -176,6 +176,8 @@ type Props = {
     exploreMs: number;
   }) => boolean | Promise<boolean>;
   onCollectHidden?: (spotId: string) => void;
+  /** Fires once when the globe → sector intro finishes */
+  onIntroComplete?: () => void;
   className?: string;
 };
 
@@ -258,8 +260,11 @@ export function GameMap({
   onPlace,
   onSpawnFind,
   onCollectHidden,
+  onIntroComplete,
   className = "",
 }: Props) {
+  const onIntroCompleteRef = useRef(onIntroComplete);
+  onIntroCompleteRef.current = onIntroComplete;
   const mapRef = useRef<MapRef>(null);
   const [zoom, setZoom] = useState(INTRO_GLOBE_ZOOM);
   const showDetail = zoom >= DETAIL_ZOOM;
@@ -326,11 +331,13 @@ export function GameMap({
     setIntroActive(false);
     setIntroTitle("gone");
     const map = mapRef.current;
-    if (!map) return;
-    const z = map.getZoom();
-    if (z < PLAY_MIN_ZOOM) {
-      map.easeTo({ zoom: PLAY_MIN_ZOOM, duration: 220 });
+    if (map) {
+      const z = map.getZoom();
+      if (z < PLAY_MIN_ZOOM) {
+        map.easeTo({ zoom: PLAY_MIN_ZOOM, duration: 220 });
+      }
     }
+    onIntroCompleteRef.current?.();
   }, []);
 
   // Globe → home sector intro on first load

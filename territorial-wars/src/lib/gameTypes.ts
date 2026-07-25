@@ -224,6 +224,8 @@ export type GameSnapshot = {
   authDisabled: boolean;
   /** Where game state is stored — supabase is the durable target */
   storageBackend: "supabase" | "redis" | "blob" | "memory";
+  /** How many players joined with my invite code */
+  inviteCount: number;
 };
 
 /** One gather trip duration — villager walk loop matches this */

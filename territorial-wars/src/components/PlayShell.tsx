@@ -10,7 +10,12 @@ import {
   type Placing,
 } from "@/components/GameMap";
 import { GoogleSignInButton } from "@/components/GoogleSignInButton";
+import {
+  Walkthrough,
+  readWalkthroughDone,
+} from "@/components/Walkthrough";
 import type { LatLng } from "@/lib/gameTypes";
+import { INVITE_VILLAGER_BONUS } from "@/lib/gameTypes";
 import {
   HouseSprite,
   MillSprite,
@@ -52,6 +57,7 @@ import {
 } from "@/lib/sound";
 
 const BATTLE_ACK_KEY = "itw_battle_ack_ts";
+const INVITE_KEY = "itw_invite";
 
 function readBattleAck(): number {
   try {
@@ -67,6 +73,37 @@ function writeBattleAck(ts: number) {
   } catch {
     /* ignore */
   }
+}
+
+/** Persist ?invite= so it survives Google OAuth redirect */
+function captureInviteFromUrl(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const fromUrl = new URLSearchParams(window.location.search)
+      .get("invite")
+      ?.trim()
+      .toUpperCase();
+    if (fromUrl) {
+      window.localStorage.setItem(INVITE_KEY, fromUrl);
+      return fromUrl;
+    }
+  } catch {
+    /* ignore */
+  }
+  return readStoredInvite();
+}
+
+function readStoredInvite(): string | null {
+  try {
+    return window.localStorage.getItem(INVITE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function inviteCallbackUrl(): string {
+  const code = captureInviteFromUrl();
+  return code ? `/play?invite=${encodeURIComponent(code)}` : "/play";
 }
 
 type BattleSummary = {
@@ -200,8 +237,10 @@ export function PlayShell() {
   const [showMissions, setShowMissions] = useState(false);
   const [showRanks, setShowRanks] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [showInvite, setShowInvite] = useState(false);
   const [showPlayers, setShowPlayers] = useState(false);
   const [showBattles, setShowBattles] = useState(false);
+  const [showWalkthrough, setShowWalkthrough] = useState(false);
   const [placing, setPlacing] = useState<Placing | null>(null);
   /** Mobile: build tray collapsed by default so it doesn't stack over arsenal */
   const [buildOpen, setBuildOpen] = useState(false);
@@ -230,8 +269,14 @@ export function PlayShell() {
   const busyRef = useRef(false);
   const settleGuardUntil = useRef(0);
   const lastGoodMe = useRef<Player | null>(null);
+  const lastInviteCount = useRef<number | null>(null);
+  const walkthroughArmed = useRef(false);
 
   const IDENT_KEY = "itw_player_id";
+
+  useEffect(() => {
+    captureInviteFromUrl();
+  }, []);
 
   const applySnap = useCallback((data: GameSnapshot) => {
     let next = data;
@@ -286,12 +331,26 @@ export function PlayShell() {
       (cur) => cur ?? next.me?.homeSectorId ?? next.sectors[0]?.id ?? null
     );
 
+    // Toast when a referral lands (+1 villager)
+    const ic = next.inviteCount ?? 0;
+    if (lastInviteCount.current !== null && ic > lastInviteCount.current) {
+      const gained = ic - lastInviteCount.current;
+      setToast(
+        gained === 1
+          ? `Friend joined — +${INVITE_VILLAGER_BONUS} villager!`
+          : `${gained} friends joined — +${gained * INVITE_VILLAGER_BONUS} villagers!`
+      );
+      window.setTimeout(() => setToast(null), 4200);
+    }
+    if (next.me) lastInviteCount.current = ic;
+
     const nextId = next.me?.id ?? null;
     if (nextId !== meIdRef.current) {
       // New identity (first load or player switch) — don't replay history
       meIdRef.current = nextId;
       seenEvents.current = new Set();
       eventsPrimed.current = false;
+      lastInviteCount.current = null;
     }
 
     const events = next.events ?? [];
@@ -340,10 +399,7 @@ export function PlayShell() {
   };
 
   const load = useCallback(async () => {
-    const invite =
-      typeof window !== "undefined"
-        ? new URLSearchParams(window.location.search).get("invite")
-        : null;
+    const invite = captureInviteFromUrl();
     const q = invite ? `?invite=${encodeURIComponent(invite)}` : "";
     const res = await fetch(`/api/game${q}`);
     const data = (await res.json()) as GameSnapshot;
@@ -562,8 +618,13 @@ export function PlayShell() {
         label: "Buy a rocket for your arsenal",
         done: (me.rockets || 0) >= 1,
       },
+      {
+        id: "invite",
+        label: "Invite a friend (+1 villager)",
+        done: (snap?.inviteCount ?? 0) >= 1,
+      },
     ];
-  }, [me, gemsFound]);
+  }, [me, gemsFound, snap?.inviteCount]);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -580,10 +641,16 @@ export function PlayShell() {
     if (label) setSavingLabel(label);
     setError(null);
     try {
+      const invite = readStoredInvite();
       const res = await fetch("/api/game", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, sectorId: selectedId, ...extra }),
+        body: JSON.stringify({
+          action,
+          sectorId: selectedId,
+          ...(invite ? { invite } : {}),
+          ...extra,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -973,7 +1040,7 @@ export function PlayShell() {
           account — no more lost guest progress.
         </p>
         <div className="mt-6">
-          <GoogleSignInButton callbackUrl="/play" />
+          <GoogleSignInButton callbackUrl={inviteCallbackUrl()} />
         </div>
         <Link href="/" className="mt-8 text-xs text-[var(--ink-faint)]">
           Back
@@ -981,6 +1048,40 @@ export function PlayShell() {
       </main>
     );
   }
+
+  const shareInvite = async () => {
+    if (!inviteLink) return;
+    const text = `Join my sector in Islamabad Territorial Wars — use my invite and I get +${INVITE_VILLAGER_BONUS} villager:`;
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: "Islamabad Territorial Wars",
+          text,
+          url: inviteLink,
+        });
+        showToast("Invite shared");
+        return;
+      }
+    } catch {
+      /* fall through to clipboard */
+    }
+    try {
+      await navigator.clipboard.writeText(inviteLink);
+      showToast("Invite link copied — friend joins, you gain +1 villager");
+    } catch {
+      showToast(inviteLink);
+    }
+  };
+
+  const openWalkthrough = () => {
+    setShowMenu(false);
+    setShowMissions(false);
+    setShowInvite(false);
+    setShowBattles(false);
+    setShowRanks(false);
+    setShowPlayers(false);
+    setShowWalkthrough(true);
+  };
 
   return (
     <main className="relative h-[100dvh] w-full overflow-hidden bg-[var(--surface)]">
@@ -1029,6 +1130,11 @@ export function PlayShell() {
               showToast(`Collected +${d.gained} gold`);
             }
           })}
+          onIntroComplete={() => {
+            if (walkthroughArmed.current) return;
+            walkthroughArmed.current = true;
+            if (!readWalkthroughDone()) setShowWalkthrough(true);
+          }}
           className="h-full w-full"
         />
       </div>
@@ -1080,6 +1186,7 @@ export function PlayShell() {
                 setShowBattles(false);
                 setShowRanks(false);
                 setShowMissions(false);
+                setShowInvite(false);
                 setShowPlayers(false);
               }}
               className={`hud-chip px-2.5 py-1.5 font-mono text-[11px] sm:px-3 ${
@@ -1101,6 +1208,7 @@ export function PlayShell() {
               setShowMenu(false);
               setShowBattles(false);
               setShowMissions(false);
+              setShowInvite(false);
               setShowPlayers(false);
             }}
             className="sector-board w-[8.75rem] px-1.5 py-1.5 text-left sm:w-40"
@@ -1182,6 +1290,28 @@ export function PlayShell() {
             <span className="font-mono text-[10px] text-[var(--ink-faint)]">
               {missionsDone}/{missionList.length}
             </span>
+          </button>
+          {me && (
+            <button
+              type="button"
+              onClick={() => {
+                setShowMenu(false);
+                setShowInvite(true);
+              }}
+              className="flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-[12px] text-[var(--ink-muted)] hover:bg-[var(--wash)] hover:text-[var(--sand)]"
+            >
+              <span>◈ Invite friends</span>
+              <span className="font-mono text-[10px] text-[var(--sand)]">
+                +{INVITE_VILLAGER_BONUS} villager
+              </span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={openWalkthrough}
+            className="flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-[12px] text-[var(--ink-muted)] hover:bg-[var(--wash)] hover:text-[var(--sand)]"
+          >
+            <span>? How to play</span>
           </button>
           {snap?.authDisabled && (
             <button
@@ -1455,17 +1585,82 @@ export function PlayShell() {
               type="button"
               className="mt-3 w-full rounded-sm border border-[var(--line-strong)] px-2 py-1.5 text-left font-mono text-[9px] text-[var(--sand)]"
               onClick={() => {
-                if (inviteLink) {
-                  void navigator.clipboard.writeText(inviteLink);
-                  showToast("Invite link copied — friend joins, you gain +1 villager");
-                }
+                setShowMissions(false);
+                setShowInvite(true);
               }}
             >
-              ⎘ Copy invite link (+1 villager)
+              ◈ Invite a friend (+1 villager)
             </button>
           )}
         </div>
       )}
+
+      {/* Invite friends panel */}
+      {showInvite && me && (
+        <div className="absolute right-2 top-[4.75rem] z-30 w-72 max-w-[calc(100%-1rem)] hud-panel p-3 sm:right-3 sm:top-16">
+          <div className="flex items-center justify-between">
+            <h2 className="font-mono text-[9px] uppercase tracking-[0.22em] text-[var(--ink-muted)]">
+              Invite friends
+            </h2>
+            <button
+              type="button"
+              onClick={() => setShowInvite(false)}
+              className="font-mono text-[11px] text-[var(--ink-faint)] hover:text-[var(--sand)]"
+            >
+              ✕
+            </button>
+          </div>
+          <p className="mt-2 text-[12px] leading-relaxed text-[var(--ink-muted)]">
+            Share your link. Each friend who joins with it gives you{" "}
+            <span className="text-[var(--sand)]">
+              +{INVITE_VILLAGER_BONUS} villager
+            </span>{" "}
+            — permanent gather power.
+          </p>
+          <p className="mt-2 font-mono text-[10px] text-[var(--ink-faint)]">
+            Code{" "}
+            <span className="text-[var(--sand)]">{me.inviteCode}</span>
+            {" · "}
+            {(snap?.inviteCount ?? 0) === 0
+              ? "No referrals yet"
+              : `${snap?.inviteCount} friend${
+                  (snap?.inviteCount ?? 0) === 1 ? "" : "s"
+                } joined`}
+          </p>
+          {inviteLink && (
+            <p className="mt-2 break-all rounded-sm bg-[var(--wash)] px-2 py-1.5 font-mono text-[9px] text-[var(--ink-muted)]">
+              {inviteLink}
+            </p>
+          )}
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              className="flex-1 rounded-sm bg-[var(--signal)] px-2 py-2 text-[12px] font-bold text-white"
+              onClick={() => void shareInvite()}
+            >
+              Share link
+            </button>
+            <button
+              type="button"
+              className="rounded-sm border border-[var(--line-strong)] px-3 py-2 font-mono text-[10px] text-[var(--sand)]"
+              onClick={() => {
+                if (!inviteLink) return;
+                void navigator.clipboard.writeText(inviteLink).then(
+                  () => showToast("Invite link copied"),
+                  () => showToast(inviteLink)
+                );
+              }}
+            >
+              Copy
+            </button>
+          </div>
+        </div>
+      )}
+
+      <Walkthrough
+        open={showWalkthrough}
+        onClose={() => setShowWalkthrough(false)}
+      />
 
       {/* Graphical battle report — blocks until dismissed */}
       {battleSummary && (
@@ -1619,7 +1814,7 @@ export function PlayShell() {
       )}
 
       {/* Toast / error */}
-      {(toast || error) && !battleSummary && !savingLabel && (
+      {(toast || error) && !battleSummary && !savingLabel && !showWalkthrough && (
         <div className="pointer-events-none absolute left-1/2 top-14 z-40 -translate-x-1/2">
           <p
             className={`hud-chip px-4 py-2 text-xs font-semibold ${

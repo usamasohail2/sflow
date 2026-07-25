@@ -906,6 +906,48 @@ button.cameo:not(:disabled):hover {
   }
 }
 
+/* ---- First-time walkthrough ---- */
+
+.walkthrough-overlay {
+  background: radial-gradient(
+    ellipse 80% 70% at 50% 70%,
+    rgba(6, 10, 8, 0.55) 0%,
+    rgba(6, 10, 8, 0.72) 100%
+  );
+  animation: walkthrough-in 0.35s ease-out;
+}
+
+.walkthrough-card {
+  background:
+    linear-gradient(180deg, rgba(42, 52, 44, 0.96), rgba(14, 20, 16, 0.97));
+  border: 1px solid #46543f;
+  border-radius: 8px;
+  box-shadow:
+    inset 0 1px 0 rgba(232, 235, 228, 0.12),
+    0 12px 36px rgba(0, 0, 0, 0.55);
+  animation: walkthrough-card-in 0.4s ease-out;
+}
+
+@keyframes walkthrough-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes walkthrough-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @keyframes attack-alert-pulse {
   0%,
   100% {
