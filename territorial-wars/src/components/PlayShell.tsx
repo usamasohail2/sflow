@@ -505,7 +505,8 @@ export function PlayShell() {
   /** Building ids currently syncing to the server (optimistic place) */
   const [syncingBuildIds, setSyncingBuildIds] = useState<string[]>([]);
   /** Mobile: build tray collapsed by default so it doesn't stack over arsenal */
-  const [buildOpen, setBuildOpen] = useState(false);
+  /** Mobile: open by default so build tiles use the free dock space */
+  const [buildOpen, setBuildOpen] = useState(true);
   const [pendingHouse, setPendingHouse] = useState<LatLng | null>(null);
   const [march, setMarch] = useState<MarchAnim | null>(null);
   const [impact, setImpact] = useState<ImpactAnim | null>(null);
@@ -2936,7 +2937,7 @@ export function PlayShell() {
       {enemySelected && enemyPlayer && !placing && !needsHouseRebuild && (
         <div
           className={`absolute left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-xs -translate-x-1/2 sm:bottom-8 ${
-            buildOpen ? "bottom-56" : "bottom-28"
+            buildOpen ? "bottom-[13.5rem]" : "bottom-28"
           }`}
         >
           <div className="hud-panel p-3 text-center">
@@ -3099,7 +3100,7 @@ export function PlayShell() {
                         Arsenal
                       </p>
                       <p className="hidden font-mono text-[8px] text-[var(--ink-faint)] sm:block">
-                        Rockets & finds · spend on attacks
+                        Stock rockets · spend on attacks
                       </p>
                     </div>
                     <p className="shrink-0 font-mono text-[9px] text-[var(--ink-muted)]">
@@ -3186,7 +3187,7 @@ export function PlayShell() {
                     Close
                   </button>
                 </div>
-                <div className="grid grid-cols-4 gap-1 sm:grid-cols-2 sm:gap-1.5">
+                <div className="grid grid-cols-2 gap-1.5 sm:gap-1.5">
                   {(snap?.buildingCatalog ?? []).map((b) => {
                     const affordable = displayGold >= b.cost;
                     const active = placing?.kind === b.type;
@@ -3197,9 +3198,9 @@ export function PlayShell() {
                       <button
                         key={b.type}
                         type="button"
-                        className={`cameo ${active ? "cameo-active" : ""} ${
-                          affordable && !active ? "cameo-blink" : ""
-                        }`}
+                        className={`cameo cameo-build ${
+                          active ? "cameo-active" : ""
+                        } ${affordable && !active ? "cameo-blink" : ""}`}
                         disabled={
                           busy || !affordable || !homeSector || !me.house
                         }
@@ -3218,7 +3219,7 @@ export function PlayShell() {
                       >
                         <BuildingThumb
                           type={b.type}
-                          className="h-8 w-9 sm:h-9 sm:w-10"
+                          className="h-9 w-10 sm:h-9 sm:w-10"
                         />
                         <span className="cameo-cost">
                           {GOLD_COIN}
