@@ -351,7 +351,10 @@ function eventLogLine(
             possessive
           />{" "}
           {e.buildingName}
-          {e.rocketsLost ? ` (${e.rocketsLost}🚀)` : ""} in {e.sectorName}
+          {e.rocketsLost
+            ? ` (${e.rocketsLost} rocket${e.rocketsLost === 1 ? "" : "s"})`
+            : ""}{" "}
+          in {e.sectorName}
         </>
       );
     }
