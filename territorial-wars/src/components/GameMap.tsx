@@ -179,6 +179,9 @@ type Props = {
   userLocation?: LatLng | null;
   /** Increment to re-center the map on the GPS pin */
   userLocationFocus?: number;
+  /** Allow dragging the settle pin (manual location pick) */
+  pinDraggable?: boolean;
+  onMovePin?: (lat: number, lng: number) => void;
   /** Increment to re-fly to the selected sector (e.g. leaderboard re-tap) */
   sectorFocus?: number;
   march: MarchAnim | null;
@@ -308,6 +311,8 @@ export function GameMap({
   previewHouse,
   userLocation = null,
   userLocationFocus = 0,
+  pinDraggable = false,
+  onMovePin,
   sectorFocus = 0,
   march,
   impact,
@@ -1756,17 +1761,29 @@ export function GameMap({
           </Marker>
         )}
 
-        {/* Exact GPS while selecting / claiming a sector */}
+        {/* Exact GPS / manual pin while selecting / claiming a sector */}
         {userLocation && (
           <Marker
             longitude={userLocation.lng}
             latitude={userLocation.lat}
             anchor="center"
+            draggable={pinDraggable}
+            onDragEnd={(e) => {
+              if (!onMovePin) return;
+              const { lng, lat } = e.lngLat;
+              onMovePin(lat, lng);
+            }}
+            style={pinDraggable ? { cursor: "grab" } : undefined}
           >
-            <div className="you-are-here" title="Your location">
+            <div
+              className="you-are-here"
+              title={pinDraggable ? "Drag to move your pin" : "Your location"}
+            >
               <span className="you-are-here-pulse" />
               <span className="you-are-here-dot" />
-              <span className="you-are-here-label">You</span>
+              <span className="you-are-here-label">
+                {pinDraggable ? "Drag" : "You"}
+              </span>
             </div>
           </Marker>
         )}

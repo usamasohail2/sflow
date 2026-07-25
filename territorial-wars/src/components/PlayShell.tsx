@@ -580,7 +580,9 @@ export function PlayShell() {
   const [locStatus, setLocStatus] = useState<
     "idle" | "reading" | "ok" | "failed"
   >("idle");
-  /** Tap-map fallback when device GPS fails */
+  /** Manual path: pick sector from list or place/drag pin on map */
+  const [manualMode, setManualMode] = useState(false);
+  /** Awaiting first map tap to drop a pin (manual mode) */
   const [pickingPin, setPickingPin] = useState(false);
   const [gpsBusy, setGpsBusy] = useState(false);
   const [locationFocus, setLocationFocus] = useState(0);
@@ -1272,7 +1274,11 @@ export function PlayShell() {
   };
 
   /** Lock a pin: auto-pick matching sector, else Azad */
-  const lockLocation = (lat: number, lng: number, opts?: { forceAzad?: boolean }) => {
+  const lockLocation = (
+    lat: number,
+    lng: number,
+    opts?: { forceAzad?: boolean; quiet?: boolean; keepManual?: boolean }
+  ) => {
     setLiveLocation({ lat, lng });
     setLocationFocus((n) => n + 1);
     setPickingPin(false);
@@ -1280,12 +1286,13 @@ export function PlayShell() {
     setError(null);
     setSelectedPlayerId(null);
     setRazeTarget(null);
+    if (!opts?.keepManual) setManualMode(false);
 
     if (opts?.forceAzad) {
       setAzadMode(true);
       setSelectedId(null);
       setGpsFix({ sectorId: AZAD_PENDING_ID, lat, lng });
-      showToast(`Location set — ${AZAD_ARENA_NAME}`);
+      if (!opts?.quiet) showToast(`Location set — ${AZAD_ARENA_NAME}`);
       return;
     }
 
@@ -1296,27 +1303,29 @@ export function PlayShell() {
       setAzadMode(false);
       setSelectedId(match.id);
       setGpsFix({ sectorId: match.id, lat, lng });
-      showToast(`You're in ${match.name}`);
+      if (!opts?.quiet) showToast(`Pinned in ${match.name}`);
       return;
     }
 
     setAzadMode(true);
     setSelectedId(null);
     setGpsFix({ sectorId: AZAD_PENDING_ID, lat, lng });
-    showToast(`Off the map — playing ${AZAD_ARENA_NAME}`);
+    if (!opts?.quiet) showToast(`Off the map — ${AZAD_ARENA_NAME}`);
   };
 
-  /** One tap: ask the browser for GPS and lock the pin */
-  const shareLocation = () => {
+  /** Path A: device GPS */
+  const useGpsLocation = () => {
+    setManualMode(false);
+    setPickingPin(false);
+    pinDropAzad.current = false;
     if (!navigator.geolocation) {
       setLocStatus("failed");
-      setError("Location isn’t available — drop a pin on the map instead");
+      setError("GPS isn’t available here — choose a sector on the map instead");
       window.setTimeout(() => setError(null), 4200);
       return;
     }
     setGpsBusy(true);
     setLocStatus("reading");
-    setPickingPin(false);
     setError(null);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -1328,7 +1337,7 @@ export function PlayShell() {
         setLocStatus("failed");
         setGpsFix(null);
         setError(
-          "Couldn’t read GPS — allow location, retry, or drop a pin on the map"
+          "Couldn’t read GPS — allow location access, or choose a sector on the map"
         );
         window.setTimeout(() => setError(null), 4800);
       },
@@ -1336,23 +1345,34 @@ export function PlayShell() {
     );
   };
 
-  const beginPinDrop = (opts?: { azad?: boolean }) => {
-    pinDropAzad.current = Boolean(opts?.azad);
-    setPickingPin(true);
+  /** Path B: open manual picker (list + map pin) */
+  const startManualPick = () => {
+    setManualMode(true);
+    setGpsFix(null);
+    setAzadMode(false);
+    setLocStatus("idle");
+    pinDropAzad.current = false;
     setError(null);
-    showToast(
-      opts?.azad
-        ? `Tap the map to set your pin for ${AZAD_ARENA_NAME}`
-        : "Tap the map to drop your location pin"
-    );
+    if (!liveLocation) {
+      setPickingPin(true);
+      showToast("Tap the map to place your pin, or pick a sector below");
+    } else {
+      setPickingPin(false);
+      lockLocation(liveLocation.lat, liveLocation.lng, {
+        keepManual: true,
+        quiet: true,
+      });
+    }
   };
 
-  const playAzadFromPin = () => {
-    if (liveLocation) {
-      lockLocation(liveLocation.lat, liveLocation.lng, { forceAzad: true });
-      return;
-    }
-    beginPinDrop({ azad: true });
+  /** Manual: pick a named sector — pin drops at its center */
+  const pickSectorFromList = (sectorId: string) => {
+    const sector = snap?.sectors.find((s) => s.id === sectorId);
+    if (!sector) return;
+    const center = ringCentroid(sector.ring);
+    setManualMode(true);
+    setSectorFocus((n) => n + 1);
+    lockLocation(center.lat, center.lng, { keepManual: true });
   };
 
   /** Demo-only: skip real GPS and treat the sector center as your location */
@@ -2038,6 +2058,7 @@ export function PlayShell() {
     setLiveLocation(null);
     setAzadMode(false);
     setLocStatus("idle");
+    setManualMode(false);
     setPickingPin(false);
     setSelectedId(null);
     setSelectedPlayerId(null);
@@ -2165,12 +2186,19 @@ export function PlayShell() {
             setSelectedPlayerId(null);
             setRazeTarget(null);
           }}
-          pinDropActive={pickingPin && !claimed}
+          pinDropActive={(pickingPin || manualMode) && !claimed && !placing}
+          pinDraggable={manualMode && !claimed && !placing && Boolean(liveLocation)}
           onDropPin={(lat, lng) => {
             const forceAzad = pinDropAzad.current;
             pinDropAzad.current = false;
-            lockLocation(lat, lng, forceAzad ? { forceAzad: true } : undefined);
+            lockLocation(lat, lng, {
+              forceAzad: forceAzad || undefined,
+              keepManual: true,
+            });
           }}
+          onMovePin={(lat, lng) =>
+            lockLocation(lat, lng, { keepManual: true, quiet: true })
+          }
           onIntroComplete={() => {
             /* Location setup is self-guided; tips open after settle */
           }}
@@ -3362,7 +3390,7 @@ export function PlayShell() {
         </div>
       )}
 
-      {/* ---- Settle prompt (no home yet) — one linear panel ---- */}
+      {/* ---- Settle prompt (no home yet) — GPS or pick sector ---- */}
       {!claimed && !placing && me && (
         <div className="absolute bottom-28 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-sm -translate-x-1/2 sm:bottom-8">
           <div className="hud-panel p-4 text-center">
@@ -3370,73 +3398,128 @@ export function PlayShell() {
               New settler
             </p>
             <p className="mt-1 font-display text-2xl text-[var(--ink)]">
-              {!gpsFix
-                ? "Where are you?"
-                : azadMode
+              {gpsFix
+                ? azadMode
                   ? AZAD_ARENA_NAME
-                  : selected?.name ?? "Your sector"}
+                  : selected?.name ?? "Your sector"
+                : manualMode
+                  ? "Pick your sector"
+                  : "Where will you settle?"}
             </p>
             <p className="mt-1 text-[11px] text-[var(--ink-muted)]">
-              {!gpsFix
-                ? pickingPin
-                  ? "Tap the map to drop your pin, then settle."
-                  : locStatus === "failed"
-                    ? "GPS failed — retry, or drop a pin on the map."
-                    : "Share your location. We’ll put you in a sector — or Azad if you’re off the map."
-                : azadMode
-                  ? "Pin locked. Tap Settle, then plant your house near the blue pin."
+              {gpsFix
+                ? azadMode
+                  ? "Pin set outside the mapped sectors. Settle here, or pick a sector instead."
                   : settlersHere.length > 0
-                    ? `${settlersHere.length} settler${settlersHere.length === 1 ? "" : "s"} here — join them.`
-                    : "Pin locked. Tap Settle, then plant your house."}
+                    ? `${settlersHere.length} settler${settlersHere.length === 1 ? "" : "s"} here — sectors are shared.`
+                    : "Location ready. Settle, then plant your house on the map."
+                : manualMode
+                  ? pickingPin
+                    ? "Tap the map to place your pin, or choose a sector below."
+                    : "Drag the pin, tap the map, or pick a sector from the list."
+                  : locStatus === "failed"
+                    ? "GPS didn’t work — try again, or pick a sector on the map."
+                    : "Use GPS for your exact spot, or choose a sector yourself."}
             </p>
             {!azadMode && gpsFix && settlersHere.length > 0 && (
               <p className="mt-1 text-[10px] text-[var(--sand)]">
                 {settlersHere.map((p) => p.name).join(" · ")}
               </p>
             )}
-            {liveLocation && gpsFix && (
-              <p className="mt-1 font-mono text-[9px] text-[#9fd0ff]">
-                Blue pin ready
-              </p>
-            )}
 
-            {!gpsFix ? (
+            {/* Step 1: choose method */}
+            {!gpsFix && !manualMode && (
               <>
                 <button
                   type="button"
                   disabled={busy || gpsBusy}
-                  onClick={shareLocation}
+                  onClick={useGpsLocation}
                   className="mt-3 w-full rounded-sm bg-[var(--signal)] px-3 py-2.5 text-sm font-bold text-white shadow-[0_2px_8px_rgba(0,0,0,0.5)] disabled:opacity-40"
                 >
                   {gpsBusy
-                    ? "Reading GPS…"
+                    ? "Finding you…"
                     : locStatus === "failed"
-                      ? "📍 Try GPS again"
-                      : "📍 Share my location"}
+                      ? "Try GPS again"
+                      : "Find my exact location"}
                 </button>
                 <button
                   type="button"
                   disabled={busy || gpsBusy}
-                  onClick={() => beginPinDrop()}
-                  className={`mt-2 w-full rounded-sm border px-3 py-2 text-xs font-semibold disabled:opacity-40 ${
-                    pickingPin
-                      ? "border-[var(--sand)] bg-[var(--wash)] text-[var(--sand)]"
-                      : "border-[var(--line-strong)] text-[var(--ink-muted)] hover:border-[var(--sand)] hover:text-[var(--sand)]"
-                  }`}
+                  onClick={startManualPick}
+                  className="mt-2 w-full rounded-sm border border-[var(--line-strong)] bg-[var(--wash)] px-3 py-2.5 text-sm font-semibold text-[var(--ink)] hover:border-[var(--sand)] hover:text-[var(--sand)] disabled:opacity-40"
                 >
-                  {pickingPin ? "Waiting for map tap…" : "Drop a pin on the map"}
-                </button>
-                <button
-                  type="button"
-                  disabled={busy || gpsBusy}
-                  onClick={playAzadFromPin}
-                  className="mt-1.5 text-[10px] font-mono text-[var(--ink-faint)] underline decoration-dotted underline-offset-2 hover:text-[var(--sand)] disabled:opacity-40"
-                >
-                  Play {AZAD_ARENA_NAME} instead
+                  Choose a sector on the map
                 </button>
               </>
-            ) : (
+            )}
+
+            {/* Step 1b: manual — sector list + pin */}
+            {!gpsFix && manualMode && (
               <>
+                <div className="mt-3 flex max-h-28 flex-wrap justify-center gap-1.5 overflow-y-auto">
+                  {(snap?.sectors ?? []).map((s) => {
+                    const n = settlersBySector.get(s.id)?.length ?? 0;
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        disabled={busy}
+                        onClick={() => pickSectorFromList(s.id)}
+                        className="rounded-sm border border-[var(--line)] px-2 py-1 font-mono text-[10px] text-[var(--ink-muted)] hover:border-[var(--sand)] hover:text-[var(--sand)] disabled:opacity-40"
+                      >
+                        {s.name}
+                        {n > 0 ? ` · ${n}` : ""}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-2 font-mono text-[9px] text-[#9fd0ff]">
+                  {pickingPin
+                    ? "Waiting for a map tap…"
+                    : "Or drag the blue pin on the map"}
+                </p>
+                <button
+                  type="button"
+                  disabled={busy || gpsBusy}
+                  onClick={() => {
+                    setManualMode(false);
+                    setPickingPin(false);
+                    setLiveLocation(null);
+                    setGpsFix(null);
+                  }}
+                  className="mt-2 text-[10px] font-mono text-[var(--ink-faint)] underline decoration-dotted underline-offset-2 hover:text-[var(--sand)] disabled:opacity-40"
+                >
+                  Back — use GPS instead
+                </button>
+              </>
+            )}
+
+            {/* Step 2: location locked → settle */}
+            {gpsFix && (
+              <>
+                {manualMode && (
+                  <div className="mt-3 flex max-h-24 flex-wrap justify-center gap-1.5 overflow-y-auto">
+                    {(snap?.sectors ?? []).map((s) => {
+                      const n = settlersBySector.get(s.id)?.length ?? 0;
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          disabled={busy}
+                          onClick={() => pickSectorFromList(s.id)}
+                          className={`rounded-sm border px-2 py-1 font-mono text-[10px] disabled:opacity-40 ${
+                            s.id === selectedId
+                              ? "border-[var(--sand)] text-[var(--sand)]"
+                              : "border-[var(--line)] text-[var(--ink-muted)] hover:border-[var(--sand)] hover:text-[var(--sand)]"
+                          }`}
+                        >
+                          {s.name}
+                          {n > 0 ? ` · ${n}` : ""}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
                 <button
                   type="button"
                   data-guide="guide-settle"
@@ -3455,6 +3538,7 @@ export function PlayShell() {
                       window.setTimeout(() => setError(null), 2800);
                       return;
                     }
+                    setManualMode(false);
                     setPlacing({ kind: "house", sector });
                     showToast(
                       azadMode
@@ -3464,57 +3548,49 @@ export function PlayShell() {
                   }}
                   className="mt-3 w-full rounded-sm bg-[var(--signal)] px-3 py-2.5 text-sm font-bold text-white shadow-[0_2px_8px_rgba(0,0,0,0.5)] disabled:opacity-40"
                 >
-                  ⚑ Settle
+                  Settle
                   {azadMode
                     ? ` in ${AZAD_ARENA_NAME}`
                     : selected
                       ? ` in ${selected.name}`
-                      : ""}{" "}
-                  — place house
+                      : ""}
                 </button>
-                <button
-                  type="button"
-                  disabled={busy || gpsBusy}
-                  onClick={() => {
-                    setGpsFix(null);
-                    setLocStatus("idle");
-                    setPickingPin(false);
-                    shareLocation();
-                  }}
-                  className="mt-2 w-full rounded-sm border border-[var(--line)] px-3 py-2 text-xs text-[var(--ink-muted)] hover:border-[var(--sand)] hover:text-[var(--sand)] disabled:opacity-40"
-                >
-                  {gpsBusy ? "Reading GPS…" : "Re-check location"}
-                </button>
-                {azadMode ? (
+                <div className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1">
+                  {!manualMode && (
+                    <button
+                      type="button"
+                      disabled={busy || gpsBusy}
+                      onClick={useGpsLocation}
+                      className="text-[10px] font-mono text-[var(--ink-faint)] underline decoration-dotted underline-offset-2 hover:text-[var(--sand)] disabled:opacity-40"
+                    >
+                      {gpsBusy ? "Finding you…" : "Refresh GPS"}
+                    </button>
+                  )}
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() => {
-                      setAzadMode(false);
-                      setGpsFix(null);
-                      setLocStatus("idle");
-                      setPickingPin(false);
-                    }}
-                    className="mt-1.5 text-[9px] font-mono text-[var(--ink-faint)] underline decoration-dotted underline-offset-2 hover:text-[var(--sand)] disabled:opacity-40"
+                    onClick={startManualPick}
+                    className="text-[10px] font-mono text-[var(--ink-faint)] underline decoration-dotted underline-offset-2 hover:text-[var(--sand)] disabled:opacity-40"
                   >
-                    Switch to a mapped sector
+                    {manualMode ? "Adjust pin / sector" : "Choose a different sector"}
                   </button>
-                ) : (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() =>
-                      liveLocation
-                        ? lockLocation(liveLocation.lat, liveLocation.lng, {
-                            forceAzad: true,
-                          })
-                        : playAzadFromPin()
-                    }
-                    className="mt-1.5 text-[9px] font-mono text-[var(--ink-faint)] underline decoration-dotted underline-offset-2 hover:text-[var(--sand)] disabled:opacity-40"
-                  >
-                    Play {AZAD_ARENA_NAME} instead
-                  </button>
-                )}
+                  {!azadMode && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        liveLocation
+                          ? lockLocation(liveLocation.lat, liveLocation.lng, {
+                              forceAzad: true,
+                            })
+                          : startManualPick()
+                      }
+                      className="text-[10px] font-mono text-[var(--ink-faint)] underline decoration-dotted underline-offset-2 hover:text-[var(--sand)] disabled:opacity-40"
+                    >
+                      Play {AZAD_ARENA_NAME}
+                    </button>
+                  )}
+                </div>
               </>
             )}
 
@@ -3532,41 +3608,6 @@ export function PlayShell() {
               >
                 Demo: bypass location check
               </button>
-            )}
-
-            {!azadMode && gpsFix && (
-              <div className="mt-2 flex flex-wrap justify-center gap-1.5">
-                {(snap?.sectors ?? []).map((s) => {
-                  const n = settlersBySector.get(s.id)?.length ?? 0;
-                  const pinIn = liveLocation
-                    ? pointInOrNearRing(liveLocation, s.ring, 120)
-                    : false;
-                  return (
-                    <button
-                      key={s.id}
-                      type="button"
-                      disabled={!pinIn}
-                      onClick={() => {
-                        if (!liveLocation || !pinIn) return;
-                        lockLocation(liveLocation.lat, liveLocation.lng);
-                      }}
-                      className={`rounded-sm border px-2 py-1 font-mono text-[9px] disabled:opacity-35 ${
-                        s.id === selectedId
-                          ? "border-[var(--sand)] text-[var(--sand)]"
-                          : "border-[var(--line)] text-[var(--ink-muted)]"
-                      }`}
-                      title={
-                        pinIn
-                          ? `Settle in ${s.name}`
-                          : "Your pin isn’t in this sector"
-                      }
-                    >
-                      {s.name}
-                      {n > 0 ? ` · ${n}` : ""}
-                    </button>
-                  );
-                })}
-              </div>
             )}
           </div>
         </div>
