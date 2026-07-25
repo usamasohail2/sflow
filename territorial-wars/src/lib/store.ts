@@ -199,13 +199,6 @@ async function setNX(key: string, value: string): Promise<boolean> {
   return true;
 }
 
-async function getStr(key: string): Promise<string | null> {
-  const r = redis();
-  if (r) return ((await r.get(key)) as string) ?? null;
-  const v = mem().json.get(key);
-  return typeof v === "string" ? v : null;
-}
-
 async function keyExists(key: string): Promise<boolean> {
   const r = redis();
   if (r) return (await r.exists(key)) === 1;
