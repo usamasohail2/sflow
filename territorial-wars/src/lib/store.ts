@@ -17,12 +17,16 @@ import {
   ROAM_MIN_EXPLORE_MS,
   ROCKET_COST,
   SPAWN_COOLDOWN_MS,
+  AZAD_ARENA_NAME,
+  AZAD_PLAY_RADIUS_M,
   STARTING,
   attackPower,
+  azadHomeIdFor,
   buildingBonus,
   catalogItem,
   colorForPlayerId,
   defensePower,
+  isAzadHomeId,
   type BattleReport,
   type Building,
   type BuildingType,
@@ -41,6 +45,7 @@ import {
   offsetBearing,
   pickRoamGem,
   ringCentroid,
+  seedSpotsForAzad,
   seedSpotsForSector,
 } from "@/lib/mapMath";
 import { accrueGather } from "@/lib/rules";
@@ -1068,12 +1073,21 @@ export async function getSnapshot(meId?: string | null): Promise<GameSnapshot> {
     p.id === me?.id ? publicPlayer(me) : publicPlayer(projectPlayer(p, spotsAll))
   );
 
-  // Ensure every settled sector has easy nodes so rival walk loops have a target
+  // Ensure every settled home has easy nodes so rival walk loops have a target
   let spotsWorking = spotsAll;
   const settled = playersAll.filter((p) => p.homeSectorId && p.house);
   for (const p of settled) {
+    if (!p.house || !p.homeSectorId) continue;
+    if (isAzadHomeId(p.homeSectorId)) {
+      if (
+        !spotsWorking.some((s) => s.sectorId === p.homeSectorId && s.kind === "easy")
+      ) {
+        spotsWorking = seedSpotsForAzad(p.homeSectorId, p.house, spotsWorking);
+      }
+      continue;
+    }
     const sector = sectors.find((s) => s.id === p.homeSectorId);
-    if (!sector || !p.house) continue;
+    if (!sector) continue;
     if (!spotsWorking.some((s) => s.sectorId === sector.id && s.kind === "easy")) {
       spotsWorking = seedSpotsForSector(sector, p.house, spotsWorking);
     }
@@ -1309,6 +1323,83 @@ export async function claimSector(
   return { ok: true };
 }
 
+/**
+ * Settle into Azad Umeed Wars — for players whose GPS isn't inside any
+ * Islamabad sector. No map walls; play radius is around the house.
+ */
+export async function claimAzadUmeed(
+  playerId: string,
+  housePos: { lat: number; lng: number },
+  villagerPos?: { lat: number; lng: number },
+  gpsPos?: { lat: number; lng: number }
+): Promise<{ ok: true } | { error: string }> {
+  await bootstrap();
+  const me = await getPlayer(playerId);
+  if (!me) return { error: "Player missing" };
+  if (me.homeSectorId) {
+    return { error: "You already settled." };
+  }
+  if (
+    !gpsPos ||
+    !Number.isFinite(gpsPos.lat) ||
+    !Number.isFinite(gpsPos.lng)
+  ) {
+    return { error: "Confirm your GPS location first" };
+  }
+  if (!Number.isFinite(housePos.lat) || !Number.isFinite(housePos.lng)) {
+    return { error: "Place your house on the map" };
+  }
+  // House should be near the confirmed pin
+  if (distMeters(housePos, gpsPos) > AZAD_PLAY_RADIUS_M) {
+    return { error: "Place your house near your GPS pin" };
+  }
+
+  const blocked = await assertClearGround(playerId, housePos);
+  if (blocked) return blocked;
+
+  let villagerPost: { lat: number; lng: number } | null = null;
+  if (
+    villagerPos &&
+    Number.isFinite(villagerPos.lat) &&
+    Number.isFinite(villagerPos.lng)
+  ) {
+    if (distMeters(villagerPos, housePos) > 400) {
+      return { error: "Villager must stay near the house (within 400m)" };
+    }
+    villagerPost = villagerPos;
+  }
+
+  const homeId = azadHomeIdFor(playerId);
+  const now = Date.now();
+  const spots = seedSpotsForAzad(homeId, housePos, await getSpots());
+  await setSpots(spots);
+  const easyIds = spots
+    .filter((s) => s.sectorId === homeId && s.kind === "easy")
+    .map((s) => s.id);
+
+  await setPlayer({
+    ...me,
+    homeSectorId: homeId,
+    house: housePos,
+    houseHp: HOUSE_MAX_HP,
+    villagerPost: villagerPost ?? housePos,
+    villagers: Math.max(STARTING.villagers, me.villagers || 0),
+    rockets: 0,
+    peakRockets: 0,
+    gold: STARTING.gold,
+    totalFarmed: 0,
+    buildings: [],
+    discoveredSpotIds: easyIds,
+    lastGatherAt: now,
+    lastRoamSpawnAt: 0,
+    lastAttackAt: 0,
+    lastRazeAt: 0,
+    updatedAt: now,
+  });
+  await flushStore();
+  return { ok: true };
+}
+
 /** Rebuild house after it was destroyed in battle (keeps the same sector). */
 export async function placeHouse(
   playerId: string,
@@ -1320,14 +1411,19 @@ export async function placeHouse(
   if (!me?.homeSectorId) return { error: "Settle in a sector first" };
   if (me.house) return { error: "You already have a house" };
 
+  const azad = isAzadHomeId(me.homeSectorId);
   const sectors = await getSectors();
-  const sector = sectors.find((s) => s.id === me.homeSectorId);
-  if (!sector) return { error: "Sector missing" };
+  const sector = azad
+    ? null
+    : sectors.find((s) => s.id === me.homeSectorId);
+  if (!azad && !sector) return { error: "Sector missing" };
 
   if (!Number.isFinite(housePos.lat) || !Number.isFinite(housePos.lng)) {
     return { error: "Pick a spot for your house" };
   }
-  if (!pointInRing(housePos, sector.ring)) {
+  if (azad) {
+    // Rebuild near previous villager post or freely nearby
+  } else if (sector && !pointInRing(housePos, sector.ring)) {
     return { error: "Place your house inside your sector" };
   }
 
@@ -1340,7 +1436,7 @@ export async function placeHouse(
     Number.isFinite(villagerPos.lat) &&
     Number.isFinite(villagerPos.lng)
   ) {
-    if (!pointInRing(villagerPos, sector.ring)) {
+    if (!azad && sector && !pointInRing(villagerPos, sector.ring)) {
       return { error: "Place your villager inside the sector" };
     }
     if (distMeters(villagerPos, housePos) > 400) {
@@ -1394,13 +1490,24 @@ export async function spawnRoamFind(
     return { error: "Explore a bit longer…" };
   }
 
+  const azad = isAzadHomeId(me.homeSectorId);
   const sectors = await getSectors();
-  const sector = sectors.find((s) => s.id === me.homeSectorId);
-  if (!sector) return { error: "Home sector missing" };
+  const sector = azad
+    ? null
+    : sectors.find((s) => s.id === me.homeSectorId);
+  if (!azad && !sector) return { error: "Home sector missing" };
+  if (azad && !me.house) return { error: "Place your house first" };
 
   const view = { lat: opts.lat, lng: opts.lng };
-  if (!pointInRing(view, sector.ring)) {
-    return { error: "Roam inside your own sector" };
+  const inTerritory = azad
+    ? distMeters(view, me.house!) <= AZAD_PLAY_RADIUS_M
+    : pointInRing(view, sector!.ring);
+  if (!inTerritory) {
+    return {
+      error: azad
+        ? "Roam near your house to find resources"
+        : "Roam inside your own sector",
+    };
   }
 
   const now = Date.now();
@@ -1417,23 +1524,31 @@ export async function spawnRoamFind(
       s.ownerId === playerId
   );
   if (finds.length >= MAX_ROAM_FINDS) {
-    return { error: "You've found every vein in this sector for now" };
+    return { error: "You've found every vein around here for now" };
   }
+
+  const inBounds = (p: { lat: number; lng: number }) =>
+    azad
+      ? distMeters(p, me.house!) <= AZAD_PLAY_RADIUS_M
+      : pointInRing(p, sector!.ring);
 
   // Spawn close to the camera so finds are easy to notice and tap
   const ahead = 12 + Math.random() * 18;
   let pos = offsetBearing(view, opts.bearing, ahead);
   pos = offsetBearing(pos, opts.bearing + 90, (Math.random() - 0.5) * 16);
 
-  if (!pointInRing(pos, sector.ring)) {
+  if (!inBounds(pos)) {
     pos = offsetBearing(view, opts.bearing, 14);
   }
-  if (!pointInRing(pos, sector.ring)) {
-    // Fall back beside the view instead of failing at the edge
+  if (!inBounds(pos)) {
     pos = offsetBearing(view, opts.bearing + 90, 12);
   }
-  if (!pointInRing(pos, sector.ring)) {
-    return { error: "Edge of the sector — turn back and keep roaming" };
+  if (!inBounds(pos)) {
+    return {
+      error: azad
+        ? "Stay closer to your house and keep roaming"
+        : "Edge of the sector — turn back and keep roaming",
+    };
   }
 
   const tooClose = spots.some(
@@ -1444,7 +1559,7 @@ export async function spawnRoamFind(
   if (tooClose) {
     pos = offsetBearing(view, opts.bearing + 55, 16);
     if (
-      !pointInRing(pos, sector.ring) ||
+      !inBounds(pos) ||
       spots.some(
         (s) =>
           s.sectorId === me.homeSectorId &&
@@ -1555,7 +1670,9 @@ export async function collectHidden(
     const stolen = Boolean(ownerId && ownerId !== playerId);
     const sectors = await getSectors();
     const spotSector = sectors.find((s) => s.id === spot.sectorId);
-    const claimerSector = sectors.find((s) => s.id === me.homeSectorId);
+    const claimerSector = isAzadHomeId(me.homeSectorId)
+      ? null
+      : sectors.find((s) => s.id === me.homeSectorId);
     const owner = ownerId ? await getPlayer(ownerId) : null;
 
     await setPlayer({
@@ -1583,7 +1700,9 @@ export async function collectHidden(
         sectorName: spotSector?.name ?? "Sector",
         gem: spot.gem,
         gold: gained,
-        claimerSectorName: claimerSector?.name ?? "Sector",
+        claimerSectorName: isAzadHomeId(me.homeSectorId)
+          ? AZAD_ARENA_NAME
+          : claimerSector?.name ?? "Sector",
       });
     }
 
@@ -1658,11 +1777,23 @@ export async function claimBusinessReview(
     return { error: "Invalid location" };
   }
 
-  const sectors = await getSectors();
-  const sector = sectors.find((s) => s.id === me.homeSectorId);
-  if (!sector) return { error: "Sector missing" };
-  if (!pointInOrNearRing({ lat: input.lat, lng: input.lng }, sector.ring, 40)) {
-    return { error: "That business is outside your sector" };
+  const azad = isAzadHomeId(me.homeSectorId);
+  if (azad) {
+    if (
+      distMeters({ lat: input.lat, lng: input.lng }, me.house) >
+      AZAD_PLAY_RADIUS_M
+    ) {
+      return { error: "That business is too far from your village" };
+    }
+  } else {
+    const sectors = await getSectors();
+    const sector = sectors.find((s) => s.id === me.homeSectorId);
+    if (!sector) return { error: "Sector missing" };
+    if (
+      !pointInOrNearRing({ lat: input.lat, lng: input.lng }, sector.ring, 40)
+    ) {
+      return { error: "That business is outside your sector" };
+    }
   }
 
   const reviewed = me.reviewedPlaceIds || [];
@@ -1693,13 +1824,21 @@ export async function buildBuilding(
   const cat = BUILDING_CATALOG.find((b) => b.type === type);
   if (!cat) return { error: "Unknown building" };
 
+  const azad = isAzadHomeId(me.homeSectorId);
   const sectors = await getSectors();
-  const sector = sectors.find((s) => s.id === me.homeSectorId)!;
+  const sector = azad
+    ? null
+    : sectors.find((s) => s.id === me.homeSectorId);
+  if (!azad && !sector) return { error: "Sector missing" };
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-    return { error: "Tap a spot inside your sector to place it" };
+    return { error: "Tap a spot near your village to place it" };
   }
   const pos = { lat: lat!, lng: lng! };
-  if (!pointInRing(pos, sector.ring)) {
+  if (azad) {
+    if (distMeters(pos, me.house) > AZAD_PLAY_RADIUS_M) {
+      return { error: "Place it near your house" };
+    }
+  } else if (sector && !pointInRing(pos, sector.ring)) {
     return { error: "Place it inside your own sector" };
   }
 
@@ -1853,7 +1992,9 @@ export async function razeBuilding(
     defenderId: owner.id,
     defenderName: owner.name,
     sectorId: me.homeSectorId,
-    sectorName: sector?.name ?? me.homeSectorId,
+    sectorName: isAzadHomeId(me.homeSectorId)
+      ? AZAD_ARENA_NAME
+      : sector?.name ?? me.homeSectorId ?? "Sector",
     buildingId: building.id,
     buildingType: building.type,
     buildingName,
@@ -1866,7 +2007,9 @@ export async function razeBuilding(
       buildingType: building.type,
       buildingName,
       sectorId: me.homeSectorId,
-      sectorName: sector?.name ?? me.homeSectorId,
+      sectorName: isAzadHomeId(me.homeSectorId)
+        ? AZAD_ARENA_NAME
+        : sector?.name ?? me.homeSectorId ?? "Sector",
       defenderName: owner.name,
     },
   };
@@ -2029,7 +2172,9 @@ export async function attackSector(
     defenderId: defender.id,
     defenderName: defender.name,
     sectorId: targetSectorId,
-    sectorName: sector?.name ?? targetSectorId,
+    sectorName: isAzadHomeId(targetSectorId)
+      ? AZAD_ARENA_NAME
+      : sector?.name ?? targetSectorId,
     win,
     damage: damageDealt,
     destroyed,

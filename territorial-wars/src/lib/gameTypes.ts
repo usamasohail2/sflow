@@ -308,6 +308,43 @@ export const STARTING = {
 } as const;
 
 /**
+ * Off-map arena for players whose GPS isn't inside any Islamabad sector.
+ * Each Azad player gets a private home id `azad_<playerId>` (no map walls).
+ */
+export const AZAD_HOME_PREFIX = "azad_";
+export const AZAD_ARENA_NAME = "Azad Umeed Wars";
+/** Soft play radius around the house — roam / build / gather stay near home */
+export const AZAD_PLAY_RADIUS_M = 900;
+/** Client-only placement sector id while settling into Azad (no map walls) */
+export const AZAD_PENDING_ID = "azad_pending";
+
+export function isAzadHomeId(id: string | null | undefined): boolean {
+  return typeof id === "string" && id.startsWith(AZAD_HOME_PREFIX);
+}
+
+export function azadHomeIdFor(playerId: string): string {
+  return `${AZAD_HOME_PREFIX}${playerId}`;
+}
+
+/** Synthetic sector used only for unbound house/villager placement */
+export function makeAzadPlacementSector(center?: LatLng | null): Sector {
+  return {
+    id: AZAD_PENDING_ID,
+    name: AZAD_ARENA_NAME,
+    // Empty ring → GameMap treats placement as unbound (no walls)
+    ring: center
+      ? [
+          [center.lng, center.lat],
+          [center.lng, center.lat],
+          [center.lng, center.lat],
+        ]
+      : [],
+    createdAt: 0,
+    updatedAt: 0,
+  };
+}
+
+/**
  * Plain-text gold marker for toasts / map labels / API errors.
  * UI surfaces should prefer `<GoldCoinIcon />` instead.
  */

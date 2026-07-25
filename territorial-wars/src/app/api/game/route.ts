@@ -8,6 +8,7 @@ import {
   beginTutorialTest,
   buildBuilding,
   buyRocket,
+  claimAzadUmeed,
   claimBusinessReview,
   claimSector,
   collectHidden,
@@ -216,6 +217,26 @@ export async function POST(req: Request) {
       villagerPos,
       gpsPos
     );
+  } else if (body.action === "claim_azad") {
+    const housePos =
+      Number.isFinite(body.lat) && Number.isFinite(body.lng)
+        ? { lat: Number(body.lat), lng: Number(body.lng) }
+        : undefined;
+    const villagerPos =
+      Number.isFinite(body.villagerLat) && Number.isFinite(body.villagerLng)
+        ? { lat: Number(body.villagerLat), lng: Number(body.villagerLng) }
+        : undefined;
+    const gpsPos =
+      Number.isFinite(body.gpsLat) && Number.isFinite(body.gpsLng)
+        ? { lat: Number(body.gpsLat), lng: Number(body.gpsLng) }
+        : undefined;
+    if (!housePos) {
+      return withGuestCookie(
+        NextResponse.json({ error: "Place your house on the map" }, { status: 400 }),
+        setCookie
+      );
+    }
+    result = await claimAzadUmeed(id, housePos, villagerPos, gpsPos);
   } else if (body.action === "place_house") {
     if (!Number.isFinite(body.lat) || !Number.isFinite(body.lng)) {
       return withGuestCookie(

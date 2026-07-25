@@ -195,6 +195,39 @@ export function seedSpotsForSector(
   return [...others, ...easy, ...keptFinds];
 }
 
+/** Seed wood/stone near an Azad Umeed house (no sector polygon). */
+export function seedSpotsForAzad(
+  homeId: string,
+  house: LatLng,
+  existing: ResourceSpot[]
+): ResourceSpot[] {
+  const others = existing.filter((s) => s.sectorId !== homeId);
+  const mine = existing.filter((s) => s.sectorId === homeId);
+  if (mine.some((s) => s.kind === "easy")) {
+    return [...others, ...mine];
+  }
+  const easyPlan: { e: number; n: number; gem: GemType }[] = [
+    { e: 42, n: 24, gem: "wood" },
+    { e: -36, n: 30, gem: "stone" },
+  ];
+  const easy: ResourceSpot[] = easyPlan.map(({ e, n, gem }, i) => {
+    const p = offsetMeters(house, e, n);
+    return {
+      id: `${homeId}_easy_${i}`,
+      sectorId: homeId,
+      kind: "easy" as const,
+      gem,
+      lat: p.lat,
+      lng: p.lng,
+      yield: GEM_META[gem].yield,
+      refillMs: 0,
+      availableAt: 0,
+    };
+  });
+  const keptFinds = mine.filter((s) => s.kind === "hidden" && s.ownerId);
+  return [...others, ...easy, ...keptFinds];
+}
+
 export function lerpLatLng(a: LatLng, b: LatLng, t: number): LatLng {
   return {
     lat: a.lat + (b.lat - a.lat) * t,

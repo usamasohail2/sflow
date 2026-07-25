@@ -56,6 +56,8 @@ import type {
   RazeEvent,
 } from "@/lib/gameTypes";
 import {
+  AZAD_ARENA_NAME,
+  AZAD_PENDING_ID,
   GEM_META,
   GOLD_COIN,
   HOUSE_MAX_HP,
@@ -66,8 +68,10 @@ import {
   defenseBreakdown,
   defensePower,
   isAttackEvent,
+  isAzadHomeId,
   isGemClaimEvent,
   isRazeEvent,
+  makeAzadPlacementSector,
 } from "@/lib/gameTypes";
 import { pointInOrNearRing } from "@/lib/geo";
 import { ringCentroid } from "@/lib/mapMath";
@@ -536,12 +540,16 @@ export function PlayShell() {
   );
   /** Live GPS pin shown on the map while picking a sector */
   const [liveLocation, setLiveLocation] = useState<LatLng | null>(null);
-  /** GPS fix confirmed inside the sector being settled */
+  /** GPS fix confirmed inside the sector being settled (or Azad pending) */
   const [gpsFix, setGpsFix] = useState<{
     sectorId: string;
     lat: number;
     lng: number;
   } | null>(null);
+  /** Player chose Azad Umeed Wars (GPS outside every mapped sector) */
+  const [azadMode, setAzadMode] = useState(false);
+  /** User dismissed the off-map “still play?” prompt */
+  const [offMapDeclined, setOffMapDeclined] = useState(false);
   const [gpsBusy, setGpsBusy] = useState(false);
   const [locationFocus, setLocationFocus] = useState(0);
   /** Bump to re-fly the map when the same sector is picked again */
@@ -627,9 +635,15 @@ export function PlayShell() {
 
     setSnap(next);
     if (next.me) setDisplayGold(next.me.gold);
-    setSelectedId(
-      (cur) => cur ?? next.me?.homeSectorId ?? next.sectors[0]?.id ?? null
-    );
+    setSelectedId((cur) => {
+      if (cur) return cur;
+      const home = next.me?.homeSectorId;
+      if (home && !isAzadHomeId(home)) return home;
+      return next.sectors[0]?.id ?? null;
+    });
+    if (next.me?.homeSectorId && isAzadHomeId(next.me.homeSectorId)) {
+      setAzadMode(true);
+    }
 
     const nextId = next.me?.id ?? null;
     if (nextId !== meIdRef.current) {
@@ -846,21 +860,42 @@ export function PlayShell() {
   }, [me?.name, displayName, renamePresence]);
 
   const claimed = Boolean(me?.homeSectorId);
+  const isAzadPlayer = Boolean(
+    me?.homeSectorId && isAzadHomeId(me.homeSectorId)
+  );
   const needsHouseRebuild = Boolean(claimed && me && !me.house);
-  const homeName =
-    snap?.sectors.find((s) => s.id === me?.homeSectorId)?.name ?? null;
+  const homeName = isAzadPlayer
+    ? AZAD_ARENA_NAME
+    : snap?.sectors.find((s) => s.id === me?.homeSectorId)?.name ?? null;
   const myAttack = me ? attackPower(me.rockets || 0) : 0;
   const salvoAttack = attackPower(salvo);
   const settlersBySector = useMemo(() => {
     const map = new Map<string, NonNullable<typeof snap>["players"]>();
     for (const p of snap?.players ?? []) {
-      if (!p.homeSectorId) continue;
+      if (!p.homeSectorId || isAzadHomeId(p.homeSectorId)) continue;
       const list = map.get(p.homeSectorId) ?? [];
       list.push(p);
       map.set(p.homeSectorId, list);
     }
     return map;
   }, [snap]);
+
+  /** Live pin is outside every mapped sector (±120m) */
+  const locationOffMap = useMemo(() => {
+    if (!liveLocation || !snap?.sectors?.length) return false;
+    return !snap.sectors.some((s) =>
+      pointInOrNearRing(liveLocation, s.ring, 120)
+    );
+  }, [liveLocation, snap?.sectors]);
+
+  const showOffMapPrompt = Boolean(
+    me &&
+      !claimed &&
+      locationOffMap &&
+      !azadMode &&
+      !offMapDeclined &&
+      !placing
+  );
 
   const enemyPlayer =
     (selectedPlayerId
@@ -900,7 +935,7 @@ export function PlayShell() {
     return openMine + selfClaimed + stolenFromMe;
   }, [me, snap]);
 
-  /** Sector leaderboard — total resources farmed by everyone in each sector */
+  /** Sector leaderboard — mapped sectors only (Azad ranked separately) */
   const sectorRanking = useMemo(() => {
     const bySector = new Map<
       string,
@@ -910,52 +945,103 @@ export function PlayShell() {
       bySector.set(s.id, { id: s.id, name: s.name, farmed: 0, settlers: 0 });
     }
     for (const p of snap?.players ?? []) {
-      if (!p.homeSectorId) continue;
+      if (!p.homeSectorId || isAzadHomeId(p.homeSectorId)) continue;
       const row = bySector.get(p.homeSectorId);
-      if (!row) {
-        bySector.set(p.homeSectorId, {
-          id: p.homeSectorId,
-          name:
-            snap?.sectors.find((s) => s.id === p.homeSectorId)?.name ??
-            p.homeSectorId,
-          farmed: p.totalFarmed || 0,
-          settlers: 1,
-        });
-        continue;
-      }
+      if (!row) continue;
       row.farmed += p.totalFarmed || 0;
       row.settlers += 1;
     }
     return Array.from(bySector.values()).sort((a, b) => b.farmed - a.farmed);
   }, [snap]);
 
+  /** Azad Umeed Wars — individual ranking by total farmed */
+  const azadRanking = useMemo(() => {
+    return (snap?.players ?? [])
+      .filter((p) => p.homeSectorId && isAzadHomeId(p.homeSectorId))
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        farmed: p.totalFarmed || 0,
+        house: p.house,
+      }))
+      .sort((a, b) => b.farmed - a.farmed);
+  }, [snap]);
+
   const topSectors = sectorRanking.slice(0, 5);
+  const topAzad = azadRanking.slice(0, 5);
 
   /** HUD board: top 5, plus your sector with real rank if outside top 5 */
   const sectorBoard = useMemo(() => {
+    if (isAzadPlayer || azadMode) {
+      const rows = topAzad.map((r, i) => ({
+        id: r.id,
+        name: r.name,
+        farmed: r.farmed,
+        settlers: 1,
+        rank: i + 1,
+        mine: me?.id === r.id,
+        azad: true as const,
+        house: r.house,
+      }));
+      if (!me || rows.some((r) => r.mine)) return rows;
+      const idx = azadRanking.findIndex((r) => r.id === me.id);
+      if (idx < 0) return rows;
+      const mine = azadRanking[idx]!;
+      return [
+        ...rows,
+        {
+          id: mine.id,
+          name: mine.name,
+          farmed: mine.farmed,
+          settlers: 1,
+          rank: idx + 1,
+          mine: true,
+          azad: true as const,
+          house: mine.house,
+        },
+      ];
+    }
     const rows = topSectors.map((r, i) => ({
       ...r,
       rank: i + 1,
       mine: me?.homeSectorId === r.id,
+      azad: false as const,
+      house: null as { lat: number; lng: number } | null,
     }));
     const homeId = me?.homeSectorId;
-    if (!homeId) return rows;
+    if (!homeId || isAzadHomeId(homeId)) return rows;
     if (rows.some((r) => r.id === homeId)) return rows;
     const idx = sectorRanking.findIndex((r) => r.id === homeId);
     if (idx < 0) return rows;
     const mine = sectorRanking[idx]!;
     return [
       ...rows,
-      { ...mine, rank: idx + 1, mine: true },
+      {
+        ...mine,
+        rank: idx + 1,
+        mine: true,
+        azad: false as const,
+        house: null as { lat: number; lng: number } | null,
+      },
     ];
-  }, [topSectors, sectorRanking, me?.homeSectorId]);
+  }, [
+    topSectors,
+    sectorRanking,
+    topAzad,
+    azadRanking,
+    me,
+    isAzadPlayer,
+    azadMode,
+  ]);
 
   const missionList = useMemo(() => {
     if (!me) return [];
     return [
       {
         id: "settle",
-        label: "Settle in a sector",
+        label: isAzadHomeId(me.homeSectorId)
+          ? `Settle in ${AZAD_ARENA_NAME}`
+          : "Settle in a sector",
         done: Boolean(me.homeSectorId),
       },
       {
@@ -1029,6 +1115,7 @@ export function PlayShell() {
       }
       if (
         action === "claim_sector" ||
+        action === "claim_azad" ||
         action === "place_house" ||
         action === "build"
       ) {
@@ -1076,25 +1163,51 @@ export function PlayShell() {
     }
   };
 
-  const applyGpsReading = (lat: number, lng: number, sectorId?: string) => {
+  const applyGpsReading = (
+    lat: number,
+    lng: number,
+    sectorId?: string,
+    opts?: { azad?: boolean }
+  ) => {
     setLiveLocation({ lat, lng });
     setLocationFocus((n) => n + 1);
-    if (!sectorId || !snap) return;
+    if (!sectorId) return;
+
+    if (opts?.azad || sectorId === AZAD_PENDING_ID || azadMode) {
+      setAzadMode(true);
+      setGpsFix({ sectorId: AZAD_PENDING_ID, lat, lng });
+      showToast(`Location confirmed — ${AZAD_ARENA_NAME}`);
+      return;
+    }
+
+    if (!snap) return;
     const sector = snap.sectors.find((s) => s.id === sectorId);
     if (!sector) return;
     if (!pointInOrNearRing({ lat, lng }, sector.ring, 120)) {
       setGpsFix(null);
-      setError(
-        `GPS says you're outside ${sector.name} — go there, then try again`
+      // Off-map / wrong sector — offer Azad instead of dead-ending the tutorial
+      const inAny = snap.sectors.some((s) =>
+        pointInOrNearRing({ lat, lng }, s.ring, 120)
       );
-      window.setTimeout(() => setError(null), 4200);
+      if (!inAny) {
+        setError(
+          `Your GPS isn’t on any mapped sector — you can still play ${AZAD_ARENA_NAME}`
+        );
+        setOffMapDeclined(false);
+      } else {
+        setError(
+          `GPS says you're outside ${sector.name} — go there, then try again`
+        );
+      }
+      window.setTimeout(() => setError(null), 4800);
       return;
     }
+    setAzadMode(false);
     setGpsFix({ sectorId, lat, lng });
     showToast(`Location confirmed in ${sector.name}`);
   };
 
-  const requestGps = (sectorId?: string) => {
+  const requestGps = (sectorId?: string, opts?: { azad?: boolean }) => {
     if (!navigator.geolocation) {
       setError("GPS is not available on this device");
       window.setTimeout(() => setError(null), 3200);
@@ -1105,7 +1218,12 @@ export function PlayShell() {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setGpsBusy(false);
-        applyGpsReading(pos.coords.latitude, pos.coords.longitude, sectorId);
+        applyGpsReading(
+          pos.coords.latitude,
+          pos.coords.longitude,
+          sectorId,
+          opts
+        );
       },
       () => {
         setGpsBusy(false);
@@ -1120,16 +1238,63 @@ export function PlayShell() {
     requestGps(sectorId);
   };
 
+  const confirmGpsForAzad = () => {
+    setAzadMode(true);
+    setOffMapDeclined(false);
+    if (liveLocation) {
+      applyGpsReading(liveLocation.lat, liveLocation.lng, AZAD_PENDING_ID, {
+        azad: true,
+      });
+      return;
+    }
+    requestGps(AZAD_PENDING_ID, { azad: true });
+  };
+
+  /** Begin Azad settle from the off-map prompt / walkthrough */
+  const startAzadUmeed = () => {
+    setAzadMode(true);
+    setOffMapDeclined(false);
+    setSelectedPlayerId(null);
+    setRazeTarget(null);
+    if (liveLocation) {
+      setGpsFix({
+        sectorId: AZAD_PENDING_ID,
+        lat: liveLocation.lat,
+        lng: liveLocation.lng,
+      });
+      setLocationFocus((n) => n + 1);
+      showToast(`Playing ${AZAD_ARENA_NAME} — confirm pin, then settle`);
+      return;
+    }
+    confirmGpsForAzad();
+  };
+
   /** Demo-only: skip real GPS and treat the sector center as your location */
   const bypassGpsForSector = (sectorId: string) => {
     const sector = snap?.sectors.find((s) => s.id === sectorId);
     if (!sector) return;
     const center = ringCentroid(sector.ring);
     setLiveLocation(center);
+    setAzadMode(false);
     setGpsFix({ sectorId, lat: center.lat, lng: center.lng });
     setLocationFocus((n) => n + 1);
     setError(null);
     showToast(`Demo: GPS bypassed for ${sector.name}`);
+  };
+
+  /** Demo-only: treat current pin (or city center) as Azad GPS */
+  const bypassGpsForAzad = () => {
+    const center = liveLocation ?? { lat: 33.71, lng: 73.045 };
+    setLiveLocation(center);
+    setAzadMode(true);
+    setGpsFix({
+      sectorId: AZAD_PENDING_ID,
+      lat: center.lat,
+      lng: center.lng,
+    });
+    setLocationFocus((n) => n + 1);
+    setError(null);
+    showToast(`Demo: GPS bypassed for ${AZAD_ARENA_NAME}`);
   };
 
   // Audio: Volt-style UI clicks/hovers + unlock / resume music pref
@@ -1205,8 +1370,14 @@ export function PlayShell() {
         return;
       }
 
-      // Rebuild after house was destroyed (already own the sector)
-      if (me?.homeSectorId === placing.sector.id) {
+      // Rebuild after house was destroyed (already own the sector / Azad home)
+      const rebuildingHome =
+        me?.homeSectorId === placing.sector.id ||
+        (Boolean(me?.homeSectorId) &&
+          isAzadHomeId(me!.homeSectorId) &&
+          (placing.sector.id === AZAD_PENDING_ID ||
+            isAzadHomeId(placing.sector.id)));
+      if (rebuildingHome) {
         const data = await act(
           "place_house",
           {
@@ -1226,33 +1397,64 @@ export function PlayShell() {
         return;
       }
 
-      if (!gpsFix || gpsFix.sectorId !== placing.sector.id) {
-        setError("Confirm your GPS location in this sector first");
+      const settlingAzad =
+        azadMode ||
+        isAzadHomeId(placing.sector.id) ||
+        placing.sector.id === AZAD_PENDING_ID;
+
+      if (
+        !gpsFix ||
+        (!settlingAzad && gpsFix.sectorId !== placing.sector.id) ||
+        (settlingAzad && gpsFix.sectorId !== AZAD_PENDING_ID)
+      ) {
+        setError(
+          settlingAzad
+            ? "Confirm your GPS location first"
+            : "Confirm your GPS location in this sector first"
+        );
         window.setTimeout(() => setError(null), 3200);
         setPlacing(null);
         setPendingHouse(null);
         return;
       }
 
-      const data = await act(
-        "claim_sector",
-        {
-          sectorId: placing.sector.id,
-          lat: pendingHouse.lat,
-          lng: pendingHouse.lng,
-          villagerLat: lat,
-          villagerLng: lng,
-          gpsLat: gpsFix.lat,
-          gpsLng: gpsFix.lng,
-        },
-        "Saving your settlement…"
-      );
+      const data = settlingAzad
+        ? await act(
+            "claim_azad",
+            {
+              lat: pendingHouse.lat,
+              lng: pendingHouse.lng,
+              villagerLat: lat,
+              villagerLng: lng,
+              gpsLat: gpsFix.lat,
+              gpsLng: gpsFix.lng,
+            },
+            "Saving your settlement…"
+          )
+        : await act(
+            "claim_sector",
+            {
+              sectorId: placing.sector.id,
+              lat: pendingHouse.lat,
+              lng: pendingHouse.lng,
+              villagerLat: lat,
+              villagerLng: lng,
+              gpsLat: gpsFix.lat,
+              gpsLng: gpsFix.lng,
+            },
+            "Saving your settlement…"
+          );
       if (data) {
         playBuildSound();
-        showToast(`Settled in ${placing.sector.name} — your village is live!`);
+        showToast(
+          settlingAzad
+            ? `Settled in ${AZAD_ARENA_NAME} — your village is live!`
+            : `Settled in ${placing.sector.name} — your village is live!`
+        );
         setPlacing(null);
         setPendingHouse(null);
         setGpsFix(null);
+        if (settlingAzad) setAzadMode(true);
       }
       // On error stay in villager placement so they can adjust
       return;
@@ -1367,9 +1569,15 @@ export function PlayShell() {
       setMarch(null);
       const nextMe = (data as GameSnapshot).me;
       rememberIdentity(nextMe?.id);
+      const home = nextMe?.homeSectorId;
       setSelectedId(
-        nextMe?.homeSectorId || (data as GameSnapshot).sectors[0]?.id || null
+        home && !isAzadHomeId(home)
+          ? home
+          : (data as GameSnapshot).sectors[0]?.id || null
       );
+      setAzadMode(Boolean(home && isAzadHomeId(home)));
+      setGpsFix(null);
+      setOffMapDeclined(false);
       showToast(`Now playing as ${nextMe?.name ?? "new settler"}`);
     }
   };
@@ -1608,6 +1816,8 @@ export function PlayShell() {
     setPlacing(null);
     setPendingHouse(null);
     setGpsFix(null);
+    setAzadMode(false);
+    setOffMapDeclined(false);
     lastGoodMe.current = null;
     settleGuardUntil.current = 0;
     const data = await act(
@@ -1629,6 +1839,8 @@ export function PlayShell() {
     setPlacing(null);
     setPendingHouse(null);
     setGpsFix(null);
+    setAzadMode(false);
+    setOffMapDeclined(false);
     const data = await act(
       "end_tutorial_test",
       {},
@@ -1637,9 +1849,13 @@ export function PlayShell() {
     if (!data) return;
     lastGoodMe.current = (data as GameSnapshot).me;
     const nextMe = (data as GameSnapshot).me;
+    const home = nextMe?.homeSectorId;
     setSelectedId(
-      nextMe?.homeSectorId || (data as GameSnapshot).sectors[0]?.id || null
+      home && !isAzadHomeId(home)
+        ? home
+        : (data as GameSnapshot).sectors[0]?.id || null
     );
+    setAzadMode(Boolean(home && isAzadHomeId(home)));
     showToast("Tutorial test ended — account restored");
   };
 
@@ -1847,11 +2063,11 @@ export function PlayShell() {
             </button>
           </div>
 
-          {/* Minimal top-sectors board — row taps fly the camera */}
+          {/* Minimal leaderboard — sectors or Azad Umeed players */}
           <div className="sector-board pointer-events-auto w-[8.75rem] px-1.5 py-1.5 text-left sm:w-40">
             <div className="mb-0.5 flex items-center justify-between gap-1">
               <span className="font-mono text-[7px] uppercase tracking-[0.18em] text-white/55">
-                Top sectors
+                {isAzadPlayer || azadMode ? "Azad Umeed" : "Top sectors"}
               </span>
               <button
                 type="button"
@@ -1864,7 +2080,7 @@ export function PlayShell() {
                   setShowPlayers(false);
                 }}
                 className="font-mono text-[7px] text-white/45 underline decoration-dotted underline-offset-2 hover:text-white/80"
-                title="Open full sector leaderboard"
+                title="Open full leaderboard"
               >
                 all
               </button>
@@ -1887,20 +2103,36 @@ export function PlayShell() {
                       <button
                         type="button"
                         onClick={() => {
-                          setSelectedId(r.id);
-                          setSectorFocus((n) => n + 1);
-                          setSelectedPlayerId(null);
+                          if (r.azad) {
+                            if (r.house) {
+                              setLiveLocation(r.house);
+                              setLocationFocus((n) => n + 1);
+                            }
+                            setSelectedPlayerId(r.id);
+                          } else {
+                            setSelectedId(r.id);
+                            setSectorFocus((n) => n + 1);
+                            setSelectedPlayerId(null);
+                          }
                           setRazeTarget(null);
                           setShowRanks(false);
                         }}
                         className={`sector-board-row w-full ${medal} ${
                           r.mine ? "is-mine" : ""
-                        } ${selectedId === r.id ? "is-selected" : ""}`}
+                        } ${
+                          r.azad
+                            ? selectedPlayerId === r.id
+                              ? "is-selected"
+                              : ""
+                            : selectedId === r.id
+                              ? "is-selected"
+                              : ""
+                        }`}
                         title={`Fly to ${r.name}`}
                       >
                         <span
                           className="sector-board-rank"
-                          title={r.rank === 1 ? "Top sector" : undefined}
+                          title={r.rank === 1 ? "Top" : undefined}
                         >
                           {r.rank === 1 ? "👑" : r.rank}
                         </span>
@@ -2144,7 +2376,7 @@ export function PlayShell() {
         </div>
       )}
 
-      {/* Full sector leaderboard modal */}
+      {/* Full leaderboard modal — sectors + Azad Umeed */}
       {showRanks && (
         <div
           className="absolute inset-0 z-40 flex items-end justify-center bg-black/50 p-3 sm:items-center"
@@ -2158,12 +2390,12 @@ export function PlayShell() {
             className="hud-panel max-h-[min(80dvh,36rem)] w-full max-w-md overflow-hidden p-4"
             onClick={(e) => e.stopPropagation()}
             role="dialog"
-            aria-label="Sector leaderboard"
+            aria-label="Leaderboard"
           >
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 className="font-display text-xl text-[var(--ink)]">
-                  Sector leaderboard
+                  Leaderboard
                 </h2>
                 <p className="mt-0.5 font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--ink-faint)]">
                   Total resources farmed
@@ -2177,55 +2409,119 @@ export function PlayShell() {
                 ✕
               </button>
             </div>
-            <ol className="mt-3 max-h-[min(60dvh,28rem)] space-y-1.5 overflow-y-auto pr-1">
-              {sectorRanking.length === 0 && (
-                <li className="text-[12px] text-[var(--ink-faint)]">
-                  No sectors yet
-                </li>
-              )}
-              {sectorRanking.map((r, i) => {
-                const mine = me?.homeSectorId === r.id;
-                return (
-                  <li key={r.id}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedId(r.id);
-                        setSectorFocus((n) => n + 1);
-                        setSelectedPlayerId(null);
-                        setRazeTarget(null);
-                        setShowRanks(false);
-                      }}
-                      className={`flex w-full items-center justify-between rounded-sm border px-2.5 py-2 text-left text-[12px] transition hover:border-[var(--sand)] hover:bg-[var(--wash)] ${
-                        mine
-                          ? "border-[var(--sand)] bg-[var(--wash)] text-[var(--sand)]"
-                          : "border-[var(--line)] text-[var(--ink-muted)]"
-                      }`}
-                      title={`Fly to ${r.name}`}
-                    >
-                      <span className="min-w-0">
-                        <span className="font-mono text-[var(--ink-faint)]">
-                          {i === 0
-                            ? "👑"
-                            : i === 1
-                              ? "🥈"
-                              : i === 2
-                                ? "🥉"
-                                : `${i + 1}.`}
-                        </span>{" "}
-                        <strong className="text-[var(--ink)]">{r.name}</strong>
-                        <span className="ml-1.5 font-mono text-[9px] text-[var(--ink-faint)]">
-                          {r.settlers} settler{r.settlers === 1 ? "" : "s"}
-                        </span>
-                      </span>
-                      <span className="shrink-0 font-mono font-semibold text-[#e8cf8a]">
-                        {GOLD_COIN} {r.farmed}
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ol>
+            <div className="mt-3 max-h-[min(60dvh,28rem)] space-y-4 overflow-y-auto pr-1">
+              <section>
+                <h3 className="mb-1.5 font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--ink-faint)]">
+                  Sectors
+                </h3>
+                <ol className="space-y-1.5">
+                  {sectorRanking.length === 0 && (
+                    <li className="text-[12px] text-[var(--ink-faint)]">
+                      No sectors yet
+                    </li>
+                  )}
+                  {sectorRanking.map((r, i) => {
+                    const mine = me?.homeSectorId === r.id;
+                    return (
+                      <li key={r.id}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedId(r.id);
+                            setSectorFocus((n) => n + 1);
+                            setSelectedPlayerId(null);
+                            setRazeTarget(null);
+                            setShowRanks(false);
+                          }}
+                          className={`flex w-full items-center justify-between rounded-sm border px-2.5 py-2 text-left text-[12px] transition hover:border-[var(--sand)] hover:bg-[var(--wash)] ${
+                            mine
+                              ? "border-[var(--sand)] bg-[var(--wash)] text-[var(--sand)]"
+                              : "border-[var(--line)] text-[var(--ink-muted)]"
+                          }`}
+                          title={`Fly to ${r.name}`}
+                        >
+                          <span className="min-w-0">
+                            <span className="font-mono text-[var(--ink-faint)]">
+                              {i === 0
+                                ? "👑"
+                                : i === 1
+                                  ? "🥈"
+                                  : i === 2
+                                    ? "🥉"
+                                    : `${i + 1}.`}
+                            </span>{" "}
+                            <strong className="text-[var(--ink)]">{r.name}</strong>
+                            <span className="ml-1.5 font-mono text-[9px] text-[var(--ink-faint)]">
+                              {r.settlers} settler{r.settlers === 1 ? "" : "s"}
+                            </span>
+                          </span>
+                          <span className="shrink-0 font-mono font-semibold text-[#e8cf8a]">
+                            {GOLD_COIN} {r.farmed}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </section>
+
+              <section>
+                <h3 className="mb-1.5 font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--ink-faint)]">
+                  {AZAD_ARENA_NAME}
+                </h3>
+                <p className="mb-1.5 text-[10px] text-[var(--ink-muted)]">
+                  Off-map players · no sector walls · ranked individually
+                </p>
+                <ol className="space-y-1.5">
+                  {azadRanking.length === 0 && (
+                    <li className="text-[12px] text-[var(--ink-faint)]">
+                      No Azad settlers yet
+                    </li>
+                  )}
+                  {azadRanking.map((r, i) => {
+                    const mine = me?.id === r.id;
+                    return (
+                      <li key={r.id}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (r.house) {
+                              setLiveLocation(r.house);
+                              setLocationFocus((n) => n + 1);
+                            }
+                            setSelectedPlayerId(r.id);
+                            setRazeTarget(null);
+                            setShowRanks(false);
+                          }}
+                          className={`flex w-full items-center justify-between rounded-sm border px-2.5 py-2 text-left text-[12px] transition hover:border-[var(--sand)] hover:bg-[var(--wash)] ${
+                            mine
+                              ? "border-[var(--sand)] bg-[var(--wash)] text-[var(--sand)]"
+                              : "border-[var(--line)] text-[var(--ink-muted)]"
+                          }`}
+                          title={`Fly to ${r.name}`}
+                        >
+                          <span className="min-w-0">
+                            <span className="font-mono text-[var(--ink-faint)]">
+                              {i === 0
+                                ? "👑"
+                                : i === 1
+                                  ? "🥈"
+                                  : i === 2
+                                    ? "🥉"
+                                    : `${i + 1}.`}
+                            </span>{" "}
+                            <strong className="text-[var(--ink)]">{r.name}</strong>
+                          </span>
+                          <span className="shrink-0 font-mono font-semibold text-[#e8cf8a]">
+                            {GOLD_COIN} {r.farmed}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </section>
+            </div>
           </div>
         </div>
       )}
@@ -2343,15 +2639,23 @@ export function PlayShell() {
         ctx={{
           claimed,
           gpsReady: Boolean(
-            selected && gpsFix?.sectorId === selected.id
+            azadMode
+              ? gpsFix?.sectorId === AZAD_PENDING_ID
+              : selected && gpsFix?.sectorId === selected.id
           ),
           placingKind: placing?.kind ?? null,
-          sectorName:
-            selected?.name ??
-            (me?.homeSectorId
-              ? snap?.sectors.find((s) => s.id === me.homeSectorId)?.name ??
-                null
-              : null),
+          sectorName: azadMode
+            ? AZAD_ARENA_NAME
+            : selected?.name ??
+              (me?.homeSectorId
+                ? isAzadHomeId(me.homeSectorId)
+                  ? AZAD_ARENA_NAME
+                  : snap?.sectors.find((s) => s.id === me.homeSectorId)
+                      ?.name ?? null
+                : null),
+          offMap: locationOffMap || azadMode,
+          azadMode: azadMode || isAzadPlayer,
+          onPlayOffMap: startAzadUmeed,
         }}
       />
 
@@ -2656,45 +2960,104 @@ export function PlayShell() {
         </div>
       )}
 
+      {/* ---- Off-map prompt (account start) ---- */}
+      {showOffMapPrompt && (
+        <div className="absolute inset-0 z-[35] flex items-end justify-center bg-black/55 p-3 sm:items-center">
+          <div
+            className="hud-panel w-full max-w-sm p-4 text-center"
+            role="dialog"
+            aria-label="Location not on map"
+          >
+            <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-[var(--ink-faint)]">
+              New settler
+            </p>
+            <h2 className="mt-1 font-display text-2xl text-[var(--ink)]">
+              Location isn’t on the map
+            </h2>
+            <p className="mt-2 text-sm text-[var(--ink-muted)]">
+              Your GPS isn’t inside any Islamabad sector. Would you like to
+              still play in <strong className="text-[var(--sand)]">{AZAD_ARENA_NAME}</strong>
+              ? No sector walls — separate ranking.
+            </p>
+            <button
+              type="button"
+              data-guide="guide-azad"
+              disabled={busy || !me}
+              onClick={startAzadUmeed}
+              className="mt-4 w-full rounded-sm bg-[var(--signal)] px-3 py-2.5 text-sm font-bold text-white shadow-[0_2px_8px_rgba(0,0,0,0.5)] disabled:opacity-40"
+            >
+              Yes — play {AZAD_ARENA_NAME}
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setOffMapDeclined(true)}
+              className="mt-2 w-full rounded-sm border border-[var(--line)] px-3 py-2 text-xs text-[var(--ink-muted)] hover:border-[var(--sand)] hover:text-[var(--sand)] disabled:opacity-40"
+            >
+              No — I’ll pick a mapped sector
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ---- Settle prompt (no home yet) ---- */}
-      {!claimed && selected && !placing && (
+      {!claimed && !placing && !showOffMapPrompt && (azadMode || selected) && (
         <div className="absolute bottom-28 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-sm -translate-x-1/2 sm:bottom-8">
           <div className="hud-panel p-4 text-center">
             <p className="font-display text-2xl text-[var(--ink)]">
-              {selected.name}
+              {azadMode ? AZAD_ARENA_NAME : selected!.name}
             </p>
             <p className="mt-1 text-[11px] text-[var(--ink-muted)]">
-              {settlersHere.length > 0
-                ? `${settlersHere.length} settler${settlersHere.length === 1 ? "" : "s"} here — sectors are shared, join them.`
-                : "Sectors are shared. Confirm GPS, then place your house."}
+              {azadMode
+                ? "No sector walls. Confirm GPS near your pin, then place your house."
+                : settlersHere.length > 0
+                  ? `${settlersHere.length} settler${settlersHere.length === 1 ? "" : "s"} here — sectors are shared, join them.`
+                  : "Sectors are shared. Confirm GPS, then place your house."}
             </p>
-            {settlersHere.length > 0 && (
+            {!azadMode && settlersHere.length > 0 && (
               <p className="mt-1 text-[10px] text-[var(--sand)]">
                 {settlersHere.map((p) => p.name).join(" · ")}
               </p>
             )}
-            {liveLocation && (
+            {liveLocation && !azadMode && selected && (
               <p className="mt-1 font-mono text-[9px] text-[#9fd0ff]">
                 {pointInOrNearRing(liveLocation, selected.ring, 120)
                   ? `Blue pin is inside ${selected.name}`
                   : `Blue pin is outside ${selected.name} — move closer`}
               </p>
             )}
+            {liveLocation && azadMode && (
+              <p className="mt-1 font-mono text-[9px] text-[#9fd0ff]">
+                Blue pin locked for {AZAD_ARENA_NAME}
+              </p>
+            )}
             <>
               <button
                 type="button"
-                data-guide="guide-gps"
+                data-guide={azadMode ? "guide-azad" : "guide-gps"}
                 disabled={busy || !me || gpsBusy}
-                onClick={() => confirmGpsForSector(selected.id)}
+                onClick={() =>
+                  azadMode
+                    ? confirmGpsForAzad()
+                    : confirmGpsForSector(selected!.id)
+                }
                 className={`mt-3 w-full rounded-sm px-3 py-2.5 text-sm font-bold shadow-[0_2px_8px_rgba(0,0,0,0.5)] disabled:opacity-40 ${
-                  gpsFix?.sectorId === selected.id
+                  (
+                    azadMode
+                      ? gpsFix?.sectorId === AZAD_PENDING_ID
+                      : gpsFix?.sectorId === selected?.id
+                  )
                     ? "bg-[var(--field)] text-white"
                     : "bg-[var(--wash)] text-[var(--ink)] border border-[var(--line-strong)]"
                 }`}
               >
                 {gpsBusy
                   ? "Reading GPS…"
-                  : gpsFix?.sectorId === selected.id
+                  : (
+                        azadMode
+                          ? gpsFix?.sectorId === AZAD_PENDING_ID
+                          : gpsFix?.sectorId === selected?.id
+                      )
                     ? "✓ Location confirmed"
                     : liveLocation
                       ? "📍 Confirm this pin to settle"
@@ -2703,50 +3066,99 @@ export function PlayShell() {
               <button
                 type="button"
                 data-guide="guide-settle"
-                disabled={busy || !me || gpsFix?.sectorId !== selected.id}
+                disabled={
+                  busy ||
+                  !me ||
+                  (azadMode
+                    ? gpsFix?.sectorId !== AZAD_PENDING_ID
+                    : gpsFix?.sectorId !== selected?.id)
+                }
                 onClick={() => {
                   setPendingHouse(null);
-                  setPlacing({ kind: "house", sector: selected });
-                  showToast("Tap the map to place your house");
+                  const sector = azadMode
+                    ? makeAzadPlacementSector(
+                        gpsFix
+                          ? { lat: gpsFix.lat, lng: gpsFix.lng }
+                          : liveLocation
+                      )
+                    : selected!;
+                  setPlacing({ kind: "house", sector });
+                  showToast(
+                    azadMode
+                      ? "Tap near your pin to place your house"
+                      : "Tap the map to place your house"
+                  );
                 }}
                 className="mt-2 w-full rounded-sm bg-[var(--signal)] px-3 py-2.5 text-sm font-bold text-white shadow-[0_2px_8px_rgba(0,0,0,0.5)] disabled:opacity-40"
               >
-                ⚑ Settle in {selected.name} — place house
+                ⚑ Settle in {azadMode ? AZAD_ARENA_NAME : selected!.name} — place
+                house
               </button>
               <button
                 type="button"
                 disabled={busy || !me}
-                onClick={() => bypassGpsForSector(selected.id)}
+                onClick={() =>
+                  azadMode
+                    ? bypassGpsForAzad()
+                    : bypassGpsForSector(selected!.id)
+                }
                 className="mt-1.5 text-[9px] font-mono text-[var(--ink-faint)] underline decoration-dotted underline-offset-2 hover:text-[var(--sand)] disabled:opacity-40"
                 title="Demo only — skips the GPS check"
               >
                 Demo: bypass location check
               </button>
+              {!azadMode && locationOffMap && (
+                <button
+                  type="button"
+                  data-guide="guide-azad"
+                  disabled={busy || !me}
+                  onClick={startAzadUmeed}
+                  className="mt-2 w-full rounded-sm border border-[var(--sand)]/40 px-3 py-2 text-xs font-semibold text-[var(--sand)] hover:bg-[var(--wash)] disabled:opacity-40"
+                >
+                  My location isn’t on the map — play {AZAD_ARENA_NAME}
+                </button>
+              )}
+              {azadMode && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    setAzadMode(false);
+                    setGpsFix(null);
+                    setOffMapDeclined(true);
+                  }}
+                  className="mt-1.5 text-[9px] font-mono text-[var(--ink-faint)] underline decoration-dotted underline-offset-2 hover:text-[var(--sand)] disabled:opacity-40"
+                >
+                  Switch to a mapped sector
+                </button>
+              )}
             </>
-            <div className="mt-2 flex flex-wrap justify-center gap-1.5">
-              {(snap?.sectors ?? []).map((s) => {
-                const n = settlersBySector.get(s.id)?.length ?? 0;
-                return (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedId(s.id);
-                      setSelectedPlayerId(null);
-                      if (gpsFix && gpsFix.sectorId !== s.id) setGpsFix(null);
-                    }}
-                    className={`rounded-sm border px-2 py-1 font-mono text-[9px] ${
-                      s.id === selectedId
-                        ? "border-[var(--sand)] text-[var(--sand)]"
-                        : "border-[var(--line)] text-[var(--ink-muted)]"
-                    }`}
-                  >
-                    {s.name}
-                    {n > 0 ? ` · ${n}` : ""}
-                  </button>
-                );
-              })}
-            </div>
+            {!azadMode && (
+              <div className="mt-2 flex flex-wrap justify-center gap-1.5">
+                {(snap?.sectors ?? []).map((s) => {
+                  const n = settlersBySector.get(s.id)?.length ?? 0;
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedId(s.id);
+                        setSelectedPlayerId(null);
+                        if (gpsFix && gpsFix.sectorId !== s.id) setGpsFix(null);
+                      }}
+                      className={`rounded-sm border px-2 py-1 font-mono text-[9px] ${
+                        s.id === selectedId
+                          ? "border-[var(--sand)] text-[var(--sand)]"
+                          : "border-[var(--line)] text-[var(--ink-muted)]"
+                      }`}
+                    >
+                      {s.name}
+                      {n > 0 ? ` · ${n}` : ""}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -2765,6 +3177,17 @@ export function PlayShell() {
               type="button"
               disabled={busy}
               onClick={() => {
+                if (isAzadHomeId(me.homeSectorId)) {
+                  setPendingHouse(null);
+                  setPlacing({
+                    kind: "house",
+                    sector: makeAzadPlacementSector(
+                      liveLocation ?? me.villagerPost
+                    ),
+                  });
+                  showToast("Tap near your pin to rebuild your house");
+                  return;
+                }
                 const sector = snap?.sectors.find(
                   (s) => s.id === me.homeSectorId
                 );
@@ -3230,9 +3653,9 @@ export function PlayShell() {
                   {(snap?.buildingCatalog ?? []).map((b) => {
                     const affordable = displayGold >= b.cost;
                     const active = placing?.kind === b.type;
-                    const homeSector = snap?.sectors.find(
-                      (s) => s.id === me.homeSectorId
-                    );
+                    const homeSector = isAzadHomeId(me.homeSectorId)
+                      ? makeAzadPlacementSector(me.house)
+                      : snap?.sectors.find((s) => s.id === me.homeSectorId);
                     const shortLabel =
                       b.type === "turret"
                         ? "Turret"

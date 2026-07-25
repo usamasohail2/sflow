@@ -38,7 +38,10 @@ import {
   ROAM_METERS_TO_SPAWN,
   ROAM_MIN_EXPLORE_MS,
   SPAWN_COOLDOWN_MS,
+  AZAD_ARENA_NAME,
+  AZAD_PLAY_RADIUS_M,
   catalogItem,
+  isAzadHomeId,
 } from "@/lib/gameTypes";
 import {
   closeRing,
@@ -354,14 +357,18 @@ export function GameMap({
     return () => window.clearInterval(id);
   }, []);
 
+  const isAzad = Boolean(me?.homeSectorId && isAzadHomeId(me.homeSectorId));
   const homeSector = useMemo(
-    () => sectors.find((s) => s.id === me?.homeSectorId) ?? null,
-    [sectors, me]
+    () =>
+      isAzad
+        ? null
+        : sectors.find((s) => s.id === me?.homeSectorId) ?? null,
+    [sectors, me, isAzad]
   );
 
   const introFocus = useMemo((): LatLng => {
-    if (homeSector) return ringCentroid(homeSector.ring);
     if (me?.house) return me.house;
+    if (homeSector) return ringCentroid(homeSector.ring);
     if (sectors[0]) return ringCentroid(sectors[0].ring);
     return { lat: 33.71, lng: 73.045 };
   }, [homeSector, me?.house, sectors]);
@@ -417,8 +424,8 @@ export function GameMap({
   useEffect(() => {
     if (!mapReady || introStarted.current || introFinished.current) return;
     if (sectors.length === 0) return;
-    // Wait for home geometry when the player is already settled
-    if (me?.homeSectorId && !homeSector) return;
+    // Wait for home geometry when settled in a mapped sector (Azad has no walls)
+    if (me?.homeSectorId && !homeSector && !isAzad) return;
 
     introStarted.current = true;
     const map = mapRef.current;
@@ -497,6 +504,7 @@ export function GameMap({
     sectors.length,
     me?.homeSectorId,
     homeSector?.id,
+    isAzad,
     finishIntro,
     applyBasemapLabels,
   ]);
@@ -744,7 +752,26 @@ export function GameMap({
     }
     if (placing && hover) {
       const fp = placingFootprint(placing.kind);
-      const inSector = pointInRing(hover, placing.sector.ring);
+      const unbound =
+        isAzadHomeId(placing.sector.id) || placing.sector.ring.length < 4;
+      let inSector = unbound
+        ? true
+        : pointInRing(hover, placing.sector.ring);
+      // Azad: keep placement near GPS pin (settle) or house (build/rebuild)
+      if (unbound && inSector) {
+        const anchor =
+          me?.house ??
+          userLocation ??
+          (placing.sector.ring[0]
+            ? {
+                lat: placing.sector.ring[0][1],
+                lng: placing.sector.ring[0][0],
+              }
+            : null);
+        if (anchor && distMeters(hover, anchor) > AZAD_PLAY_RADIUS_M) {
+          inSector = false;
+        }
+      }
       let clear = inSector;
       // Villager only needs to stand inside the sector
       if (clear && placing.kind !== "villager") {
@@ -773,7 +800,7 @@ export function GameMap({
       );
     }
     return { type: "FeatureCollection", features: feats };
-  }, [players, me, placing, hover]);
+  }, [players, me, placing, hover, userLocation]);
 
   /** Easy/private hiddens in home sector; contested finds visible everywhere */
   const mySpots = useMemo(() => {
@@ -876,10 +903,17 @@ export function GameMap({
       meters: number,
       explored: number
     ) => {
-      if (!onSpawnFind || !homeSector || spawning.current) return;
+      if (!onSpawnFind || spawning.current) return;
       if (Date.now() < localCooldownUntil.current) return;
       if (z < EXPLORE_ZOOM) return;
-      if (!pointInRing(center, homeSector.ring)) return;
+      const azadHome = isAzadHomeId(me?.homeSectorId);
+      if (azadHome) {
+        if (!me?.house || distMeters(center, me.house) > AZAD_PLAY_RADIUS_M) {
+          return;
+        }
+      } else if (!homeSector || !pointInRing(center, homeSector.ring)) {
+        return;
+      }
       if (meters < ROAM_METERS_TO_SPAWN) return;
       if (explored < ROAM_MIN_EXPLORE_MS) return;
       spawning.current = true;
@@ -906,7 +940,7 @@ export function GameMap({
         spawning.current = false;
       }
     },
-    [onSpawnFind, homeSector]
+    [onSpawnFind, homeSector, me]
   );
 
   const onMove = useCallback(
@@ -929,8 +963,11 @@ export function GameMap({
       // Country / city / road names only when fully zoomed into street detail
       applyBasemapLabels(z >= DETAIL_ZOOM);
 
-      const inHome =
-        Boolean(homeSector) && pointInRing(center, homeSector!.ring);
+      const azadHome = isAzadHomeId(me?.homeSectorId);
+      const inHome = azadHome
+        ? Boolean(me?.house) &&
+          distMeters(center, me!.house!) <= AZAD_PLAY_RADIUS_M
+        : Boolean(homeSector) && pointInRing(center, homeSector!.ring);
       const deep = z >= EXPLORE_ZOOM && inHome;
       setExploring(deep);
 
@@ -1048,22 +1085,37 @@ export function GameMap({
             /* layer may not be ready */
           }
 
-          // Tap near a business in your sector → Google review reward sheet
+          // Tap near a business near your village → Google review reward sheet
           if (
             onSelectBusiness &&
             me?.homeSectorId &&
-            homeSector &&
             showDetail &&
-            pointInOrNearRing(
-              { lat: e.lngLat.lat, lng: e.lngLat.lng },
-              homeSector.ring,
-              40
-            )
+            (isAzad
+              ? me.house &&
+                distMeters(
+                  { lat: e.lngLat.lat, lng: e.lngLat.lng },
+                  me.house
+                ) <= AZAD_PLAY_RADIUS_M
+              : homeSector &&
+                pointInOrNearRing(
+                  { lat: e.lngLat.lat, lng: e.lngLat.lng },
+                  homeSector.ring,
+                  40
+                ))
           ) {
             const at = { lat: e.lngLat.lat, lng: e.lngLat.lng };
             void findNearbyBusiness(at, TOKEN).then((biz) => {
               if (!biz) return;
-              if (
+              if (isAzad) {
+                if (
+                  !me.house ||
+                  distMeters({ lat: biz.lat, lng: biz.lng }, me.house) >
+                    AZAD_PLAY_RADIUS_M
+                ) {
+                  return;
+                }
+              } else if (
+                homeSector &&
                 !pointInOrNearRing(
                   { lat: biz.lat, lng: biz.lng },
                   homeSector.ring,
@@ -1694,8 +1746,16 @@ export function GameMap({
       {/* Guided placement beacon — blinks in the sector while planting */}
       {guidePulse && placing && (
         <Marker
-          latitude={ringCentroid(placing.sector.ring).lat}
-          longitude={ringCentroid(placing.sector.ring).lng}
+          latitude={
+            placing.sector.ring.length >= 4
+              ? ringCentroid(placing.sector.ring).lat
+              : hover?.lat ?? me?.house?.lat ?? 33.71
+          }
+          longitude={
+            placing.sector.ring.length >= 4
+              ? ringCentroid(placing.sector.ring).lng
+              : hover?.lng ?? me?.house?.lng ?? 73.045
+          }
           anchor="center"
         >
           <div className="guide-map-beacon" aria-hidden />
@@ -1709,8 +1769,10 @@ export function GameMap({
           className="pointer-events-none absolute left-1/2 top-14 z-10 -translate-x-1/2"
         >
           <p className="hud-chip px-4 py-2 text-center text-xs font-semibold text-[var(--sand)]">
-            Tap inside {placing.sector.name} to place your{" "}
-            {placingLabel(placing.kind)} — green ring = clear ground
+            {isAzadHomeId(placing.sector.id) ||
+            placing.sector.ring.length < 4
+              ? `Tap near your pin to place your ${placingLabel(placing.kind)} — no sector walls in ${AZAD_ARENA_NAME}`
+              : `Tap inside ${placing.sector.name} to place your ${placingLabel(placing.kind)} — green ring = clear ground`}
           </p>
         </div>
       )}

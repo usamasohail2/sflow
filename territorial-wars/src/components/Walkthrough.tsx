@@ -7,9 +7,10 @@ import {
   useState,
   type CSSProperties,
 } from "react";
+import { AZAD_ARENA_NAME } from "@/lib/gameTypes";
 
-/** Bumped so returning players see the new guided settle tour */
-export const WALKTHROUGH_KEY = "itw_walkthrough_v2";
+/** Bumped so returning players see the off-map / Azad settle path */
+export const WALKTHROUGH_KEY = "itw_walkthrough_v3";
 
 export type GuidePhase =
   | "welcome"
@@ -29,6 +30,12 @@ export type GuideContext = {
   /** Current placement kind, if any */
   placingKind: string | null;
   sectorName: string | null;
+  /** Live GPS is outside every mapped sector */
+  offMap: boolean;
+  /** Player chose Azad Umeed Wars (no sector walls) */
+  azadMode: boolean;
+  /** Start the off-map Azad settle flow */
+  onPlayOffMap?: () => void;
 };
 
 type TipDef = {
@@ -41,74 +48,114 @@ type TipDef = {
   cta?: string;
 };
 
-const TIPS: Record<GuidePhase, TipDef> = {
-  welcome: {
-    title: "Let’s build your village",
-    body: "I’ll walk you through settling: confirm where you are, plant a house, then place a villager who gathers gold for you.",
-    target: null,
-    blocking: true,
-    cta: "Start setup",
-  },
-  gps: {
-    title: "Confirm your location",
-    body: "Tap the blinking button to lock GPS in this sector. (Demo bypass works if you’re testing remotely.)",
-    target: "guide-gps",
-    blocking: false,
-  },
-  "settle-btn": {
-    title: "Start settling",
-    body: "Location locked. Tap the blinking Settle button — next you’ll plant your house on the map.",
-    target: "guide-settle",
-    blocking: false,
-  },
-  "place-house": {
-    title: "Plant your house",
-    body: "Tap inside the sector walls. A green ring means clear ground. Place it where you want your village center.",
-    target: "guide-place-banner",
-    blocking: false,
-  },
-  "place-villager": {
-    title: "Place your villager",
-    body: "Tap nearby to station your villager. They walk out, dig, and bring gold home on a loop.",
-    target: "guide-place-banner",
-    blocking: false,
-  },
-  live: {
-    title: "Village is live",
-    body: "Your walls glow blue. Villagers gather automatically — spend gold on buildings and rockets next.",
-    target: null,
-    blocking: true,
-    cta: "What’s next?",
-  },
-  "tips-gather": {
-    title: "Gold comes to you",
-    body: "Watch your villager farm. Zoom into the streets and roam to spawn rare finds you can tap to collect.",
-    target: null,
-    blocking: true,
-    cta: "Next",
-  },
-  "tips-build": {
-    title: "Build & arm",
-    body: "Use Build to place mills and turrets. Stock rockets in Arsenal — you pick how many to fire on a raid.",
-    target: null,
-    blocking: true,
-    cta: "Next",
-  },
-  "tips-raid": {
-    title: "Raid rivals",
-    body: "Tap an enemy house or building in another sector to attack. Same-sector settlers are allies (green) — you can’t hit them.",
-    target: null,
-    blocking: true,
-    cta: "Next",
-  },
-  "tips-invite": {
-    title: "Invite for villagers",
-    body: "Menu → Invite friends. Every friend who joins with your link gives you +1 villager — permanent gather power.",
-    target: null,
-    blocking: true,
-    cta: "Got it — play",
-  },
-};
+function tipFor(
+  phase: GuidePhase,
+  ctx: GuideContext
+): TipDef {
+  if (phase === "gps" && ctx.offMap) {
+    return {
+      title: "You’re off the map",
+      body: `Your pin isn’t inside any Islamabad sector. You can still play in ${AZAD_ARENA_NAME} — no walls, ranked separately.`,
+      target: "guide-azad",
+      blocking: false,
+    };
+  }
+  if (phase === "settle-btn" && ctx.azadMode) {
+    return {
+      title: "Start settling",
+      body: `Location locked for ${AZAD_ARENA_NAME}. Tap Settle — then plant your house near your pin.`,
+      target: "guide-settle",
+      blocking: false,
+    };
+  }
+  if (phase === "place-house" && ctx.azadMode) {
+    return {
+      title: "Plant your house",
+      body: `Tap near your pin. There are no sector walls in ${AZAD_ARENA_NAME} — a green ring means clear ground.`,
+      target: "guide-place-banner",
+      blocking: false,
+    };
+  }
+  if (phase === "live" && ctx.azadMode) {
+    return {
+      title: "Village is live",
+      body: `Welcome to ${AZAD_ARENA_NAME}. Villagers gather near your house — spend gold on buildings and rockets next.`,
+      target: null,
+      blocking: true,
+      cta: "What’s next?",
+    };
+  }
+
+  const base: Record<GuidePhase, TipDef> = {
+    welcome: {
+      title: "Let’s build your village",
+      body: "I’ll walk you through settling: confirm where you are, plant a house, then place a villager who gathers gold for you.",
+      target: null,
+      blocking: true,
+      cta: "Start setup",
+    },
+    gps: {
+      title: "Confirm your location",
+      body: "Tap the blinking button to lock GPS in this sector. If your pin isn’t on any sector, choose Azad Umeed Wars below.",
+      target: "guide-gps",
+      blocking: false,
+    },
+    "settle-btn": {
+      title: "Start settling",
+      body: "Location locked. Tap the blinking Settle button — next you’ll plant your house on the map.",
+      target: "guide-settle",
+      blocking: false,
+    },
+    "place-house": {
+      title: "Plant your house",
+      body: "Tap inside the sector walls. A green ring means clear ground. Place it where you want your village center.",
+      target: "guide-place-banner",
+      blocking: false,
+    },
+    "place-villager": {
+      title: "Place your villager",
+      body: "Tap nearby to station your villager. They walk out, dig, and bring gold home on a loop.",
+      target: "guide-place-banner",
+      blocking: false,
+    },
+    live: {
+      title: "Village is live",
+      body: "Your walls glow blue. Villagers gather automatically — spend gold on buildings and rockets next.",
+      target: null,
+      blocking: true,
+      cta: "What’s next?",
+    },
+    "tips-gather": {
+      title: "Gold comes to you",
+      body: "Watch your villager farm. Zoom into the streets and roam to spawn rare finds you can tap to collect.",
+      target: null,
+      blocking: true,
+      cta: "Next",
+    },
+    "tips-build": {
+      title: "Build & arm",
+      body: "Use Build to place mills and turrets. Stock rockets in Arsenal — you pick how many to fire on a raid.",
+      target: null,
+      blocking: true,
+      cta: "Next",
+    },
+    "tips-raid": {
+      title: "Raid rivals",
+      body: "Tap an enemy house or building to attack. Same-sector settlers are allies (green) — you can’t hit them. Azad players each have their own arena.",
+      target: null,
+      blocking: true,
+      cta: "Next",
+    },
+    "tips-invite": {
+      title: "Invite for villagers",
+      body: "Menu → Invite friends. Every friend who joins with your link gives you +1 villager — permanent gather power.",
+      target: null,
+      blocking: true,
+      cta: "Got it — play",
+    },
+  };
+  return base[phase];
+}
 
 const TIP_ORDER: GuidePhase[] = [
   "tips-gather",
@@ -197,6 +244,14 @@ export function Walkthrough({ open, onClose, ctx }: Props) {
     setTick((t) => t + 1);
   }, [open, ctx.claimed]);
 
+  // If GPS proves off-map while stuck on gps, retarget the Azad control
+  useEffect(() => {
+    if (!open || ctx.claimed) return;
+    if (phase === "gps" && ctx.offMap) {
+      setTick((t) => t + 1);
+    }
+  }, [open, ctx.claimed, ctx.offMap, phase]);
+
   // Auto-advance settle steps from live game state
   useEffect(() => {
     if (!open) return;
@@ -246,19 +301,19 @@ export function Walkthrough({ open, onClose, ctx }: Props) {
     }
   }, [open, ctx.claimed, ctx.gpsReady, ctx.placingKind, phase]);
 
+  const tip = tipFor(phase, ctx);
+
   // Blink class on the live target element
   useEffect(() => {
     if (!open) return;
-    const tip = TIPS[phase];
     const id = tip.target;
     if (!id) return;
     const el = document.querySelector(`[data-guide="${id}"]`);
     if (!el) return;
     el.classList.add("is-guide-hot");
     return () => el.classList.remove("is-guide-hot");
-  }, [open, phase, tick, ctx.gpsReady, ctx.placingKind]);
+  }, [open, phase, tick, ctx.gpsReady, ctx.placingKind, ctx.offMap, tip.target]);
 
-  const tip = TIPS[phase];
   const rect = useTargetRect(tip.target, open, tick);
 
   if (!open) return null;
@@ -270,6 +325,11 @@ export function Walkthrough({ open, onClose, ctx }: Props) {
 
   const advance = () => {
     if (phase === "welcome") {
+      if (ctx.offMap && !ctx.gpsReady) {
+        setPhase("gps");
+        setTick((t) => t + 1);
+        return;
+      }
       setPhase(ctx.gpsReady ? "settle-btn" : "gps");
       setTick((t) => t + 1);
       return;
@@ -388,11 +448,31 @@ export function Walkthrough({ open, onClose, ctx }: Props) {
             </button>
           </div>
         ) : (
-          <p className="mt-2 font-mono text-[9px] text-[var(--sand)]">
-            {phase === "place-house" || phase === "place-villager"
-              ? "Tap the blinking spot on the map to continue…"
-              : "Tap the blinking control to continue…"}
-          </p>
+          <>
+            <p className="mt-2 font-mono text-[9px] text-[var(--sand)]">
+              {phase === "place-house" || phase === "place-villager"
+                ? "Tap the blinking spot on the map to continue…"
+                : "Tap the blinking control to continue…"}
+            </p>
+            {phase === "gps" && ctx.offMap && ctx.onPlayOffMap && (
+              <button
+                type="button"
+                className="mt-2 w-full rounded-sm border border-[var(--sand)]/50 bg-[var(--wash)] px-3 py-2 text-xs font-bold text-[var(--sand)]"
+                onClick={() => ctx.onPlayOffMap?.()}
+              >
+                Play {AZAD_ARENA_NAME}
+              </button>
+            )}
+            {phase === "gps" && !ctx.offMap && ctx.onPlayOffMap && (
+              <button
+                type="button"
+                className="mt-2 w-full text-[10px] font-mono text-[var(--ink-faint)] underline decoration-dotted underline-offset-2 hover:text-[var(--sand)]"
+                onClick={() => ctx.onPlayOffMap?.()}
+              >
+                My location isn’t on the map
+              </button>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -410,6 +490,9 @@ export function readWalkthroughDone(): boolean {
 export function clearWalkthroughDone(): void {
   try {
     window.localStorage.removeItem(WALKTHROUGH_KEY);
+    // Clear prior keys too
+    window.localStorage.removeItem("itw_walkthrough_v2");
+    window.localStorage.removeItem("itw_walkthrough_v1");
   } catch {
     /* ignore */
   }
