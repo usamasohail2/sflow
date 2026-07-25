@@ -7,6 +7,7 @@ import {
   HouseSprite,
   MillSprite,
   SoldierSprite,
+  TankSprite,
   TurretSprite,
   VillagerSprite,
   WarehouseSprite,
@@ -18,7 +19,7 @@ import type {
   BuildingType,
   GameSnapshot,
 } from "@/lib/gameTypes";
-import { SOLDIER_COST, buildingBonus } from "@/lib/gameTypes";
+import { SOLDIER_COST, TANK_COST, buildingBonus } from "@/lib/gameTypes";
 import { ringCentroid } from "@/lib/mapMath";
 
 function BuildingThumb({
@@ -244,13 +245,19 @@ export function PlayShell() {
     window.setTimeout(() => setMarch(null), 3400);
     const battle = data?.battle as BattleReport | undefined;
     if (battle) {
+      const losses = [
+        battle.soldiersLost > 0 ? `${battle.soldiersLost} soldier(s)` : null,
+        battle.tanksLost > 0 ? `${battle.tanksLost} tank(s)` : null,
+      ]
+        .filter(Boolean)
+        .join(" + ");
       if (battle.win) {
         showToast(
-          `Victory! ${battle.destroyed ? `${battle.destroyed} destroyed.` : ""} Lost ${battle.soldiersLost} soldier(s).`
+          `Victory! ${battle.destroyed ? `${battle.destroyed} destroyed.` : ""}${losses ? ` Lost ${losses}.` : ""}`
         );
       } else {
         showToast(
-          `Repelled! Their defense ${battle.defensePower} beat your ${battle.attackPower}. Army lost.`
+          `Repelled! Their defense ${battle.defensePower} beat your ${battle.attackPower}.${losses ? ` Lost ${losses}.` : ""}`
         );
       }
     }
@@ -512,16 +519,24 @@ export function PlayShell() {
             </p>
             <button
               type="button"
-              disabled={busy || !me || me.soldiers <= 0 || Boolean(march)}
+              disabled={
+                busy ||
+                !me ||
+                me.soldiers + me.tanks <= 0 ||
+                Boolean(march)
+              }
               onClick={() => void launchAttack()}
               className="mt-2 w-full rounded-sm bg-[var(--signal)] px-3 py-2 text-sm font-bold text-white disabled:opacity-40"
             >
-              ⚔ Attack with {me?.soldiers ?? 0} soldier
+              ⚔ Attack — {me?.soldiers ?? 0} soldier
               {(me?.soldiers ?? 0) === 1 ? "" : "s"}
+              {me && me.tanks > 0
+                ? ` + ${me.tanks} tank${me.tanks === 1 ? "" : "s"}`
+                : ""}
             </button>
-            {me && me.soldiers <= 0 && (
+            {me && me.soldiers + me.tanks <= 0 && (
               <p className="mt-1 text-[9px] text-[var(--ink-faint)]">
-                Recruit soldiers from the army panel first
+                Recruit soldiers or build a tank from the army panel first
               </p>
             )}
           </div>
@@ -547,7 +562,7 @@ export function PlayShell() {
                 displayGold >= SOLDIER_COST ? "cameo-blink" : ""
               }`}
               disabled={busy || displayGold < SOLDIER_COST}
-              title={`Recruit soldier — ${SOLDIER_COST}g`}
+              title={`Recruit soldier — ${SOLDIER_COST}g · +10 attack`}
               onClick={() =>
                 void act("recruit_soldier").then((d) => {
                   if (d) showToast("Soldier recruited");
@@ -560,6 +575,26 @@ export function PlayShell() {
               )}
               <span className="cameo-cost">{SOLDIER_COST}g</span>
               <span className="cameo-label">Soldier</span>
+            </button>
+            <button
+              type="button"
+              className={`cameo ${
+                displayGold >= TANK_COST ? "cameo-blink" : ""
+              }`}
+              disabled={busy || displayGold < TANK_COST}
+              title={`Build tank — ${TANK_COST}g · +40 attack, +30 defense`}
+              onClick={() =>
+                void act("build_tank").then((d) => {
+                  if (d) showToast("Tank rolled off the line");
+                })
+              }
+            >
+              <TankSprite className="h-9 w-11" />
+              {me.tanks > 0 && (
+                <span className="cameo-badge">×{me.tanks}</span>
+              )}
+              <span className="cameo-cost">{TANK_COST}g</span>
+              <span className="cameo-label">Tank</span>
             </button>
             {gemsFound > 0 && (
               <div className="cameo" title={`${gemsFound} resource site(s) found`}>

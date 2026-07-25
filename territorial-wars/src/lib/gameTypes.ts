@@ -82,6 +82,7 @@ export type Player = {
   house: LatLng | null;
   villagers: number;
   soldiers: number;
+  tanks: number;
   gold: number;
   /** Lifetime resources farmed — global ranking metric */
   totalFarmed: number;
@@ -116,6 +117,7 @@ export type PublicPlayer = {
   house: LatLng | null;
   villagers: number;
   soldiers: number;
+  tanks: number;
   gold: number;
   totalFarmed: number;
   buildings: Building[];
@@ -142,6 +144,7 @@ export type BattleReport = {
   defensePower: number;
   destroyed: string | null;
   soldiersLost: number;
+  tanksLost: number;
   defenderSoldiersLost: number;
 };
 
@@ -170,6 +173,7 @@ export const INVITE_VILLAGER_BONUS = 1;
 export const HOUSE_FOOTPRINT_M = 30;
 
 export const SOLDIER_COST = 30;
+export const TANK_COST = 90;
 export const ATTACK_COOLDOWN_MS = 60_000;
 
 export const BUILDING_CATALOG: BuildingCatalogItem[] = [
@@ -231,12 +235,13 @@ export function buildingBonus(buildings: Building[]): number {
 
 export function defensePower(p: {
   soldiers: number;
+  tanks?: number;
   buildings: Building[];
 }): number {
   const turrets = p.buildings.filter((b) => b.type === "turret").length;
-  return 15 + p.soldiers * 10 + turrets * 25;
+  return 15 + p.soldiers * 10 + (p.tanks || 0) * 30 + turrets * 25;
 }
 
-export function attackPower(soldiers: number): number {
-  return soldiers * 10;
+export function attackPower(soldiers: number, tanks = 0): number {
+  return soldiers * 10 + tanks * 40;
 }

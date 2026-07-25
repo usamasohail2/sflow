@@ -5,6 +5,7 @@ import { AUTH_DISABLED } from "@/lib/devMode";
 import {
   attackSector,
   buildBuilding,
+  buildTank,
   claimSector,
   collectHidden,
   discoverSpot,
@@ -186,6 +187,8 @@ export async function POST(req: Request) {
     );
   } else if (body.action === "recruit_soldier") {
     result = await recruitSoldier(id);
+  } else if (body.action === "build_tank") {
+    result = await buildTank(id);
   } else if (body.action === "attack") {
     if (!body.sectorId) {
       return withGuestCookie(

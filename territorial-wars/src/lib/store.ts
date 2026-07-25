@@ -13,6 +13,7 @@ import {
   SOLDIER_COST,
   SPAWN_COOLDOWN_MS,
   STARTING,
+  TANK_COST,
   attackPower,
   buildingBonus,
   catalogItem,
@@ -100,6 +101,7 @@ function migrateLegacy(raw: unknown): GameState {
       if (p.lastRoamSpawnAt == null) p.lastRoamSpawnAt = 0;
       if (p.lastAttackAt == null) p.lastAttackAt = 0;
       if (p.soldiers == null) p.soldiers = 0;
+      if (p.tanks == null) p.tanks = 0;
       if (p.totalFarmed == null) p.totalFarmed = p.gold || 0;
       p.buildings = (p.buildings || []).map((b) => ({
         ...b,
@@ -185,6 +187,7 @@ function publicPlayer(p: Player): PublicPlayer {
     house: p.house,
     villagers: p.villagers,
     soldiers: p.soldiers || 0,
+    tanks: p.tanks || 0,
     gold: p.gold,
     totalFarmed: p.totalFarmed || 0,
     buildings: p.buildings,
@@ -259,6 +262,7 @@ export async function ensurePlayer(
       house: null,
       villagers: 0,
       soldiers: 0,
+      tanks: 0,
       gold: STARTING.gold,
       totalFarmed: 0,
       buildings: [],
@@ -344,6 +348,7 @@ export async function claimSector(
     house,
     villagers: STARTING.villagers,
     soldiers: 0,
+    tanks: 0,
     gold: STARTING.gold,
     totalFarmed: 0,
     buildings: [],
@@ -654,6 +659,25 @@ export async function recruitSoldier(
   return { ok: true };
 }
 
+export async function buildTank(
+  playerId: string
+): Promise<{ ok: true } | { error: string }> {
+  const { state } = await loadAccruedState();
+  const me = state.players[playerId];
+  if (!me?.homeSectorId) return { error: "Claim a sector first" };
+  if (me.gold < TANK_COST) {
+    return { error: `Need ${TANK_COST} gold to build a tank` };
+  }
+  state.players[playerId] = {
+    ...me,
+    gold: me.gold - TANK_COST,
+    tanks: (me.tanks || 0) + 1,
+    updatedAt: Date.now(),
+  };
+  await saveState(state);
+  return { ok: true };
+}
+
 export async function attackSector(
   playerId: string,
   targetSectorId: string
@@ -661,8 +685,8 @@ export async function attackSector(
   const { state } = await loadAccruedState();
   const me = state.players[playerId];
   if (!me?.homeSectorId) return { error: "Claim a sector first" };
-  if ((me.soldiers || 0) <= 0) {
-    return { error: "Recruit soldiers before attacking" };
+  if ((me.soldiers || 0) + (me.tanks || 0) <= 0) {
+    return { error: "Recruit soldiers or build tanks before attacking" };
   }
   if (targetSectorId === me.homeSectorId) {
     return { error: "That's your own sector" };
@@ -680,12 +704,13 @@ export async function attackSector(
   );
   if (!defender) return { error: "Nobody holds that sector" };
 
-  const atk = attackPower(me.soldiers);
+  const atk = attackPower(me.soldiers, me.tanks || 0);
   const def = defensePower(defender);
   const win = atk > def;
 
   let destroyed: string | null = null;
   let soldiersLost = 0;
+  let tanksLost = 0;
   let defenderSoldiersLost = 0;
 
   if (win) {
@@ -723,8 +748,10 @@ export async function attackSector(
       destroyed = loot > 0 ? `${loot} gold looted` : null;
     }
     soldiersLost = Math.floor(me.soldiers * 0.4);
+    tanksLost = Math.floor((me.tanks || 0) * 0.25);
   } else {
     soldiersLost = me.soldiers;
+    tanksLost = Math.ceil((me.tanks || 0) / 2);
     defenderSoldiersLost = Math.min(
       defender.soldiers || 0,
       Math.floor(atk / 20)
@@ -743,6 +770,7 @@ export async function attackSector(
   state.players[playerId] = {
     ...meNow,
     soldiers: Math.max(0, (me.soldiers || 0) - soldiersLost),
+    tanks: Math.max(0, (me.tanks || 0) - tanksLost),
     lastAttackAt: now,
     updatedAt: now,
   };
@@ -756,6 +784,7 @@ export async function attackSector(
       defensePower: def,
       destroyed,
       soldiersLost,
+      tanksLost,
       defenderSoldiersLost,
     },
   };

@@ -31,6 +31,7 @@ import {
   HouseSprite,
   MillSprite,
   SoldierSprite,
+  TankSprite,
   TurretSprite,
   VillagerSprite,
   WarehouseSprite,
@@ -533,6 +534,28 @@ export function GameMap({
             );
           })}
 
+        {/* Tank garrison (mine + rivals) */}
+        {players
+          .filter((p) => p.homeSectorId && p.house && p.tanks > 0)
+          .map((p) => {
+            const pos = offsetMeters(p.house!, -30, -16);
+            return (
+              <Marker
+                key={`tanks-${p.id}`}
+                longitude={pos.lng}
+                latitude={pos.lat}
+                anchor="bottom"
+              >
+                <div className="relative">
+                  <TankSprite className="h-8 w-10" />
+                  <span className="absolute -right-1.5 -top-1 rounded-full bg-[var(--surface)] px-1 font-mono text-[9px] text-[#ff9d5a]">
+                    ×{p.tanks}
+                  </span>
+                </div>
+              </Marker>
+            );
+          })}
+
         {/* Easy resources near house — trees & rocks */}
         {mySpots
           .filter((s) => s.kind === "easy")
@@ -603,7 +626,8 @@ export function GameMap({
             latitude={marchPos.lat}
             anchor="bottom"
           >
-            <div className="relative">
+            <div className="relative flex items-end">
+              {me && me.tanks > 0 && <TankSprite className="h-8 w-10 -mr-2" />}
               <SoldierSprite className="h-9 w-9" />
               <span className="absolute -top-2 left-1/2 -translate-x-1/2 font-mono text-[9px] text-[var(--signal-bright)]">
                 ⚔

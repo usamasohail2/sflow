@@ -121,6 +121,50 @@ export function SoldierSprite({
   );
 }
 
+/** Battle tank with rolling treads. */
+export function TankSprite({
+  className = "",
+  title = "Tank",
+}: SpriteProps) {
+  return (
+    <svg
+      className={`house-sprite ${className}`}
+      viewBox="0 0 40 30"
+      width="54"
+      height="40"
+      role="img"
+      aria-label={title}
+    >
+      <title>{title}</title>
+      <ellipse cx="20" cy="27.5" rx="13" ry="1.8" fill="rgba(0,0,0,0.35)" />
+      {/* treads */}
+      <rect x="6" y="19" width="28" height="7" rx="3.5" fill="#2f2a22" />
+      <circle cx="11" cy="22.5" r="2" fill="#4a4438" />
+      <circle cx="17" cy="22.5" r="2" fill="#4a4438" />
+      <circle cx="23" cy="22.5" r="2" fill="#4a4438" />
+      <circle cx="29" cy="22.5" r="2" fill="#4a4438" />
+      {/* hull */}
+      <path d="M8 19 L11 14 H29 L32 19 Z" fill="#3d5c46" />
+      <path d="M8 19 L11 14 H20 V19 Z" fill="#33503c" />
+      {/* turret */}
+      <rect x="15" y="9.5" width="10" height="5.5" rx="2" fill="#4a6b52" />
+      <rect x="15" y="9.5" width="5" height="5.5" rx="2" fill="#3f5d47" />
+      {/* barrel */}
+      <g transform="translate(25 12) rotate(-6)">
+        <rect x="0" y="-0.9" width="11" height="1.8" rx="0.9" fill="#2f3a34" />
+        <rect x="10" y="-1.3" width="2.2" height="2.6" rx="0.8" fill="#202823" />
+      </g>
+      {/* hatch + star */}
+      <circle cx="18.5" cy="9.2" r="1.2" fill="#2c4234" />
+      <path
+        d="M20 16.2 l0.6 1.2 1.3 0.2 -0.95 0.9 0.25 1.3 -1.2 -0.6 -1.2 0.6 0.25 -1.3 -0.95 -0.9 1.3 -0.2 Z"
+        fill="#c4b089"
+        opacity="0.9"
+      />
+    </svg>
+  );
+}
+
 /** Guard turret tower with cannon. */
 export function TurretSprite({
   className = "",
