@@ -3077,10 +3077,10 @@ export function PlayShell() {
                     Atk {myAttack} · Def {myDefense}
                   </p>
                 </div>
-                <div className="flex items-end gap-1 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] sm:gap-1.5 [&::-webkit-scrollbar]:hidden">
+                <div className="flex w-full items-stretch gap-1 sm:gap-1.5">
                   <button
                     type="button"
-                    className={`cameo ${
+                    className={`cameo cameo-dock ${
                       displayGold >= ROCKET_COST && me.house
                         ? "cameo-blink"
                         : ""
@@ -3108,7 +3108,7 @@ export function PlayShell() {
                     <span className="cameo-label">Buy +1</span>
                   </button>
 
-                  <div className="mx-0.5 h-9 w-px shrink-0 self-center bg-[var(--line)] sm:h-10" />
+                  <div className="w-px shrink-0 self-stretch bg-[var(--line)]" />
 
                   {(snap?.buildingCatalog ?? []).map((b) => {
                     const affordable = displayGold >= b.cost;
@@ -3116,13 +3116,23 @@ export function PlayShell() {
                     const homeSector = snap?.sectors.find(
                       (s) => s.id === me.homeSectorId
                     );
+                    const shortLabel =
+                      b.type === "turret"
+                        ? "Turret"
+                        : b.type === "warehouse"
+                          ? "Store"
+                          : b.type === "mill"
+                            ? "Mill"
+                            : b.type === "well"
+                              ? "Well"
+                              : b.name;
                     return (
                       <button
                         key={b.type}
                         type="button"
-                        className={`cameo ${active ? "cameo-active" : ""} ${
-                          affordable && !active ? "cameo-blink" : ""
-                        }`}
+                        className={`cameo cameo-dock ${
+                          active ? "cameo-active" : ""
+                        } ${affordable && !active ? "cameo-blink" : ""}`}
                         disabled={
                           busy || !affordable || !homeSector || !me.house
                         }
@@ -3147,7 +3157,7 @@ export function PlayShell() {
                           {GOLD_COIN}
                           {b.cost}
                         </span>
-                        <span className="cameo-label">{b.name}</span>
+                        <span className="cameo-label">{shortLabel}</span>
                       </button>
                     );
                   })}
