@@ -21,10 +21,15 @@ import {
   GEM_META,
   HOUSE_FOOTPRINT_M,
   HOUSE_MAX_HP,
-  INTRO_FLY_MS,
-  INTRO_GLOBE_ZOOM,
-  INTRO_TITLE_HOLD_MS,
   GOLD_COIN,
+  INTRO_CITY_CENTER,
+  INTRO_CITY_ZOOM,
+  INTRO_CLOSE_ZOOM,
+  INTRO_FLY1_MS,
+  INTRO_FLY2_MS,
+  INTRO_MID_HOLD_MS,
+  INTRO_MID_ZOOM,
+  INTRO_TITLE_HOLD_MS,
   PLAY_BEARING,
   PLAY_MAX_ZOOM,
   PLAY_MIN_ZOOM,
@@ -272,7 +277,7 @@ export function GameMap({
   const onIntroCompleteRef = useRef(onIntroComplete);
   onIntroCompleteRef.current = onIntroComplete;
   const mapRef = useRef<MapRef>(null);
-  const [zoom, setZoom] = useState(INTRO_GLOBE_ZOOM);
+  const [zoom, setZoom] = useState(INTRO_CITY_ZOOM);
   const showDetail = zoom >= DETAIL_ZOOM;
   const [now, setNow] = useState(() => Date.now());
   const [roamMeters, setRoamMeters] = useState(0);
@@ -341,26 +346,26 @@ export function GameMap({
       const z = map.getZoom();
       const pitch = map.getPitch();
       const bearing = map.getBearing();
-      // If intro aborted early (e.g. Strict Mode), snap to the play camera
+      // If intro aborted early (e.g. Strict Mode), snap to villager-close camera
       if (
-        z < PLAY_MIN_ZOOM ||
+        z < INTRO_CLOSE_ZOOM - 0.4 ||
         pitch < PLAY_PITCH * 0.5 ||
         Math.abs(bearing - PLAY_BEARING) > 40
       ) {
         const { lat, lng } = introFocusRef.current;
         map.easeTo({
           center: [lng, lat],
-          zoom: Math.max(z, PLAY_MIN_ZOOM),
+          zoom: INTRO_CLOSE_ZOOM,
           pitch: PLAY_PITCH,
           bearing: PLAY_BEARING,
-          duration: 280,
+          duration: 320,
         });
       }
     }
     onIntroCompleteRef.current?.();
   }, []);
 
-  // Globe → home sector intro on first load
+  // Splash: full Islamabad → sector → villager-close (two zoom steps)
   useEffect(() => {
     if (!mapReady || introStarted.current || introFinished.current) return;
     if (sectors.length === 0) return;
@@ -371,51 +376,69 @@ export function GameMap({
     const map = mapRef.current;
     if (!map) return;
 
-    const { lat, lng } = introFocusRef.current;
+    const focus = introFocusRef.current;
+    // Step 0 — city splash (title over whole Islamabad)
     map.jumpTo({
-      center: [lng, lat],
-      zoom: INTRO_GLOBE_ZOOM,
-      pitch: 0,
-      bearing: 0,
+      center: [INTRO_CITY_CENTER.lng, INTRO_CITY_CENTER.lat],
+      zoom: INTRO_CITY_ZOOM,
+      pitch: PLAY_PITCH,
+      bearing: PLAY_BEARING,
     });
-    setZoom(INTRO_GLOBE_ZOOM);
+    setZoom(INTRO_CITY_ZOOM);
     setIntroTitle("in");
     applyBasemapLabels(false);
 
-    let flying = false;
+    let phase: "idle" | "fly1" | "fly2" = "idle";
     const onEnd = () => {
-      if (!flying) return;
-      finishIntro();
+      if (phase === "fly2") finishIntro();
     };
     map.on("moveend", onEnd);
 
-    // Hold on the globe with the title, then fade title and fly in
     const fadeTitle = window.setTimeout(() => {
       setIntroTitle("out");
-    }, Math.max(400, INTRO_TITLE_HOLD_MS - 200));
+    }, Math.max(500, INTRO_TITLE_HOLD_MS - 250));
 
-    const startFly = window.setTimeout(() => {
-      flying = true;
+    // Step 1 — zoom into the home sector
+    const startFly1 = window.setTimeout(() => {
+      phase = "fly1";
       map.flyTo({
-        center: [lng, lat],
-        zoom: PLAY_ZOOM,
+        center: [focus.lng, focus.lat],
+        zoom: INTRO_MID_ZOOM,
         pitch: PLAY_PITCH,
         bearing: PLAY_BEARING,
-        duration: INTRO_FLY_MS,
-        curve: 1.35,
+        duration: INTRO_FLY1_MS,
+        curve: 1.25,
         essential: true,
       });
     }, INTRO_TITLE_HOLD_MS);
 
-    // Always unlock even if moveend is missed or this effect is cleaned up
+    // Step 2 — dive close enough to see villagers
+    const startFly2 = window.setTimeout(() => {
+      phase = "fly2";
+      map.flyTo({
+        center: [focus.lng, focus.lat],
+        zoom: INTRO_CLOSE_ZOOM,
+        pitch: PLAY_PITCH,
+        bearing: PLAY_BEARING,
+        duration: INTRO_FLY2_MS,
+        curve: 1.2,
+        essential: true,
+      });
+    }, INTRO_TITLE_HOLD_MS + INTRO_FLY1_MS + INTRO_MID_HOLD_MS);
+
     const failsafe = window.setTimeout(
       finishIntro,
-      INTRO_TITLE_HOLD_MS + INTRO_FLY_MS + 800
+      INTRO_TITLE_HOLD_MS +
+        INTRO_FLY1_MS +
+        INTRO_MID_HOLD_MS +
+        INTRO_FLY2_MS +
+        900
     );
 
     return () => {
       window.clearTimeout(fadeTitle);
-      window.clearTimeout(startFly);
+      window.clearTimeout(startFly1);
+      window.clearTimeout(startFly2);
       window.clearTimeout(failsafe);
       map.off("moveend", onEnd);
       // Dep changes / Strict Mode must not leave the map locked
@@ -867,13 +890,13 @@ export function GameMap({
         ref={mapRef}
         mapboxAccessToken={TOKEN}
         initialViewState={{
-          longitude: 73.045,
-          latitude: 33.71,
-          zoom: INTRO_GLOBE_ZOOM,
-          pitch: 0,
-          bearing: 0,
+          longitude: INTRO_CITY_CENTER.lng,
+          latitude: INTRO_CITY_CENTER.lat,
+          zoom: INTRO_CITY_ZOOM,
+          pitch: PLAY_PITCH,
+          bearing: PLAY_BEARING,
         }}
-        minZoom={introActive ? 0 : PLAY_MIN_ZOOM}
+        minZoom={introActive ? 10.5 : PLAY_MIN_ZOOM}
         maxZoom={PLAY_MAX_ZOOM}
         mapStyle="mapbox://styles/mapbox/standard"
         onLoad={(e) => {
