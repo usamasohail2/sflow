@@ -646,11 +646,15 @@ button.cameo:not(:disabled):hover {
   height: 11px;
 }
 
-.player-pin.is-mine .player-pin-dot {
-  background: #5a9a63;
+.player-pin.is-self .player-pin-dot {
+  background: #3b9eff;
 }
 
-.player-pin.is-rival .player-pin-dot {
+.player-pin.is-ally .player-pin-dot {
+  background: #3ddb7a;
+}
+
+.player-pin.is-enemy .player-pin-dot {
   background: #e23b2f;
 }
 
@@ -676,11 +680,15 @@ button.cameo:not(:disabled):hover {
   text-overflow: ellipsis;
 }
 
-.player-pin.is-mine .player-pin-name {
+.player-pin.is-self .player-pin-name {
+  color: #7ec8ff;
+}
+
+.player-pin.is-ally .player-pin-name {
   color: #8fe098;
 }
 
-.player-pin.is-rival .player-pin-name {
+.player-pin.is-enemy .player-pin-name {
   color: #ff9d8a;
 }
 

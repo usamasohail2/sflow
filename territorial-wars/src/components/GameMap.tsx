@@ -32,7 +32,32 @@ import {
   SPAWN_COOLDOWN_MS,
   catalogItem,
 } from "@/lib/gameTypes";
-import { closeRing, pointInRing } from "@/lib/geo";
+import { closeRing, pointInRing, wallBandCoordinates } from "@/lib/geo";
+
+/** Thin extruded wall band — lines stay on the single perimeter */
+const SECTOR_WALL_M = 16;
+/** Stacked extrusions — taller boundary walls fading upward */
+const SECTOR_WALL_STACK = [
+  { id: "sector-wall-low", base: 0, height: 56, opacity: 0.88 },
+  { id: "sector-wall-mid", base: 56, height: 120, opacity: 0.48 },
+  { id: "sector-wall-high", base: 120, height: 200, opacity: 0.18 },
+] as const;
+
+/** You = blue, same-sector ally = green, other sector = enemy red */
+function playerRelation(
+  p: { id: string; homeSectorId: string | null },
+  me: Player | null | undefined
+): "self" | "ally" | "enemy" {
+  if (!me || p.id === me.id) return "self";
+  if (
+    me.homeSectorId &&
+    p.homeSectorId &&
+    p.homeSectorId === me.homeSectorId
+  ) {
+    return "ally";
+  }
+  return "enemy";
+}
 import {
   distMeters,
   farmTargetForTrip,
@@ -473,12 +498,32 @@ export function GameMap({
     [sectors, me]
   );
 
-  /** Home = bright green; rivals = bright coral; selected before settle = gold */
+  /** Extruded wall band only (no line stroke on this source) */
+  const wallBandFc = useMemo<FeatureCollection>(
+    () => ({
+      type: "FeatureCollection",
+      features: sectors.map((s) => ({
+        type: "Feature" as const,
+        id: `${s.id}-band`,
+        properties: {
+          id: s.id,
+          mine: me?.homeSectorId === s.id ? 1 : 0,
+        },
+        geometry: {
+          type: "Polygon" as const,
+          coordinates: wallBandCoordinates(s.ring, SECTOR_WALL_M),
+        },
+      })),
+    }),
+    [sectors, me]
+  );
+
+  /** Your sector = blue; enemy sectors = red; pre-settle select = gold */
   const settled = Boolean(me?.homeSectorId);
   const sectorWallColor = [
     "case",
     ["==", ["get", "mine"], 1],
-    exploring ? "#7ef0ff" : "#4dff8a",
+    exploring ? "#7ec8ff" : "#3b9eff",
     ["==", ["get", "id"], selectedId || ""],
     settled
       ? exploring
@@ -499,7 +544,7 @@ export function GameMap({
   const sectorFillColor = [
     "case",
     ["==", ["get", "mine"], 1],
-    "#3ddb7a",
+    "#3b9eff",
     ["==", ["get", "id"], selectedId || ""],
     settled ? "#ff5a45" : "#ffd060",
     settled ? "#ff4d3d" : "#8a8578",
@@ -508,21 +553,22 @@ export function GameMap({
   const sectorLabelColor = [
     "case",
     ["==", ["get", "mine"], 1],
-    "#b8ffd0",
+    "#9fd0ff",
     ["==", ["get", "id"], selectedId || ""],
     settled ? "#ffc4b8" : "#ffe6a0",
     settled ? "#ffb0a4" : "#f0f2ea",
   ] as never;
 
-  // Footprint circles for every settlement on the map (+ placement ghost)
+  // Footprint circles — rel: 0 you, 1 ally, 2 enemy
   const footprints = useMemo<FeatureCollection>(() => {
     const feats: Feature<Polygon>[] = [];
     for (const p of players) {
       if (!p.homeSectorId) continue;
-      const mine = p.id === me?.id ? 1 : 0;
+      const relation = playerRelation(p, me);
+      const rel = relation === "self" ? 0 : relation === "ally" ? 1 : 2;
       if (p.house) {
         feats.push(
-          circleFeature(p.house, HOUSE_FOOTPRINT_M, { mine, ghost: 0 })
+          circleFeature(p.house, HOUSE_FOOTPRINT_M, { rel, ghost: 0 })
         );
       }
       for (const b of p.buildings) {
@@ -530,7 +576,7 @@ export function GameMap({
           circleFeature(
             { lat: b.lat, lng: b.lng },
             catalogItem(b.type).footprintM,
-            { mine, ghost: 0 }
+            { rel, ghost: 0 }
           )
         );
       }
@@ -562,7 +608,7 @@ export function GameMap({
         }
       }
       feats.push(
-        circleFeature(hover, fp, { mine: 1, ghost: 1, ok: clear ? 1 : 0 })
+        circleFeature(hover, fp, { rel: 0, ghost: 1, ok: clear ? 1 : 0 })
       );
     }
     return { type: "FeatureCollection", features: feats };
@@ -612,10 +658,11 @@ export function GameMap({
             offsetMeters(origin, 36, 18);
 
         const pose = gatherPose(phase);
+        const relation = playerRelation(p, me);
         return {
           id: p.id,
           name: p.name,
-          mine: p.id === me?.id,
+          relation,
           villagers: p.villagers,
           pos: walkPosition(origin, target, phase),
           target,
@@ -871,7 +918,36 @@ export function GameMap({
           />
         </Source>
 
-        {/* Single perimeter wall: soft glow + crisp stroke (gradient feel) */}
+        {/* Tall extruded wall band (no line stroke — avoids double edges) */}
+        <Source id="sector-wall-bands" type="geojson" data={wallBandFc}>
+          {SECTOR_WALL_STACK.map((band) => (
+            <Layer
+              key={band.id}
+              id={band.id}
+              type="fill-extrusion"
+              slot="top"
+              paint={{
+                "fill-extrusion-color": sectorWallColor,
+                "fill-extrusion-base": band.base,
+                "fill-extrusion-height": [
+                  "case",
+                  ["==", ["get", "mine"], 1],
+                  band.height + 24,
+                  band.height,
+                ] as never,
+                "fill-extrusion-opacity": [
+                  "case",
+                  ["==", ["get", "mine"], 1],
+                  Math.min(0.95, band.opacity + 0.06),
+                  band.opacity,
+                ] as never,
+                "fill-extrusion-vertical-gradient": true,
+              }}
+            />
+          ))}
+        </Source>
+
+        {/* Single perimeter glow + crisp stroke */}
         <Source id="sector-walls" type="geojson" data={wallLineFc}>
           <Layer
             id="sector-wall-glow-outer"
@@ -951,16 +1027,8 @@ export function GameMap({
             .map((p) => {
               const at = playerAnchor(p);
               if (!at) return null;
-              const mine = p.id === me?.id;
-              const sameSector =
-                Boolean(p.homeSectorId) &&
-                Boolean(me?.homeSectorId) &&
-                p.homeSectorId === me?.homeSectorId;
-              const canTarget =
-                !mine &&
-                Boolean(p.homeSectorId) &&
-                Boolean(me?.homeSectorId) &&
-                !sameSector;
+              const relation = playerRelation(p, me);
+              const canTarget = relation === "enemy";
               return (
                 <Marker
                   key={`pin-${p.id}`}
@@ -970,22 +1038,22 @@ export function GameMap({
                 >
                   <button
                     type="button"
-                    className={`player-pin player-pin-dot-only ${
-                      mine ? "is-mine" : "is-rival"
-                    } ${selectedPlayerId === p.id ? "is-selected" : ""}`}
+                    className={`player-pin player-pin-dot-only is-${relation} ${
+                      selectedPlayerId === p.id ? "is-selected" : ""
+                    }`}
                     onClick={(e) => {
                       e.stopPropagation();
                       if (canTarget) onSelectPlayer?.(p.id);
                       else onSelectPlayer?.(null);
                     }}
                     title={
-                      mine
+                      relation === "self"
                         ? "You"
-                        : sameSector
-                          ? `${p.name} (same sector — can't attack)`
+                        : relation === "ally"
+                          ? `${p.name} (ally — same sector)`
                           : `Tap to target ${p.name}`
                     }
-                    aria-label={mine ? "You" : p.name}
+                    aria-label={relation === "self" ? "You" : p.name}
                   >
                     <span className="player-pin-dot" />
                   </button>
@@ -1005,9 +1073,11 @@ export function GameMap({
                   "fill-color": [
                     "case",
                     ["==", ["get", "ghost"], 1],
-                    ["case", ["==", ["get", "ok"], 1], "#5a9a63", "#e23b2f"],
-                    ["==", ["get", "mine"], 1],
-                    "#5a9a63",
+                    ["case", ["==", ["get", "ok"], 1], "#3b9eff", "#e23b2f"],
+                    ["==", ["get", "rel"], 0],
+                    "#3b9eff",
+                    ["==", ["get", "rel"], 1],
+                    "#3ddb7a",
                     "#e23b2f",
                   ] as never,
                   "fill-opacity": [
@@ -1026,9 +1096,11 @@ export function GameMap({
                   "line-color": [
                     "case",
                     ["==", ["get", "ghost"], 1],
-                    ["case", ["==", ["get", "ok"], 1], "#8fe098", "#ff5245"],
-                    ["==", ["get", "mine"], 1],
-                    "#5a9a63",
+                    ["case", ["==", ["get", "ok"], 1], "#7ec8ff", "#ff5245"],
+                    ["==", ["get", "rel"], 0],
+                    "#3b9eff",
+                    ["==", ["get", "rel"], 1],
+                    "#4dff8a",
                     "#e23b2f",
                   ] as never,
                   "line-width": [
@@ -1130,8 +1202,11 @@ export function GameMap({
                       >
                         <BuildingSprite type={b.type} />
                         <HpBar hp={b.hp ?? maxHp} maxHp={maxHp} width={38} />
-                        {p.id !== me?.id && (
+                        {playerRelation(p, me) === "enemy" && (
                           <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-[var(--signal-bright)] ring-1 ring-[var(--surface)]" />
+                        )}
+                        {playerRelation(p, me) === "ally" && (
+                          <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-[var(--field-bright)] ring-1 ring-[var(--surface)]" />
                         )}
                       </button>
                     </Marker>
@@ -1216,7 +1291,9 @@ export function GameMap({
                 anchor="bottom"
               >
                 <div
-                  className={`relative ${v.mine ? "" : "rival-villager"}`}
+                  className={`relative ${
+                    v.relation === "enemy" ? "rival-villager" : ""
+                  }`}
                   title={
                     v.digging
                       ? `${v.name}'s villager farming`
@@ -1225,12 +1302,14 @@ export function GameMap({
                 >
                   <span
                     className={`absolute -top-3.5 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-sm px-1 font-mono text-[8px] ${
-                      v.mine
-                        ? "bg-[rgba(10,14,10,0.85)] text-[var(--field-bright)]"
-                        : "bg-[rgba(10,14,10,0.9)] text-[var(--signal-bright)] ring-1 ring-[var(--signal)]"
+                      v.relation === "self"
+                        ? "bg-[rgba(10,14,18,0.85)] text-[#7ec8ff]"
+                        : v.relation === "ally"
+                          ? "bg-[rgba(10,14,10,0.85)] text-[var(--field-bright)] ring-1 ring-[var(--field)]"
+                          : "bg-[rgba(10,14,10,0.9)] text-[var(--signal-bright)] ring-1 ring-[var(--signal)]"
                     }`}
                   >
-                    {v.mine ? "You" : v.name}
+                    {v.relation === "self" ? "You" : v.name}
                   </span>
                   <VillagerSprite
                     walking={v.walking}
