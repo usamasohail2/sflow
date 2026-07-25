@@ -19,10 +19,10 @@ import {
   catalogItem,
   defensePower,
   type BattleReport,
+  type Building,
   type BuildingType,
   type GameEvent,
   type GameSnapshot,
-  type GameState,
   type GemType,
   type Player,
   type PublicPlayer,
@@ -41,30 +41,198 @@ import {
 } from "@/lib/mapMath";
 import { accrueGather } from "@/lib/rules";
 
-const STATE_KEY = "itw:v2:state";
-const memory = new Map<string, GameState>();
+/**
+ * Storage layout (v3) — granular keys so concurrent requests can't clobber
+ * each other the way the old single-JSON-blob design did:
+ *
+ *   itw:v3:sectors        JSON Sector[]
+ *   itw:v3:spots          JSON ResourceSpot[]
+ *   itw:v3:pids           SET of player ids
+ *   itw:v3:p:{id}         JSON Player
+ *   itw:v3:invites        HASH inviteCode -> playerId
+ *   itw:v3:events         LIST of JSON GameEvent (newest first)
+ *   itw:v3:owner:{sid}    sector claim lock (SET NX -> playerId)
+ */
 
-function redis() {
+const P = "itw:v3";
+const K_SECTORS = `${P}:sectors`;
+const K_SPOTS = `${P}:spots`;
+const K_PIDS = `${P}:pids`;
+const K_INVITES = `${P}:invites`;
+const K_EVENTS = `${P}:events`;
+const K_MIGRATED = `${P}:migrated`;
+const kPlayer = (id: string) => `${P}:p:${id}`;
+const kOwner = (sid: string) => `${P}:owner:${sid}`;
+
+const LEGACY_BLOB_KEY = "itw:v2:state";
+
+const BOT_ID = "bot_garrison";
+const BOT_SECTOR_ID = "sec_e7";
+const BOT_RESTOCK_MS = 3 * 60_000;
+
+function redis(): Redis | null {
   const url = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
   if (!url || !token) return null;
   return new Redis({ url, token });
 }
 
-function emptyState(): GameState {
-  return {
-    version: 2,
-    sectors: [],
-    spots: [],
-    players: {},
-    invites: {},
-    events: [],
-    updatedAt: Date.now(),
-  };
+/* ------------------------------------------------------------------ */
+/* In-memory fallback (local dev without Redis)                        */
+/* ------------------------------------------------------------------ */
+
+type MemStore = {
+  json: Map<string, unknown>;
+  sets: Map<string, Set<string>>;
+  hashes: Map<string, Map<string, string>>;
+  lists: Map<string, string[]>;
+};
+
+const g = globalThis as unknown as { __itwMem?: MemStore };
+function mem(): MemStore {
+  if (!g.__itwMem) {
+    g.__itwMem = {
+      json: new Map(),
+      sets: new Map(),
+      hashes: new Map(),
+      lists: new Map(),
+    };
+  }
+  return g.__itwMem;
+}
+
+/* ------------------------------------------------------------------ */
+/* Low-level ops                                                       */
+/* ------------------------------------------------------------------ */
+
+async function getJSON<T>(key: string): Promise<T | null> {
+  const r = redis();
+  if (r) return ((await r.get(key)) as T) ?? null;
+  const v = mem().json.get(key);
+  return v === undefined ? null : (structuredClone(v) as T);
+}
+
+async function setJSON(key: string, value: unknown): Promise<void> {
+  const r = redis();
+  if (r) {
+    await r.set(key, value);
+    return;
+  }
+  mem().json.set(key, structuredClone(value));
+}
+
+async function mgetJSON<T>(keys: string[]): Promise<(T | null)[]> {
+  if (keys.length === 0) return [];
+  const r = redis();
+  if (r) {
+    const out = (await r.mget(...keys)) as (T | null)[];
+    return out.map((v) => v ?? null);
+  }
+  return keys.map((k) => {
+    const v = mem().json.get(k);
+    return v === undefined ? null : (structuredClone(v) as T);
+  });
+}
+
+async function sAdd(key: string, member: string): Promise<void> {
+  const r = redis();
+  if (r) {
+    await r.sadd(key, member);
+    return;
+  }
+  const s = mem().sets.get(key) ?? new Set<string>();
+  s.add(member);
+  mem().sets.set(key, s);
+}
+
+async function sMembers(key: string): Promise<string[]> {
+  const r = redis();
+  if (r) return ((await r.smembers(key)) as string[]) ?? [];
+  return Array.from(mem().sets.get(key) ?? []);
+}
+
+async function hGet(key: string, field: string): Promise<string | null> {
+  const r = redis();
+  if (r) return ((await r.hget(key, field)) as string) ?? null;
+  return mem().hashes.get(key)?.get(field) ?? null;
+}
+
+async function hSet(key: string, field: string, value: string): Promise<void> {
+  const r = redis();
+  if (r) {
+    await r.hset(key, { [field]: value });
+    return;
+  }
+  const h = mem().hashes.get(key) ?? new Map<string, string>();
+  h.set(field, value);
+  mem().hashes.set(key, h);
+}
+
+async function lPushTrim(key: string, value: string, max: number): Promise<void> {
+  const r = redis();
+  if (r) {
+    await r.lpush(key, value);
+    await r.ltrim(key, 0, max - 1);
+    return;
+  }
+  const l = mem().lists.get(key) ?? [];
+  l.unshift(value);
+  mem().lists.set(key, l.slice(0, max));
+}
+
+async function lRangeAll(key: string, max: number): Promise<string[]> {
+  const r = redis();
+  if (r) return ((await r.lrange(key, 0, max - 1)) as string[]) ?? [];
+  return (mem().lists.get(key) ?? []).slice(0, max);
+}
+
+/** Atomic set-if-absent — the sector claim lock */
+async function setNX(key: string, value: string): Promise<boolean> {
+  const r = redis();
+  if (r) {
+    const res = await r.set(key, value, { nx: true });
+    return res === "OK";
+  }
+  if (mem().json.has(key)) return false;
+  mem().json.set(key, value);
+  return true;
+}
+
+async function getStr(key: string): Promise<string | null> {
+  const r = redis();
+  if (r) return ((await r.get(key)) as string) ?? null;
+  const v = mem().json.get(key);
+  return typeof v === "string" ? v : null;
+}
+
+async function keyExists(key: string): Promise<boolean> {
+  const r = redis();
+  if (r) return (await r.exists(key)) === 1;
+  return mem().json.has(key);
+}
+
+/* ------------------------------------------------------------------ */
+/* Normalization                                                       */
+/* ------------------------------------------------------------------ */
+
+function normalizePlayer(raw: Player): Player {
+  const p = { ...raw };
+  if (p.lastRoamSpawnAt == null) p.lastRoamSpawnAt = 0;
+  if (p.lastAttackAt == null) p.lastAttackAt = 0;
+  if (p.soldiers == null) p.soldiers = 0;
+  if (p.tanks == null) p.tanks = 0;
+  if (p.peakSoldiers == null) p.peakSoldiers = p.soldiers;
+  if (p.peakTanks == null) p.peakTanks = p.tanks;
+  if (p.totalFarmed == null) p.totalFarmed = p.gold || 0;
+  if (p.villagerPost === undefined) p.villagerPost = null;
+  p.buildings = (p.buildings || []).map((b) => ({
+    ...b,
+    hp: b.hp ?? catalogItem(b.type).hp,
+  }));
+  return p;
 }
 
 function normalizeSpot(s: ResourceSpot): ResourceSpot {
-  // Easy house nodes are wood & stone; roam finds keep their gem type
   const gem: GemType =
     s.kind === "easy"
       ? s.gem === "wood" || s.gem === "stone"
@@ -83,95 +251,152 @@ function normalizeSpot(s: ResourceSpot): ResourceSpot {
   };
 }
 
-function seedSectorsIfEmpty(state: GameState): GameState {
-  if (state.sectors.length > 0) return state;
-  // Starter map: F-6 + G-9 so play works before admin draws more
-  return {
-    ...state,
-    sectors: buildDummySectors(),
-    updatedAt: Date.now(),
-  };
+/* ------------------------------------------------------------------ */
+/* Entity accessors                                                    */
+/* ------------------------------------------------------------------ */
+
+export async function getSectors(): Promise<Sector[]> {
+  await bootstrap();
+  return (await getJSON<Sector[]>(K_SECTORS)) ?? [];
 }
 
-function migrateLegacy(raw: unknown): GameState {
-  if (!raw || typeof raw !== "object") return emptyState();
-  const o = raw as Record<string, unknown>;
+export async function saveSectors(sectors: Sector[]): Promise<void> {
+  await bootstrap();
+  await setJSON(K_SECTORS, sectors);
+  const ids = new Set(sectors.map((s) => s.id));
+  const spots = await getSpots();
+  await setSpots(spots.filter((s) => ids.has(s.sectorId)));
+}
 
-  // New shape
-  if (o.version === 2 && Array.isArray(o.sectors)) {
-    const players = (o.players as Record<string, Player>) ?? {};
-    for (const p of Object.values(players)) {
-      if (p.lastRoamSpawnAt == null) p.lastRoamSpawnAt = 0;
-      if (p.lastAttackAt == null) p.lastAttackAt = 0;
-      if (p.soldiers == null) p.soldiers = 0;
-      if (p.tanks == null) p.tanks = 0;
-      if (p.peakSoldiers == null) p.peakSoldiers = p.soldiers;
-      if (p.peakTanks == null) p.peakTanks = p.tanks;
-      if (p.villagerPost === undefined) p.villagerPost = null;
-      if (p.totalFarmed == null) p.totalFarmed = p.gold || 0;
-      p.buildings = (p.buildings || []).map((b) => ({
-        ...b,
-        hp: b.hp ?? catalogItem(b.type).hp,
-      }));
+async function getSpots(): Promise<ResourceSpot[]> {
+  const raw = (await getJSON<ResourceSpot[]>(K_SPOTS)) ?? [];
+  return raw
+    .map(normalizeSpot)
+    .filter((s) => s.kind === "easy" || Boolean(s.ownerId));
+}
+
+async function setSpots(spots: ResourceSpot[]): Promise<void> {
+  await setJSON(K_SPOTS, spots);
+}
+
+async function getPlayer(id: string): Promise<Player | null> {
+  const raw = await getJSON<Player>(kPlayer(id));
+  return raw ? normalizePlayer(raw) : null;
+}
+
+async function setPlayer(p: Player): Promise<void> {
+  await setJSON(kPlayer(p.id), p);
+  await sAdd(K_PIDS, p.id);
+}
+
+async function getAllPlayers(): Promise<Player[]> {
+  const ids = await sMembers(K_PIDS);
+  if (ids.length === 0) return [];
+  const raws = await mgetJSON<Player>(ids.map(kPlayer));
+  return raws.filter(Boolean).map((p) => normalizePlayer(p as Player));
+}
+
+async function pushEvent(e: GameEvent): Promise<void> {
+  await lPushTrim(K_EVENTS, JSON.stringify(e), 50);
+}
+
+async function recentEvents(): Promise<GameEvent[]> {
+  const raw = await lRangeAll(K_EVENTS, 50);
+  const parsed: GameEvent[] = [];
+  for (const item of raw) {
+    try {
+      parsed.push(
+        typeof item === "string" ? JSON.parse(item) : (item as GameEvent)
+      );
+    } catch {
+      /* skip malformed */
     }
-    const spots = (Array.isArray(o.spots) ? (o.spots as ResourceSpot[]) : []).map(
-      normalizeSpot
-    );
-    return {
-      version: 2,
-      sectors: o.sectors as Sector[],
-      spots,
-      players,
-      invites: (o.invites as Record<string, string>) ?? {},
-      events: Array.isArray(o.events) ? (o.events as GameEvent[]) : [],
-      updatedAt: Number(o.updatedAt) || Date.now(),
-    };
   }
-
-  // Legacy dig/control keys — keep sectors only
-  const sectors = Array.isArray(o.sectors) ? (o.sectors as Sector[]) : [];
-  return {
-    ...emptyState(),
-    sectors: sectors.map((s) => ({
-      id: s.id,
-      name: s.name,
-      ring: s.ring,
-      createdAt: s.createdAt ?? Date.now(),
-      updatedAt: s.updatedAt ?? Date.now(),
-    })),
-  };
+  return parsed.reverse(); // chronological
 }
 
-const BOT_ID = "bot_garrison";
-const BOT_SECTOR_ID = "sec_e7";
-const BOT_RESTOCK_MS = 3 * 60_000;
+export function makeInviteCode(seed: string): string {
+  const base = seed.replace(/[^a-zA-Z0-9]/g, "").slice(0, 4).toUpperCase();
+  const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
+  return `${base || "ITW"}${rand}`.slice(0, 8);
+}
 
-/**
- * Keep a bot-held sector stocked with buildings + soldiers so players can
- * practice attacks. Razed defenses restock a few minutes after the raid.
- */
-function ensureRivalGarrison(state: GameState): boolean {
-  let changed = false;
-  const now = Date.now();
+/* ------------------------------------------------------------------ */
+/* Bootstrap: migrate the old blob once, seed sectors, keep bot alive  */
+/* ------------------------------------------------------------------ */
 
-  let sector = state.sectors.find((s) => s.id === BOT_SECTOR_ID);
-  if (!sector) {
-    const seeded = buildDummySectors(now).find((s) => s.id === BOT_SECTOR_ID);
-    if (!seeded) return changed;
-    sector = seeded;
-    state.sectors.push(sector);
-    changed = true;
+let bootPromise: Promise<void> | null = null;
+
+async function bootstrap(): Promise<void> {
+  if (!bootPromise) bootPromise = doBootstrap();
+  await bootPromise;
+}
+
+type LegacyState = {
+  sectors?: Sector[];
+  spots?: ResourceSpot[];
+  players?: Record<string, Player>;
+  invites?: Record<string, string>;
+  events?: GameEvent[];
+};
+
+async function doBootstrap(): Promise<void> {
+  const migrated = await keyExists(K_MIGRATED);
+  if (!migrated) {
+    const legacy = await getJSON<LegacyState>(LEGACY_BLOB_KEY);
+    if (legacy && typeof legacy === "object") {
+      if (Array.isArray(legacy.sectors) && legacy.sectors.length) {
+        await setJSON(K_SECTORS, legacy.sectors);
+      }
+      if (Array.isArray(legacy.spots)) {
+        await setJSON(K_SPOTS, legacy.spots);
+      }
+      for (const p of Object.values(legacy.players ?? {})) {
+        await setPlayer(normalizePlayer(p));
+        if (p.homeSectorId) {
+          await setNX(kOwner(p.homeSectorId), p.id);
+        }
+        if (p.inviteCode) {
+          await hSet(K_INVITES, p.inviteCode, p.id);
+        }
+      }
+      for (const [code, pid] of Object.entries(legacy.invites ?? {})) {
+        await hSet(K_INVITES, code, pid);
+      }
+      for (const e of (legacy.events ?? []).slice(-50)) {
+        await pushEvent(e);
+      }
+    }
+    await setJSON(K_MIGRATED, Date.now());
   }
 
+  const sectors = (await getJSON<Sector[]>(K_SECTORS)) ?? [];
+  if (sectors.length === 0) {
+    await setJSON(K_SECTORS, buildDummySectors());
+  }
+}
+
+/** Bot-held practice sector: create + heal/restock a few minutes after raids */
+async function ensureRivalGarrison(): Promise<void> {
+  const sectors = (await getJSON<Sector[]>(K_SECTORS)) ?? [];
+  let sector = sectors.find((s) => s.id === BOT_SECTOR_ID);
+  if (!sector) {
+    const seeded = buildDummySectors().find((s) => s.id === BOT_SECTOR_ID);
+    if (!seeded) return;
+    sector = seeded;
+    await setJSON(K_SECTORS, [...sectors, sector]);
+  }
+
+  const now = Date.now();
   const center = ringCentroid(sector.ring);
-  const defaultBuildings = () => {
+  const defaultBuildings = (): Building[] => {
     const turretPos = offsetMeters(center, 65, 5);
     const millPos = offsetMeters(center, -80, -25);
     const warehousePos = offsetMeters(center, 15, 85);
     return [
       {
         id: "bot_b_turret",
-        type: "turret" as BuildingType,
+        type: "turret",
         lat: turretPos.lat,
         lng: turretPos.lng,
         hp: catalogItem("turret").hp,
@@ -179,7 +404,7 @@ function ensureRivalGarrison(state: GameState): boolean {
       },
       {
         id: "bot_b_mill",
-        type: "mill" as BuildingType,
+        type: "mill",
         lat: millPos.lat,
         lng: millPos.lng,
         hp: catalogItem("mill").hp,
@@ -187,7 +412,7 @@ function ensureRivalGarrison(state: GameState): boolean {
       },
       {
         id: "bot_b_warehouse",
-        type: "warehouse" as BuildingType,
+        type: "warehouse",
         lat: warehousePos.lat,
         lng: warehousePos.lng,
         hp: catalogItem("warehouse").hp,
@@ -196,9 +421,9 @@ function ensureRivalGarrison(state: GameState): boolean {
     ];
   };
 
-  const bot = state.players[BOT_ID];
+  const bot = await getPlayer(BOT_ID);
   if (!bot) {
-    state.players[BOT_ID] = {
+    await setPlayer({
       id: BOT_ID,
       name: "Rival Garrison",
       homeSectorId: BOT_SECTOR_ID,
@@ -216,78 +441,61 @@ function ensureRivalGarrison(state: GameState): boolean {
       inviteCode: "RIVAL0",
       invitedBy: null,
       lastGatherAt: now,
-      // Reused as the restock timer for the bot
       lastRoamSpawnAt: now,
       lastAttackAt: 0,
       createdAt: now,
       updatedAt: now,
-    };
-    state.invites["RIVAL0"] = BOT_ID;
-    changed = true;
-  } else {
-    const razed =
-      bot.buildings.length < 3 ||
-      (bot.soldiers || 0) < 1 ||
-      bot.buildings.some((b) => b.hp < catalogItem(b.type).hp);
-    // lastAttackAt on the bot marks when it was last raided
-    if (razed && now - (bot.lastAttackAt || 0) > BOT_RESTOCK_MS) {
-      state.players[BOT_ID] = {
-        ...bot,
-        soldiers: Math.max(bot.soldiers || 0, 1),
-        buildings: defaultBuildings(),
-        updatedAt: now,
-      };
-      changed = true;
-    }
-  }
-
-  return changed;
-}
-
-export async function loadState(): Promise<GameState> {
-  const r = redis();
-  if (!r) {
-    const cached = memory.get(STATE_KEY) ?? emptyState();
-    const seeded = seedSectorsIfEmpty(cached);
-    ensureRivalGarrison(seeded);
-    memory.set(STATE_KEY, seeded);
-    return structuredClone(seeded);
-  }
-  const raw = await r.get(STATE_KEY);
-  const state = seedSectorsIfEmpty(migrateLegacy(raw));
-  const garrisonChanged = ensureRivalGarrison(state);
-  if (!raw || garrisonChanged) await saveState(state);
-  return structuredClone(state);
-}
-
-export async function saveState(state: GameState): Promise<void> {
-  state.updatedAt = Date.now();
-  const r = redis();
-  if (!r) {
-    memory.set(STATE_KEY, structuredClone(state));
+    });
+    await hSet(K_INVITES, "RIVAL0", BOT_ID);
+    await setNX(kOwner(BOT_SECTOR_ID), BOT_ID);
     return;
   }
-  await r.set(STATE_KEY, state);
+
+  const razed =
+    bot.buildings.length < 3 ||
+    (bot.soldiers || 0) < 1 ||
+    bot.buildings.some((b) => b.hp < catalogItem(b.type).hp);
+  if (razed && now - (bot.lastAttackAt || 0) > BOT_RESTOCK_MS) {
+    await setPlayer({
+      ...bot,
+      soldiers: Math.max(bot.soldiers || 0, 1),
+      buildings: defaultBuildings(),
+      updatedAt: now,
+    });
+  }
 }
 
-export async function getSectors(): Promise<Sector[]> {
-  const state = await loadState();
-  return state.sectors;
+/* ------------------------------------------------------------------ */
+/* Accrual                                                             */
+/* ------------------------------------------------------------------ */
+
+/** Accrue one player's pending gather trips. Persists when asked. */
+async function accruePlayer(
+  p: Player,
+  spots: ResourceSpot[],
+  persist: boolean
+): Promise<{ player: Player; spots: ResourceSpot[]; spotsChanged: boolean }> {
+  const now = Date.now();
+  const before = JSON.stringify(spots.map((s) => s.availableAt));
+  const { players, spots: nextSpots, changed } = accrueGather(
+    { [p.id]: p },
+    spots,
+    now
+  );
+  const next = players[p.id]!;
+  const spotsChanged =
+    before !== JSON.stringify(nextSpots.map((s) => s.availableAt));
+  if (persist && changed) {
+    await setPlayer(next);
+    if (spotsChanged) await setSpots(nextSpots);
+  }
+  return { player: next, spots: nextSpots, spotsChanged };
 }
 
-export async function saveSectors(sectors: Sector[]): Promise<void> {
-  const state = await loadState();
-  state.sectors = sectors;
-  // Drop spots for deleted sectors
-  const ids = new Set(sectors.map((s) => s.id));
-  state.spots = state.spots.filter((s) => ids.has(s.sectorId));
-  await saveState(state);
-}
-
-export function makeInviteCode(seed: string): string {
-  const base = seed.replace(/[^a-zA-Z0-9]/g, "").slice(0, 4).toUpperCase();
-  const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
-  return `${base || "ITW"}${rand}`.slice(0, 8);
+/** Display-only projection — never writes */
+function projectPlayer(p: Player, spots: ResourceSpot[]): Player {
+  const { players } = accrueGather({ [p.id]: p }, spots, Date.now());
+  return players[p.id]!;
 }
 
 function publicPlayer(p: Player): PublicPlayer {
@@ -308,31 +516,9 @@ function publicPlayer(p: Player): PublicPlayer {
   };
 }
 
-export async function loadAccruedState(): Promise<{
-  state: GameState;
-  serverNow: number;
-}> {
-  const state = await loadState();
-  const now = Date.now();
-  // Drop legacy pre-placed hiddens (roam-spawned finds always have ownerId)
-  const before = state.spots.length;
-  state.spots = state.spots
-    .map(normalizeSpot)
-    .filter((s) => s.kind === "easy" || Boolean(s.ownerId));
-  const changedSpots = state.spots.length !== before;
-
-  const { players, spots, changed } = accrueGather(
-    state.players,
-    state.spots,
-    now
-  );
-  if (changed || changedSpots) {
-    state.players = players;
-    state.spots = spots;
-    await saveState(state);
-  }
-  return { state, serverNow: now };
-}
+/* ------------------------------------------------------------------ */
+/* Public API                                                          */
+/* ------------------------------------------------------------------ */
 
 export async function ensurePlayer(
   id: string,
@@ -341,28 +527,30 @@ export async function ensurePlayer(
   image?: string | null,
   inviteCodeFromClient?: string | null
 ): Promise<Player> {
-  const { state } = await loadAccruedState();
+  await bootstrap();
+  let me = await getPlayer(id);
   const now = Date.now();
-  let me = state.players[id];
 
   if (!me) {
     let inviteCode = makeInviteCode(name || id);
-    while (state.invites[inviteCode]) {
+    while (await hGet(K_INVITES, inviteCode)) {
       inviteCode = makeInviteCode(id + Math.random());
     }
 
     let invitedBy: string | null = null;
     const ref = inviteCodeFromClient?.trim().toUpperCase();
     if (ref) {
-      const ownerId = state.invites[ref];
-      if (ownerId && ownerId !== id && state.players[ownerId]) {
-        invitedBy = ownerId;
-        const inviter = state.players[ownerId]!;
-        state.players[ownerId] = {
-          ...inviter,
-          villagers: inviter.villagers + INVITE_VILLAGER_BONUS,
-          updatedAt: now,
-        };
+      const ownerId = await hGet(K_INVITES, ref);
+      if (ownerId && ownerId !== id) {
+        const inviter = await getPlayer(ownerId);
+        if (inviter) {
+          invitedBy = ownerId;
+          await setPlayer({
+            ...inviter,
+            villagers: inviter.villagers + INVITE_VILLAGER_BONUS,
+            updatedAt: now,
+          });
+        }
       }
     }
 
@@ -391,47 +579,72 @@ export async function ensurePlayer(
       createdAt: now,
       updatedAt: now,
     };
-    state.players[id] = me;
-    state.invites[inviteCode] = id;
-    await saveState(state);
-  } else {
-    me = {
-      ...me,
-      name: name || me.name,
-      image: image !== undefined ? image : me.image,
-    };
-    state.players[id] = me;
-    await saveState(state);
+    await setPlayer(me);
+    await hSet(K_INVITES, inviteCode, id);
+    return me;
   }
 
-  return (await loadAccruedState()).state.players[id]!;
+  if ((name && name !== me.name) || image !== undefined) {
+    // Guest names are derived from the id — don't clobber custom renames
+    const nextName = me.name?.startsWith("Settler ") && name ? name : me.name;
+    const next = {
+      ...me,
+      name: nextName,
+      image: image !== undefined ? image : me.image,
+    };
+    if (JSON.stringify(next) !== JSON.stringify(me)) {
+      await setPlayer(next);
+      me = next;
+    }
+  }
+
+  const spots = await getSpots();
+  const { player } = await accruePlayer(me, spots, true);
+  return player;
 }
 
 export async function getSnapshot(meId?: string | null): Promise<GameSnapshot> {
-  const { state, serverNow } = await loadAccruedState();
-  const me = meId ? state.players[meId] ?? null : null;
-  // Only show easy nodes + roam finds the player owns / discovered
-  const spots = state.spots.filter((s) => {
+  await bootstrap();
+  await ensureRivalGarrison();
+
+  const [sectors, spotsAll, playersAll] = await Promise.all([
+    getSectors(),
+    getSpots(),
+    getAllPlayers(),
+  ]);
+
+  let me = meId ? playersAll.find((p) => p.id === meId) ?? null : null;
+  if (me) {
+    const { player } = await accruePlayer(me, spotsAll, true);
+    me = player;
+  }
+
+  const players = playersAll.map((p) =>
+    p.id === me?.id ? publicPlayer(me) : publicPlayer(projectPlayer(p, spotsAll))
+  );
+
+  const spots = spotsAll.filter((s) => {
     if (s.kind === "easy") {
       return !me?.homeSectorId || s.sectorId === me.homeSectorId;
     }
     if (!me) return false;
-    return (
-      s.ownerId === me.id || me.discoveredSpotIds.includes(s.id)
-    );
+    return s.ownerId === me.id || me.discoveredSpotIds.includes(s.id);
   });
+
+  const allEvents = await recentEvents();
   const events = me
-    ? (state.events || [])
-        .filter((e) => e.attackerId === me.id || e.defenderId === me.id)
+    ? allEvents
+        .filter((e) => e.attackerId === me!.id || e.defenderId === me!.id)
         .slice(-12)
     : [];
+
   return {
-    sectors: state.sectors,
+    sectors,
     spots,
-    players: Object.values(state.players).map(publicPlayer),
+    players,
     me,
     events,
-    serverNow,
+    serverNow: Date.now(),
     gatherTripMs: GATHER_TRIP_MS,
     buildingCatalog: BUILDING_CATALOG,
     authDisabled: AUTH_DISABLED,
@@ -444,31 +657,32 @@ export async function claimSector(
   housePos?: { lat: number; lng: number },
   villagerPos?: { lat: number; lng: number }
 ): Promise<{ ok: true } | { error: string }> {
-  const { state } = await loadAccruedState();
-  const me = state.players[playerId];
+  await bootstrap();
+  const me = await getPlayer(playerId);
   if (!me) return { error: "Player missing" };
   if (me.homeSectorId) {
     return { error: "You already claimed a sector — it's yours forever." };
   }
-  const sector = state.sectors.find((s) => s.id === sectorId);
+  const sectors = await getSectors();
+  const sector = sectors.find((s) => s.id === sectorId);
   if (!sector) return { error: "Sector not found" };
 
-  const taken = Object.values(state.players).some(
-    (p) => p.homeSectorId === sectorId
-  );
-  if (taken) return { error: "That sector is already claimed" };
+  const existingOwner = await getStr(kOwner(sectorId));
+  if (existingOwner && existingOwner !== playerId) {
+    return { error: "That sector is already claimed" };
+  }
 
-  // Player places the house; fall back to centroid for API callers
   const house =
-    housePos &&
-    Number.isFinite(housePos.lat) &&
-    Number.isFinite(housePos.lng)
+    housePos && Number.isFinite(housePos.lat) && Number.isFinite(housePos.lng)
       ? housePos
       : ringCentroid(sector.ring);
   if (!pointInRing(house, sector.ring)) {
     return { error: "Place your house inside the sector" };
   }
-  for (const p of Object.values(state.players)) {
+
+  const everyone = await getAllPlayers();
+  for (const p of everyone) {
+    if (p.id === playerId) continue;
     for (const b of p.buildings) {
       if (
         distMeters(house, { lat: b.lat, lng: b.lng }) <
@@ -477,10 +691,7 @@ export async function claimSector(
         return { error: "That ground is occupied — pick a clear spot" };
       }
     }
-    if (
-      p.house &&
-      distMeters(house, p.house) < HOUSE_FOOTPRINT_M * 2
-    ) {
+    if (p.house && distMeters(house, p.house) < HOUSE_FOOTPRINT_M * 2) {
       return { error: "Too close to another house" };
     }
   }
@@ -500,14 +711,22 @@ export async function claimSector(
     villagerPost = villagerPos;
   }
 
-  const now = Date.now();
-  state.spots = seedSpotsForSector(sector, house, state.spots);
+  // Atomic ownership — losers of the race get a clean error
+  const locked = await setNX(kOwner(sectorId), playerId);
+  if (!locked) {
+    const owner = await getStr(kOwner(sectorId));
+    if (owner !== playerId) return { error: "That sector was just claimed" };
+  }
 
-  const easyIds = state.spots
+  const now = Date.now();
+  const spots = seedSpotsForSector(sector, house, await getSpots());
+  await setSpots(spots);
+
+  const easyIds = spots
     .filter((s) => s.sectorId === sectorId && s.kind === "easy")
     .map((s) => s.id);
 
-  state.players[playerId] = {
+  await setPlayer({
     ...me,
     homeSectorId: sectorId,
     house,
@@ -525,15 +744,11 @@ export async function claimSector(
     lastRoamSpawnAt: 0,
     lastAttackAt: 0,
     updatedAt: now,
-  };
+  });
 
-  await saveState(state);
   return { ok: true };
 }
 
-/**
- * After roaming fully zoomed inside your sector, spawn a gem ahead of the camera.
- */
 export async function spawnRoamFind(
   playerId: string,
   opts: {
@@ -548,8 +763,8 @@ export async function spawnRoamFind(
   | { ok: true; gem: GemType; bonus: number; spotId: string }
   | { error: string }
 > {
-  const { state } = await loadAccruedState();
-  const me = state.players[playerId];
+  await bootstrap();
+  const me = await getPlayer(playerId);
   if (!me?.homeSectorId || !me.house) return { error: "Claim a sector first" };
   if (opts.zoom < EXPLORE_ZOOM) {
     return { error: "Zoom all the way in to explore" };
@@ -561,13 +776,11 @@ export async function spawnRoamFind(
     return { error: "Explore a bit longer…" };
   }
 
-  const sector = state.sectors.find((s) => s.id === me.homeSectorId);
+  const sectors = await getSectors();
+  const sector = sectors.find((s) => s.id === me.homeSectorId);
   if (!sector) return { error: "Home sector missing" };
 
-  const view: { lat: number; lng: number } = {
-    lat: opts.lat,
-    lng: opts.lng,
-  };
+  const view = { lat: opts.lat, lng: opts.lng };
   if (!pointInRing(view, sector.ring)) {
     return { error: "Roam inside your own sector" };
   }
@@ -577,7 +790,8 @@ export async function spawnRoamFind(
     return { error: "Keep exploring…" };
   }
 
-  const finds = state.spots.filter(
+  const spots = await getSpots();
+  const finds = spots.filter(
     (s) =>
       s.sectorId === me.homeSectorId &&
       s.kind === "hidden" &&
@@ -587,10 +801,8 @@ export async function spawnRoamFind(
     return { error: "You've found every vein in this sector for now" };
   }
 
-  // Place gem "in front" of the explorer along camera bearing
   const ahead = 35 + Math.random() * 45;
   let pos = offsetBearing(view, opts.bearing, ahead);
-  // slight lateral drift so it isn't dead-center
   pos = offsetBearing(pos, opts.bearing + 90, (Math.random() - 0.5) * 28);
 
   if (!pointInRing(pos, sector.ring)) {
@@ -600,8 +812,7 @@ export async function spawnRoamFind(
     return { error: "Edge of the sector — turn back and keep roaming" };
   }
 
-  // Don't stack on existing spots
-  const tooClose = state.spots.some(
+  const tooClose = spots.some(
     (s) =>
       s.sectorId === me.homeSectorId &&
       distMeters(pos, { lat: s.lat, lng: s.lng }) < 25
@@ -610,7 +821,7 @@ export async function spawnRoamFind(
     pos = offsetBearing(view, opts.bearing + 40, 40);
     if (
       !pointInRing(pos, sector.ring) ||
-      state.spots.some(
+      spots.some(
         (s) =>
           s.sectorId === me.homeSectorId &&
           distMeters(pos, { lat: s.lat, lng: s.lng }) < 20
@@ -637,16 +848,15 @@ export async function spawnRoamFind(
   };
 
   const bonus = meta.yield * 2;
-  state.spots.push(spot);
-  state.players[playerId] = {
+  await setSpots([...spots, spot]);
+  await setPlayer({
     ...me,
     discoveredSpotIds: [...me.discoveredSpotIds, spotId],
     gold: me.gold + bonus,
     totalFarmed: (me.totalFarmed || 0) + bonus,
     lastRoamSpawnAt: now,
     updatedAt: now,
-  };
-  await saveState(state);
+  });
   return { ok: true, gem, bonus, spotId };
 }
 
@@ -654,10 +864,11 @@ export async function discoverSpot(
   playerId: string,
   spotId: string
 ): Promise<{ ok: true; bonus?: number } | { error: string }> {
-  const { state } = await loadAccruedState();
-  const me = state.players[playerId];
+  await bootstrap();
+  const me = await getPlayer(playerId);
   if (!me?.homeSectorId) return { error: "Claim a sector first" };
-  const spot = state.spots.find((s) => s.id === spotId);
+  const spots = await getSpots();
+  const spot = spots.find((s) => s.id === spotId);
   if (!spot) return { error: "Spot not found" };
   if (spot.sectorId !== me.homeSectorId) {
     return { error: "That spot is outside your sector" };
@@ -671,20 +882,18 @@ export async function discoverSpot(
 
   const bonus = spot.yield * 2;
   const now = Date.now();
-  state.players[playerId] = {
+  await setPlayer({
     ...me,
     discoveredSpotIds: [...me.discoveredSpotIds, spotId],
     gold: me.gold + bonus,
     totalFarmed: (me.totalFarmed || 0) + bonus,
     updatedAt: now,
-  };
-  // Start refill timer after find bonus
-  state.spots = state.spots.map((s) =>
-    s.id === spotId
-      ? { ...s, availableAt: now + (s.refillMs || 45_000) }
-      : s
+  });
+  await setSpots(
+    spots.map((s) =>
+      s.id === spotId ? { ...s, availableAt: now + (s.refillMs || 45_000) } : s
+    )
   );
-  await saveState(state);
   return { ok: true, bonus };
 }
 
@@ -692,13 +901,14 @@ export async function collectHidden(
   playerId: string,
   spotId: string
 ): Promise<{ ok: true; gained?: number } | { error: string }> {
-  const { state } = await loadAccruedState();
-  const me = state.players[playerId];
+  await bootstrap();
+  const me = await getPlayer(playerId);
   if (!me?.homeSectorId) return { error: "Claim a sector first" };
   if (!me.discoveredSpotIds.includes(spotId)) {
     return { error: "Explore and discover this spot first" };
   }
-  const spot = state.spots.find((s) => s.id === spotId);
+  const spots = await getSpots();
+  const spot = spots.find((s) => s.id === spotId);
   if (!spot || spot.kind !== "hidden") return { error: "Not a hidden cache" };
   if (spot.sectorId !== me.homeSectorId) return { error: "Wrong sector" };
   const now = Date.now();
@@ -706,18 +916,17 @@ export async function collectHidden(
     return { error: "Still refilling — come back later" };
   }
 
-  state.players[playerId] = {
+  await setPlayer({
     ...me,
     gold: me.gold + spot.yield,
     totalFarmed: (me.totalFarmed || 0) + spot.yield,
     updatedAt: now,
-  };
-  state.spots = state.spots.map((s) =>
-    s.id === spotId
-      ? { ...s, availableAt: now + (s.refillMs || 45_000) }
-      : s
+  });
+  await setSpots(
+    spots.map((s) =>
+      s.id === spotId ? { ...s, availableAt: now + (s.refillMs || 45_000) } : s
+    )
   );
-  await saveState(state);
   return { ok: true, gained: spot.yield };
 }
 
@@ -727,11 +936,10 @@ export async function renamePlayer(
 ): Promise<{ ok: true } | { error: string }> {
   const trimmed = name.trim().slice(0, 24);
   if (trimmed.length < 2) return { error: "Name too short" };
-  const { state } = await loadAccruedState();
-  const me = state.players[playerId];
+  await bootstrap();
+  const me = await getPlayer(playerId);
   if (!me) return { error: "Player missing" };
-  state.players[playerId] = { ...me, name: trimmed, updatedAt: Date.now() };
-  await saveState(state);
+  await setPlayer({ ...me, name: trimmed, updatedAt: Date.now() });
   return { ok: true };
 }
 
@@ -741,13 +949,14 @@ export async function buildBuilding(
   lat?: number,
   lng?: number
 ): Promise<{ ok: true } | { error: string }> {
-  const { state } = await loadAccruedState();
-  const me = state.players[playerId];
+  await bootstrap();
+  const me = await getPlayer(playerId);
   if (!me?.homeSectorId || !me.house) return { error: "Claim a sector first" };
   const cat = BUILDING_CATALOG.find((b) => b.type === type);
   if (!cat) return { error: "Unknown building" };
 
-  const sector = state.sectors.find((s) => s.id === me.homeSectorId)!;
+  const sectors = await getSectors();
+  const sector = sectors.find((s) => s.id === me.homeSectorId)!;
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return { error: "Tap a spot inside your sector to place it" };
   }
@@ -756,14 +965,11 @@ export async function buildBuilding(
     return { error: "Place it inside your own sector" };
   }
 
-  // Ground collision vs every building and house on the map
-  for (const p of Object.values(state.players)) {
+  const everyone = await getAllPlayers();
+  for (const p of everyone) {
     for (const b of p.buildings) {
       const otherFp = catalogItem(b.type).footprintM;
-      if (
-        distMeters(pos, { lat: b.lat, lng: b.lng }) <
-        cat.footprintM + otherFp
-      ) {
+      if (distMeters(pos, { lat: b.lat, lng: b.lng }) < cat.footprintM + otherFp) {
         return {
           error:
             p.id === playerId
@@ -784,15 +990,17 @@ export async function buildBuilding(
     }
   }
 
-  const cost = cat.cost;
-  if (me.gold < cost) return { error: `Need ${cost} gold` };
+  // Accrue pending gold first so affordability reflects reality
+  const spots = await getSpots();
+  const { player: fresh } = await accruePlayer(me, spots, true);
+  if (fresh.gold < cat.cost) return { error: `Need ${cat.cost} gold` };
 
   const now = Date.now();
-  state.players[playerId] = {
-    ...me,
-    gold: me.gold - cost,
+  await setPlayer({
+    ...fresh,
+    gold: fresh.gold - cat.cost,
     buildings: [
-      ...me.buildings,
+      ...fresh.buildings,
       {
         id: `b_${now.toString(36)}_${Math.random().toString(36).slice(2, 5)}`,
         type,
@@ -803,48 +1011,49 @@ export async function buildBuilding(
       },
     ],
     updatedAt: now,
-  };
-  await saveState(state);
+  });
   return { ok: true };
 }
 
 export async function recruitSoldier(
   playerId: string
 ): Promise<{ ok: true } | { error: string }> {
-  const { state } = await loadAccruedState();
-  const me = state.players[playerId];
+  await bootstrap();
+  const me = await getPlayer(playerId);
   if (!me?.homeSectorId) return { error: "Claim a sector first" };
-  if (me.gold < SOLDIER_COST) {
+  const spots = await getSpots();
+  const { player: fresh } = await accruePlayer(me, spots, true);
+  if (fresh.gold < SOLDIER_COST) {
     return { error: `Need ${SOLDIER_COST} gold to recruit a soldier` };
   }
-  state.players[playerId] = {
-    ...me,
-    gold: me.gold - SOLDIER_COST,
-    soldiers: (me.soldiers || 0) + 1,
-    peakSoldiers: Math.max(me.peakSoldiers || 0, (me.soldiers || 0) + 1),
+  await setPlayer({
+    ...fresh,
+    gold: fresh.gold - SOLDIER_COST,
+    soldiers: (fresh.soldiers || 0) + 1,
+    peakSoldiers: Math.max(fresh.peakSoldiers || 0, (fresh.soldiers || 0) + 1),
     updatedAt: Date.now(),
-  };
-  await saveState(state);
+  });
   return { ok: true };
 }
 
 export async function buildTank(
   playerId: string
 ): Promise<{ ok: true } | { error: string }> {
-  const { state } = await loadAccruedState();
-  const me = state.players[playerId];
+  await bootstrap();
+  const me = await getPlayer(playerId);
   if (!me?.homeSectorId) return { error: "Claim a sector first" };
-  if (me.gold < TANK_COST) {
+  const spots = await getSpots();
+  const { player: fresh } = await accruePlayer(me, spots, true);
+  if (fresh.gold < TANK_COST) {
     return { error: `Need ${TANK_COST} gold to build a tank` };
   }
-  state.players[playerId] = {
-    ...me,
-    gold: me.gold - TANK_COST,
-    tanks: (me.tanks || 0) + 1,
-    peakTanks: Math.max(me.peakTanks || 0, (me.tanks || 0) + 1),
+  await setPlayer({
+    ...fresh,
+    gold: fresh.gold - TANK_COST,
+    tanks: (fresh.tanks || 0) + 1,
+    peakTanks: Math.max(fresh.peakTanks || 0, (fresh.tanks || 0) + 1),
     updatedAt: Date.now(),
-  };
-  await saveState(state);
+  });
   return { ok: true };
 }
 
@@ -852,8 +1061,8 @@ export async function attackSector(
   playerId: string,
   targetSectorId: string
 ): Promise<{ ok: true; battle: BattleReport } | { error: string }> {
-  const { state } = await loadAccruedState();
-  const me = state.players[playerId];
+  await bootstrap();
+  const me = await getPlayer(playerId);
   if (!me?.homeSectorId) return { error: "Claim a sector first" };
   if ((me.soldiers || 0) + (me.tanks || 0) <= 0) {
     return { error: "Recruit soldiers or build tanks before attacking" };
@@ -863,23 +1072,20 @@ export async function attackSector(
   }
   const now = Date.now();
   if (me.lastAttackAt && now - me.lastAttackAt < ATTACK_COOLDOWN_MS) {
-    const wait = Math.ceil(
-      (ATTACK_COOLDOWN_MS - (now - me.lastAttackAt)) / 1000
-    );
+    const wait = Math.ceil((ATTACK_COOLDOWN_MS - (now - me.lastAttackAt)) / 1000);
     return { error: `Army regrouping — ${wait}s until next attack` };
   }
 
-  const defender = Object.values(state.players).find(
-    (p) => p.homeSectorId === targetSectorId
-  );
-  if (!defender) return { error: "Nobody holds that sector" };
+  const defenderId = await getStr(kOwner(targetSectorId));
+  const defender = defenderId ? await getPlayer(defenderId) : null;
+  if (!defender || defender.homeSectorId !== targetSectorId) {
+    return { error: "Nobody holds that sector" };
+  }
 
   const atk = attackPower(me.soldiers, me.tanks || 0);
   const def = defensePower(defender);
   const win = atk > def;
 
-  // Damage chews through building hp — turrets first, then newest.
-  // Winning armies deal full damage; repelled ones still deal half.
   const damageBudget = win ? atk : Math.floor(atk / 2);
   let remaining = damageBudget;
   const destroyedNames: string[] = [];
@@ -902,7 +1108,7 @@ export async function attackSector(
       if (dmg > 0) damagedNames.push(catalogItem(b.type).name);
       return { ...b, hp };
     })
-    .filter(Boolean) as typeof defender.buildings;
+    .filter(Boolean) as Building[];
   const damageDealt = damageBudget - remaining;
 
   let soldiersLost: number;
@@ -929,30 +1135,28 @@ export async function attackSector(
     );
   }
 
-  state.players[defender.id] = {
+  await setPlayer({
     ...defender,
     buildings: survivingBuildings,
     soldiers: Math.max(0, (defender.soldiers || 0) - defenderSoldiersLost),
     gold: defender.gold - lootedGold,
     lastAttackAt: now,
     updatedAt: now,
-  };
+  });
 
-  const meNow = state.players[playerId]!;
-  state.players[playerId] = {
-    ...meNow,
+  await setPlayer({
+    ...me,
     soldiers: Math.max(0, (me.soldiers || 0) - soldiersLost),
     tanks: Math.max(0, (me.tanks || 0) - tanksLost),
-    gold: meNow.gold + lootedGold,
+    gold: me.gold + lootedGold,
     lastAttackAt: now,
     updatedAt: now,
-  };
+  });
 
-  const destroyed = destroyedNames.length
-    ? destroyedNames.join(", ")
-    : null;
-  const sector = state.sectors.find((s) => s.id === targetSectorId);
-  const event: GameEvent = {
+  const destroyed = destroyedNames.length ? destroyedNames.join(", ") : null;
+  const sectors = await getSectors();
+  const sector = sectors.find((s) => s.id === targetSectorId);
+  await pushEvent({
     id: `ev_${now.toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
     ts: now,
     type: "attack",
@@ -967,10 +1171,8 @@ export async function attackSector(
     destroyed,
     lootedGold,
     defenderSoldiersLost,
-  };
-  state.events = [...(state.events || []), event].slice(-50);
+  });
 
-  await saveState(state);
   return {
     ok: true,
     battle: {
@@ -988,4 +1190,4 @@ export async function attackSector(
   };
 }
 
-export { buildingBonus, publicPlayer };
+export { buildingBonus };
