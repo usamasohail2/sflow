@@ -27,6 +27,7 @@ import {
   INTRO_CLOSE_ZOOM,
   INTRO_FLY1_MS,
   INTRO_FLY2_MS,
+  INTRO_GLOBE_ZOOM,
   INTRO_MID_HOLD_MS,
   INTRO_MID_ZOOM,
   INTRO_TITLE_HOLD_MS,
@@ -309,7 +310,7 @@ export function GameMap({
   const onCameraReportRef = useRef(onCameraReport);
   onCameraReportRef.current = onCameraReport;
   const mapRef = useRef<MapRef>(null);
-  const [zoom, setZoom] = useState(INTRO_CITY_ZOOM);
+  const [zoom, setZoom] = useState(INTRO_GLOBE_ZOOM);
   const showDetail = zoom >= DETAIL_ZOOM;
   const [now, setNow] = useState(() => Date.now());
   const [roamMeters, setRoamMeters] = useState(0);
@@ -397,7 +398,7 @@ export function GameMap({
     onIntroCompleteRef.current?.();
   }, []);
 
-  // Splash: full Islamabad → sector → villager-close (two zoom steps)
+  // Splash: outside Earth → sector → villager-close
   useEffect(() => {
     if (!mapReady || introStarted.current || introFinished.current) return;
     if (sectors.length === 0) return;
@@ -409,14 +410,14 @@ export function GameMap({
     if (!map) return;
 
     const focus = introFocusRef.current;
-    // Step 0 — city splash (title over whole Islamabad)
+    // Step 0 — far out on the globe with the title
     map.jumpTo({
       center: [INTRO_CITY_CENTER.lng, INTRO_CITY_CENTER.lat],
-      zoom: INTRO_CITY_ZOOM,
-      pitch: PLAY_PITCH,
-      bearing: PLAY_BEARING,
+      zoom: INTRO_GLOBE_ZOOM,
+      pitch: 0,
+      bearing: 0,
     });
-    setZoom(INTRO_CITY_ZOOM);
+    setZoom(INTRO_GLOBE_ZOOM);
     setIntroTitle("in");
     applyBasemapLabels(false);
 
@@ -430,7 +431,7 @@ export function GameMap({
       setIntroTitle("out");
     }, Math.max(500, INTRO_TITLE_HOLD_MS - 250));
 
-    // Step 1 — zoom into the home sector
+    // Step 1 — dive from space into the home sector
     const startFly1 = window.setTimeout(() => {
       phase = "fly1";
       map.flyTo({
@@ -439,7 +440,7 @@ export function GameMap({
         pitch: PLAY_PITCH,
         bearing: PLAY_BEARING,
         duration: INTRO_FLY1_MS,
-        curve: 1.25,
+        curve: 1.4,
         essential: true,
       });
     }, INTRO_TITLE_HOLD_MS);
@@ -958,13 +959,19 @@ export function GameMap({
         initialViewState={{
           longitude: INTRO_CITY_CENTER.lng,
           latitude: INTRO_CITY_CENTER.lat,
-          zoom: INTRO_CITY_ZOOM,
-          pitch: PLAY_PITCH,
-          bearing: PLAY_BEARING,
+          zoom: INTRO_GLOBE_ZOOM,
+          pitch: 0,
+          bearing: 0,
         }}
-        minZoom={introActive ? 10.5 : PLAY_MIN_ZOOM}
+        minZoom={introActive ? 0 : PLAY_MIN_ZOOM}
         maxZoom={PLAY_MAX_ZOOM}
         mapStyle="mapbox://styles/mapbox/standard"
+        dragPan={!introActive}
+        scrollZoom={!introActive}
+        doubleClickZoom={!introActive}
+        dragRotate={!introActive}
+        touchZoomRotate={!introActive}
+        keyboard={!introActive}
         onLoad={(e) => {
           // Dusk atmosphere; Standard style ships 3D buildings by default
           const m = e.target;
@@ -982,7 +989,7 @@ export function GameMap({
           setMapReady(true);
         }}
         interactiveLayerIds={["sector-fill"]}
-        cursor={placing ? "crosshair" : "grab"}
+        cursor={introActive ? "default" : placing ? "crosshair" : "grab"}
         onMove={onMove}
         onMouseMove={(e: MapMouseEvent) => {
           if (placing) {

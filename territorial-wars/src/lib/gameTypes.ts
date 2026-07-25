@@ -60,25 +60,25 @@ export const PLAY_PITCH = 77;
 export const PLAY_BEARING = -28;
 /** Don't pull out past a couple of sectors */
 export const PLAY_MIN_ZOOM = 13.2;
-/** Splash: whole Islamabad in frame */
+/** Intro opens far out on Earth, then flies into Islamabad */
+export const INTRO_GLOBE_ZOOM = 1.15;
+/** Brief city/sector frame mid-flight */
 export const INTRO_CITY_ZOOM = 11.7;
-/** Intro step 1: sector overview after leaving the city frame */
+/** Intro step 1 land: sector overview */
 export const INTRO_MID_ZOOM = 14.3;
 /** Intro step 2 / play land: close enough to see villagers */
 export const INTRO_CLOSE_ZOOM = 16.5;
-/** Islamabad overview center for the splash frame */
+/** Islamabad overview center for mid intro frame */
 export const INTRO_CITY_CENTER = { lat: 33.6844, lng: 73.0479 } as const;
-/** Hold on the city splash so the title can read */
+/** Hold on the globe so the title can read */
 export const INTRO_TITLE_HOLD_MS = 1400;
-/** City → sector (step 1) */
-export const INTRO_FLY1_MS = 2000;
+/** Globe → sector (step 1) */
+export const INTRO_FLY1_MS = 2800;
 /** Brief beat on the sector before diving to villagers */
 export const INTRO_MID_HOLD_MS = 350;
 /** Sector → villager-close (step 2) */
 export const INTRO_FLY2_MS = 2200;
-/** @deprecated use INTRO_CITY_ZOOM — kept for any stray imports */
-export const INTRO_GLOBE_ZOOM = INTRO_CITY_ZOOM;
-/** @deprecated total of both fly legs */
+/** Total of both fly legs */
 export const INTRO_FLY_MS = INTRO_FLY1_MS + INTRO_MID_HOLD_MS + INTRO_FLY2_MS;
 /**
  * At/above this zoom Mapbox 3D buildings read clearly — show houses,
