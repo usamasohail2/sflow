@@ -1135,6 +1135,10 @@ export function PlayShell() {
             walkthroughArmed.current = true;
             if (!readWalkthroughDone()) setShowWalkthrough(true);
           }}
+          guidePulse={
+            showWalkthrough &&
+            (placing?.kind === "house" || placing?.kind === "villager")
+          }
           className="h-full w-full"
         />
       </div>
@@ -1660,6 +1664,19 @@ export function PlayShell() {
       <Walkthrough
         open={showWalkthrough}
         onClose={() => setShowWalkthrough(false)}
+        ctx={{
+          claimed,
+          gpsReady: Boolean(
+            selected && gpsFix?.sectorId === selected.id
+          ),
+          placingKind: placing?.kind ?? null,
+          sectorName:
+            selected?.name ??
+            (me?.homeSectorId
+              ? snap?.sectors.find((s) => s.id === me.homeSectorId)?.name ??
+                null
+              : null),
+        }}
       />
 
       {/* Graphical battle report — blocks until dismissed */}
@@ -1814,7 +1831,7 @@ export function PlayShell() {
       )}
 
       {/* Toast / error */}
-      {(toast || error) && !battleSummary && !savingLabel && !showWalkthrough && (
+      {(toast || error) && !battleSummary && !savingLabel && (
         <div className="pointer-events-none absolute left-1/2 top-14 z-40 -translate-x-1/2">
           <p
             className={`hud-chip px-4 py-2 text-xs font-semibold ${
@@ -1867,6 +1884,7 @@ export function PlayShell() {
             <>
               <button
                 type="button"
+                data-guide="guide-gps"
                 disabled={busy || !me || gpsBusy}
                 onClick={() => confirmGpsForSector(selected.id)}
                 className={`mt-3 w-full rounded-sm px-3 py-2.5 text-sm font-bold shadow-[0_2px_8px_rgba(0,0,0,0.5)] disabled:opacity-40 ${
@@ -1885,6 +1903,7 @@ export function PlayShell() {
               </button>
               <button
                 type="button"
+                data-guide="guide-settle"
                 disabled={busy || !me || gpsFix?.sectorId !== selected.id}
                 onClick={() => {
                   setPendingHouse(null);

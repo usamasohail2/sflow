@@ -178,6 +178,8 @@ type Props = {
   onCollectHidden?: (spotId: string) => void;
   /** Fires once when the globe → sector intro finishes */
   onIntroComplete?: () => void;
+  /** Pulsing map beacon during guided house/villager placement */
+  guidePulse?: boolean;
   className?: string;
 };
 
@@ -261,6 +263,7 @@ export function GameMap({
   onSpawnFind,
   onCollectHidden,
   onIntroComplete,
+  guidePulse = false,
   className = "",
 }: Props) {
   const onIntroCompleteRef = useRef(onIntroComplete);
@@ -1393,9 +1396,23 @@ export function GameMap({
         )}
       </MapboxMap>
 
+      {/* Guided placement beacon — blinks in the sector while planting */}
+      {guidePulse && placing && (
+        <Marker
+          latitude={ringCentroid(placing.sector.ring).lat}
+          longitude={ringCentroid(placing.sector.ring).lng}
+          anchor="center"
+        >
+          <div className="guide-map-beacon" aria-hidden />
+        </Marker>
+      )}
+
       {/* Placement banner */}
       {placing && (
-        <div className="pointer-events-none absolute left-1/2 top-14 z-10 -translate-x-1/2">
+        <div
+          data-guide="guide-place-banner"
+          className="pointer-events-none absolute left-1/2 top-14 z-10 -translate-x-1/2"
+        >
           <p className="hud-chip px-4 py-2 text-center text-xs font-semibold text-[var(--sand)]">
             Tap inside {placing.sector.name} to place your{" "}
             {placingLabel(placing.kind)} — green ring = clear ground
