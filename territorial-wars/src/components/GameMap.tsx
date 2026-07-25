@@ -21,6 +21,8 @@ import {
   GEM_META,
   HOUSE_FOOTPRINT_M,
   HOUSE_MAX_HP,
+  INTRO_FLY_MS,
+  INTRO_GLOBE_ZOOM,
   PLAY_MAX_ZOOM,
   PLAY_MIN_ZOOM,
   PLAY_ZOOM,
@@ -35,6 +37,7 @@ import {
   farmTargetForTrip,
   lerpLatLng,
   offsetMeters,
+  ringCentroid,
 } from "@/lib/mapMath";
 import { setVillagerWorkLevel, stopVillagerWork } from "@/lib/sound";
 import {
@@ -232,7 +235,7 @@ export function GameMap({
   className = "",
 }: Props) {
   const mapRef = useRef<MapRef>(null);
-  const [zoom, setZoom] = useState(PLAY_ZOOM);
+  const [zoom, setZoom] = useState(INTRO_GLOBE_ZOOM);
   const showDetail = zoom >= DETAIL_ZOOM;
   const [now, setNow] = useState(() => Date.now());
   const [roamMeters, setRoamMeters] = useState(0);
@@ -240,8 +243,12 @@ export function GameMap({
   const [exploring, setExploring] = useState(false);
   const [spawnFlash, setSpawnFlash] = useState<string | null>(null);
   const [hover, setHover] = useState<LatLng | null>(null);
+  const [mapReady, setMapReady] = useState(false);
+  /** While true, minZoom is open so the globe intro can run */
+  const [introActive, setIntroActive] = useState(true);
   const lastCenter = useRef<LatLng | null>(null);
   const lastFlownGps = useRef<string | null>(null);
+  const introStarted = useRef(false);
   const spawning = useRef(false);
   const roamAcc = useRef(0);
   const exploreAcc = useRef(0);
@@ -253,8 +260,83 @@ export function GameMap({
     return () => window.clearInterval(id);
   }, []);
 
+  const homeSector = useMemo(
+    () => sectors.find((s) => s.id === me?.homeSectorId) ?? null,
+    [sectors, me]
+  );
+
+  const introFocus = useMemo((): LatLng => {
+    if (homeSector) return ringCentroid(homeSector.ring);
+    if (me?.house) return me.house;
+    if (sectors[0]) return ringCentroid(sectors[0].ring);
+    return { lat: 33.71, lng: 73.045 };
+  }, [homeSector, me?.house, sectors]);
+
+  // Globe → home sector intro on first load
+  useEffect(() => {
+    if (!mapReady || introStarted.current) return;
+    if (sectors.length === 0) return;
+    // Wait for home geometry when the player is already settled
+    if (me?.homeSectorId && !homeSector) return;
+
+    introStarted.current = true;
+    const map = mapRef.current;
+    if (!map) return;
+
+    const { lat, lng } = introFocus;
+    map.jumpTo({
+      center: [lng, lat],
+      zoom: INTRO_GLOBE_ZOOM,
+      pitch: 0,
+      bearing: 0,
+    });
+    setZoom(INTRO_GLOBE_ZOOM);
+
+    let finished = false;
+    let flying = false;
+    const finishIntro = () => {
+      if (finished) return;
+      finished = true;
+      setIntroActive(false);
+      const z = map.getZoom();
+      if (z < PLAY_MIN_ZOOM) {
+        map.easeTo({ zoom: PLAY_MIN_ZOOM, duration: 280 });
+      }
+    };
+
+    const onEnd = () => {
+      // Ignore jumpTo's moveend — only end after the fly-in
+      if (!flying) return;
+      finishIntro();
+    };
+    map.on("moveend", onEnd);
+
+    const startFly = window.setTimeout(() => {
+      flying = true;
+      map.flyTo({
+        center: [lng, lat],
+        zoom: PLAY_ZOOM,
+        pitch: 55,
+        bearing: -28,
+        duration: INTRO_FLY_MS,
+        curve: 1.6,
+        speed: 0.55,
+        essential: true,
+      });
+    }, 220);
+
+    const failsafe = window.setTimeout(finishIntro, INTRO_FLY_MS + 1600);
+
+    return () => {
+      window.clearTimeout(startFly);
+      window.clearTimeout(failsafe);
+      map.off("moveend", onEnd);
+    };
+  }, [mapReady, sectors.length, me?.homeSectorId, homeSector, introFocus]);
+
   // Fly to the player's GPS once when it first appears (not on every watch tick)
   useEffect(() => {
+    if (introActive) return;
     if (!userLocation) {
       lastFlownGps.current = null;
       return;
@@ -272,10 +354,11 @@ export function GameMap({
       duration: 1200,
       essential: true,
     });
-  }, [userLocation]);
+  }, [userLocation, introActive]);
 
   // Re-center when picking a sector, or when parent requests focus (GPS confirm)
   useEffect(() => {
+    if (introActive) return;
     if (!userLocation) return;
     const map = mapRef.current;
     if (!map) return;
@@ -287,12 +370,7 @@ export function GameMap({
       ),
       duration: 800,
     });
-  }, [selectedId, userLocationFocus]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const homeSector = useMemo(
-    () => sectors.find((s) => s.id === me?.homeSectorId) ?? null,
-    [sectors, me]
-  );
+  }, [selectedId, userLocationFocus, introActive]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Sector economy = total resources farmed by settlers there */
   const sectorEconomy = useMemo(() => {
@@ -653,13 +731,19 @@ export function GameMap({
         initialViewState={{
           longitude: 73.045,
           latitude: 33.71,
-          zoom: PLAY_ZOOM,
-          pitch: 55,
-          bearing: -28,
+          zoom: INTRO_GLOBE_ZOOM,
+          pitch: 0,
+          bearing: 0,
         }}
-        minZoom={PLAY_MIN_ZOOM}
+        minZoom={introActive ? 0 : PLAY_MIN_ZOOM}
         maxZoom={PLAY_MAX_ZOOM}
         mapStyle="mapbox://styles/mapbox/standard"
+        dragPan={!introActive}
+        scrollZoom={!introActive}
+        doubleClickZoom={!introActive}
+        dragRotate={!introActive}
+        touchZoomRotate={!introActive}
+        keyboard={!introActive}
         onLoad={(e) => {
           // Dusk atmosphere; Standard style ships 3D buildings by default
           const m = e.target as unknown as {
@@ -675,9 +759,10 @@ export function GameMap({
           } catch {
             /* older style fallback — ignore */
           }
+          setMapReady(true);
         }}
         interactiveLayerIds={["sector-fill"]}
-        cursor={placing ? "crosshair" : "grab"}
+        cursor={introActive ? "default" : placing ? "crosshair" : "grab"}
         onMove={onMove}
         onMouseMove={(e: MapMouseEvent) => {
           if (placing) {
