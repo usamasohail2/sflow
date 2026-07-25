@@ -35,7 +35,6 @@ import {
   type MapBusiness,
 } from "@/lib/businesses";
 import {
-  HammerSprite,
   HouseSprite,
   MillSprite,
   RocketSprite,
@@ -504,9 +503,6 @@ export function PlayShell() {
   const [placing, setPlacing] = useState<Placing | null>(null);
   /** Building ids currently syncing to the server (optimistic place) */
   const [syncingBuildIds, setSyncingBuildIds] = useState<string[]>([]);
-  /** Mobile: build tray collapsed by default so it doesn't stack over arsenal */
-  /** Mobile: open by default so build tiles use the free dock space */
-  const [buildOpen, setBuildOpen] = useState(true);
   const [pendingHouse, setPendingHouse] = useState<LatLng | null>(null);
   const [march, setMarch] = useState<MarchAnim | null>(null);
   const [impact, setImpact] = useState<ImpactAnim | null>(null);
@@ -1122,17 +1118,6 @@ export function PlayShell() {
     window.addEventListener("pointerdown", unlock);
     return () => window.removeEventListener("pointerdown", unlock);
   }, []);
-
-  // Open build tray when a building is being placed; keep arsenal clear otherwise
-  useEffect(() => {
-    if (
-      placing &&
-      placing.kind !== "house" &&
-      placing.kind !== "villager"
-    ) {
-      setBuildOpen(true);
-    }
-  }, [placing]);
 
   // While choosing a sector, show the player's live GPS on the map
   useEffect(() => {
@@ -2729,11 +2714,7 @@ export function PlayShell() {
 
       {/* ---- Rebuild house after it was destroyed ---- */}
       {needsHouseRebuild && me?.homeSectorId && !placing && (
-        <div
-          className={`absolute left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-sm -translate-x-1/2 sm:bottom-8 ${
-            buildOpen ? "bottom-[13.5rem]" : "bottom-28"
-          }`}
-        >
+        <div className="absolute bottom-28 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-sm -translate-x-1/2 sm:bottom-8">
           <div className="hud-panel p-4 text-center">
             <p className="font-display text-xl text-[var(--signal-bright)]">
               House destroyed
@@ -2764,11 +2745,7 @@ export function PlayShell() {
 
       {/* ---- Clear ground: same-sector neighbor building ---- */}
       {canRazeSelected && razeOwner && razeBuilding && !placing && (
-        <div
-          className={`absolute left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-xs -translate-x-1/2 sm:bottom-8 ${
-            buildOpen ? "bottom-[13.5rem]" : "bottom-28"
-          }`}
-        >
+        <div className="absolute bottom-28 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-xs -translate-x-1/2 sm:bottom-8">
           <div className="hud-panel p-3 text-center">
             <p className="font-mono text-[8px] uppercase tracking-[0.2em] text-[var(--sand)]">
               Clear ground
@@ -2935,11 +2912,7 @@ export function PlayShell() {
 
       {/* ---- Attack panel: after tapping any enemy building/house ---- */}
       {enemySelected && enemyPlayer && !placing && !needsHouseRebuild && (
-        <div
-          className={`absolute left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-xs -translate-x-1/2 sm:bottom-8 ${
-            buildOpen ? "bottom-[13.5rem]" : "bottom-28"
-          }`}
-        >
+        <div className="absolute bottom-28 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-xs -translate-x-1/2 sm:bottom-8">
           <div className="hud-panel p-3 text-center">
             <p className="font-display text-lg text-[var(--ink)]">
               {enemyPlayer.name}
@@ -3045,149 +3018,98 @@ export function PlayShell() {
         </div>
       )}
 
-      {/* ---- Bottom dock: status + Arsenal (weapons) + Buildables ---- */}
+      {/* ---- Bottom dock: status chips + arsenal/build row ---- */}
       {claimed && me && (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 sm:px-3 sm:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-          <div className="flex flex-col items-stretch gap-1.5 sm:flex-row sm:items-end sm:justify-between sm:gap-3">
-            {/* Left: villager/house status + arsenal */}
-            <div className="order-2 flex min-w-0 max-w-full flex-col items-start gap-1 sm:order-1 sm:max-w-[min(100%,28rem)]">
-              <div className="hud-status pointer-events-auto">
+          <div className="flex max-w-full flex-col items-start gap-1 sm:max-w-[min(100%,36rem)]">
+            <div className="hud-status pointer-events-auto">
+              <div
+                className="hud-status-chip"
+                title={`${me.villagers} villager(s) gathering`}
+              >
+                <VillagerSprite walking className="h-5 w-5" />
+                <span>×{me.villagers}</span>
+              </div>
+              <div
+                className={`hud-status-chip ${
+                  me.house ? "hud-status-chip--hp" : "hud-status-chip--down"
+                }`}
+                title={
+                  me.house
+                    ? `House health ${me.houseHp}/${HOUSE_MAX_HP}`
+                    : "House destroyed — rebuild to gather"
+                }
+              >
+                <HouseSprite className="h-5 w-6" />
+                <span>{me.house ? `${me.houseHp}/${HOUSE_MAX_HP}` : "✕"}</span>
+              </div>
+              <div
+                className="hud-status-chip"
+                title={`Arsenal: ${me.rockets || 0} rocket(s) · ${myAttack} attack power`}
+              >
+                <RocketSprite className="h-5 w-5" />
+                <span>×{me.rockets || 0}</span>
+              </div>
+              {gemsFound > 0 && (
                 <div
                   className="hud-status-chip"
-                  title={`${me.villagers} villager(s) gathering`}
+                  title={`${gemsFound} resource site(s) found`}
                 >
-                  <VillagerSprite walking className="h-5 w-5" />
-                  <span>×{me.villagers}</span>
+                  <ResourceGem gem="diamond" size={16} pulse />
+                  <span>×{gemsFound}</span>
                 </div>
-                <div
-                  className={`hud-status-chip ${
-                    me.house ? "hud-status-chip--hp" : "hud-status-chip--down"
-                  }`}
-                  title={
-                    me.house
-                      ? `House health ${me.houseHp}/${HOUSE_MAX_HP}`
-                      : "House destroyed — rebuild to gather"
-                  }
-                >
-                  <HouseSprite className="h-5 w-6" />
-                  <span>
-                    {me.house ? `${me.houseHp}/${HOUSE_MAX_HP}` : "✕"}
-                  </span>
-                </div>
-                <div
-                  className="hud-status-chip"
-                  title={`Arsenal: ${me.rockets || 0} rocket(s) · ${myAttack} attack power`}
-                >
-                  <RocketSprite className="h-5 w-5" />
-                  <span>×{me.rockets || 0}</span>
-                </div>
-                {gemsFound > 0 && (
-                  <div
-                    className="hud-status-chip"
-                    title={`${gemsFound} resource site(s) found`}
-                  >
-                    <ResourceGem gem="diamond" size={16} pulse />
-                    <span>×{gemsFound}</span>
-                  </div>
-                )}
-              </div>
-
-              <div className="pointer-events-auto w-full min-w-0">
-                <div className="hud-panel hud-panel-arsenal p-1.5 sm:p-2">
-                  <div className="flex items-end justify-between gap-2 px-1 pb-1">
-                    <div className="min-w-0">
-                      <p className="font-mono text-[8px] uppercase tracking-[0.24em] text-[var(--sand)]">
-                        Arsenal
-                      </p>
-                      <p className="hidden font-mono text-[8px] text-[var(--ink-faint)] sm:block">
-                        Stock rockets · spend on attacks
-                      </p>
-                    </div>
-                    <p className="shrink-0 font-mono text-[9px] text-[var(--ink-muted)]">
-                      Atk {myAttack} · Def {myDefense}
-                    </p>
-                  </div>
-                  <div className="flex items-end gap-1 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] sm:gap-1.5 [&::-webkit-scrollbar]:hidden">
-                    <button
-                      type="button"
-                      className={`cameo ${
-                        displayGold >= ROCKET_COST && me.house
-                          ? "cameo-blink"
-                          : ""
-                      }`}
-                      disabled={busy || displayGold < ROCKET_COST || !me.house}
-                      title={
-                        !me.house
-                          ? "Rebuild your house first"
-                          : `Buy rocket — ${GOLD_COIN}${ROCKET_COST} · +1 attack (expended when you fire)`
-                      }
-                      onClick={() =>
-                        void act("buy_rocket").then((d) => {
-                          if (d) {
-                            playRecruitSound();
-                            showToast("Rocket stocked · +1 attack");
-                          }
-                        })
-                      }
-                    >
-                      <RocketSprite className="h-8 w-8 sm:h-9 sm:w-9" />
-                      <span className="cameo-cost">
-                        {GOLD_COIN}
-                        {ROCKET_COST}
-                      </span>
-                      <span className="cameo-label">Buy +1</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      className={`cameo ml-auto sm:hidden ${
-                        buildOpen ? "cameo-active" : ""
-                      }`}
-                      title="Open buildables — place structures"
-                      onClick={() => setBuildOpen((o) => !o)}
-                    >
-                      <HammerSprite className="h-7 w-7" />
-                      <span className="cameo-label">
-                        {buildOpen ? "Close" : "Build"}
-                      </span>
-                    </button>
-                  </div>
-                </div>
-              </div>
+              )}
             </div>
 
-            {/* Buildables — place structures (separate from arsenal) */}
-            <div
-              className={`pointer-events-auto order-1 w-full sm:order-2 sm:w-auto sm:max-w-[17rem] ${
-                buildOpen ? "block" : "hidden sm:block"
-              }`}
-            >
-              <div className="hud-panel hud-panel-build p-1.5 sm:p-2">
-                <div className="flex items-center justify-between gap-2 px-1 pb-1">
+            <div className="pointer-events-auto w-full min-w-0">
+              <div className="hud-panel hud-panel-arsenal p-1.5 sm:p-2">
+                <div className="flex items-end justify-between gap-2 px-1 pb-1">
                   <div className="min-w-0">
-                    <p className="font-mono text-[8px] uppercase tracking-[0.24em] text-[#8fe098]">
-                      Buildables
+                    <p className="font-mono text-[8px] uppercase tracking-[0.24em] text-[var(--sand)]">
+                      Arsenal{" "}
+                      <span className="text-[#8fe098]">· Build</span>
                     </p>
                     <p className="hidden font-mono text-[8px] text-[var(--ink-faint)] sm:block">
-                      Place structures in your sector
+                      Buy rockets · place structures
                     </p>
                   </div>
+                  <p className="shrink-0 font-mono text-[9px] text-[var(--ink-muted)]">
+                    Atk {myAttack} · Def {myDefense}
+                  </p>
+                </div>
+                <div className="flex items-end gap-1 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] sm:gap-1.5 [&::-webkit-scrollbar]:hidden">
                   <button
                     type="button"
-                    className="font-mono text-[9px] text-[var(--ink-faint)] underline decoration-dotted sm:hidden"
-                    onClick={() => {
-                      setBuildOpen(false);
-                      setPlacing((cur) =>
-                        cur && cur.kind !== "house" && cur.kind !== "villager"
-                          ? null
-                          : cur
-                      );
-                    }}
+                    className={`cameo ${
+                      displayGold >= ROCKET_COST && me.house
+                        ? "cameo-blink"
+                        : ""
+                    }`}
+                    disabled={busy || displayGold < ROCKET_COST || !me.house}
+                    title={
+                      !me.house
+                        ? "Rebuild your house first"
+                        : `Buy rocket — ${GOLD_COIN}${ROCKET_COST} · +1 attack (expended when you fire)`
+                    }
+                    onClick={() =>
+                      void act("buy_rocket").then((d) => {
+                        if (d) {
+                          playRecruitSound();
+                          showToast("Rocket stocked · +1 attack");
+                        }
+                      })
+                    }
                   >
-                    Close
+                    <RocketSprite className="h-8 w-8 sm:h-9 sm:w-9" />
+                    <span className="cameo-cost">
+                      {GOLD_COIN}
+                      {ROCKET_COST}
+                    </span>
+                    <span className="cameo-label">Buy +1</span>
                   </button>
-                </div>
-                <div className="grid grid-cols-2 gap-1.5 sm:gap-1.5">
+
+                  <div className="mx-0.5 h-9 w-px shrink-0 self-center bg-[var(--line)] sm:h-10" />
+
                   {(snap?.buildingCatalog ?? []).map((b) => {
                     const affordable = displayGold >= b.cost;
                     const active = placing?.kind === b.type;
@@ -3198,9 +3120,9 @@ export function PlayShell() {
                       <button
                         key={b.type}
                         type="button"
-                        className={`cameo cameo-build ${
-                          active ? "cameo-active" : ""
-                        } ${affordable && !active ? "cameo-blink" : ""}`}
+                        className={`cameo ${active ? "cameo-active" : ""} ${
+                          affordable && !active ? "cameo-blink" : ""
+                        }`}
                         disabled={
                           busy || !affordable || !homeSector || !me.house
                         }
@@ -3219,7 +3141,7 @@ export function PlayShell() {
                       >
                         <BuildingThumb
                           type={b.type}
-                          className="h-9 w-10 sm:h-9 sm:w-10"
+                          className="h-8 w-9 sm:h-9 sm:w-10"
                         />
                         <span className="cameo-cost">
                           {GOLD_COIN}

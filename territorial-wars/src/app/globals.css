@@ -582,18 +582,6 @@ body {
     font-size: 7px;
     letter-spacing: 0.04em;
   }
-
-  /* Build tray tiles — use the full mobile width */
-  .cameo-build {
-    width: 100%;
-    height: 68px;
-    padding-bottom: 14px;
-  }
-
-  .cameo-build .cameo-label {
-    font-size: 9px;
-    letter-spacing: 0.08em;
-  }
 }
 
 .cameo:disabled {
