@@ -1240,6 +1240,81 @@ button.cameo:not(:disabled):hover {
   animation: rival-bob 1.8s ease-in-out infinite;
 }
 
+/* Ally structures — green name plate + soft glow */
+.ally-structure {
+  filter: drop-shadow(0 0 4px rgba(77, 255, 138, 0.35));
+}
+
+.map-unit-tag {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 6.5rem;
+  margin-bottom: 2px;
+  padding: 2px 5px 3px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  line-height: 1.15;
+  text-align: center;
+}
+
+.map-unit-tag-ally {
+  border-color: color-mix(in srgb, var(--field-bright) 55%, var(--line));
+  background: color-mix(in srgb, #0e1a12 88%, var(--field));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--field-bright) 25%, transparent),
+    0 2px 8px rgba(0, 0, 0, 0.45);
+}
+
+.map-unit-tag-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--field-bright);
+}
+
+.map-unit-tag-sub {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 1px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 7px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--field-bright) 70%, var(--ink-muted));
+}
+
+.map-unit-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px var(--surface);
+}
+
+.map-unit-dot-ally {
+  background: var(--field-bright);
+}
+
+.map-unit-dot-clear {
+  background: var(--sand);
+}
+
+.map-unit-dot-enemy {
+  background: var(--signal-bright);
+}
+
 @keyframes rival-bob {
   0%,
   100% {

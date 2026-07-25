@@ -1269,6 +1269,7 @@ export function GameMap({
               .filter((p) => p.homeSectorId && p.house)
               .map((p) => {
                 const isKing = topPlayerId === p.id;
+                const relation = playerRelation(p, me);
                 return (
                   <Marker
                     key={`house-${p.id}`}
@@ -1279,6 +1280,8 @@ export function GameMap({
                     <button
                       type="button"
                       className={`relative flex flex-col items-center bg-transparent p-0 ${
+                        relation === "ally" ? "ally-structure" : ""
+                      } ${
                         selectedPlayerId === p.id
                           ? "ring-2 ring-[var(--sand)] rounded-sm"
                           : ""
@@ -1303,14 +1306,21 @@ export function GameMap({
                             : `${p.name}'s house — top settler`
                           : p.id === me?.id
                             ? "Your house"
-                            : p.homeSectorId &&
-                                me?.homeSectorId &&
-                                p.homeSectorId === me.homeSectorId
-                              ? `${p.name} (same sector — can't attack)`
+                            : relation === "ally"
+                              ? `${p.name} (ally — same sector)`
                               : `Tap to target ${p.name}`
                       }
                     >
-                      {isKing && (
+                      {relation === "ally" && (
+                        <span className="map-unit-tag map-unit-tag-ally">
+                          <span className="map-unit-tag-name">
+                            {isKing ? "👑 " : ""}
+                            {p.name}
+                          </span>
+                          <span className="map-unit-tag-sub">Ally house</span>
+                        </span>
+                      )}
+                      {relation !== "ally" && isKing && (
                         <span className="house-king-crown" aria-hidden>
                           👑
                         </span>
@@ -1343,6 +1353,7 @@ export function GameMap({
                     Boolean(me?.homeSectorId);
                   const razeSelected = selectedRazeBuildingId === b.id;
                   const syncing = syncingSet.has(b.id);
+                  const bName = catalogItem(b.type).name;
                   return (
                     <Marker
                       key={b.id}
@@ -1353,6 +1364,8 @@ export function GameMap({
                       <button
                         type="button"
                         className={`relative flex flex-col items-center bg-transparent p-0 ${
+                          relation === "ally" ? "ally-structure" : ""
+                        } ${
                           selectedPlayerId === p.id || razeSelected
                             ? "ring-2 ring-[var(--sand)] rounded-sm"
                             : ""
@@ -1376,16 +1389,24 @@ export function GameMap({
                         }}
                         title={
                           syncing
-                            ? `Syncing ${catalogItem(b.type).name}…`
+                            ? `Syncing ${bName}…`
                             : p.id === me?.id
-                              ? `Your ${catalogItem(b.type).name}`
+                              ? `Your ${bName}`
                               : canRaid
                                 ? `Tap to raid ${p.name}`
                                 : canRaze
-                                  ? `Clear ${p.name}'s ${catalogItem(b.type).name} to free ground`
-                                  : `${p.name}'s ${catalogItem(b.type).name}`
+                                  ? `Clear ${p.name}'s ${bName} to free ground`
+                                  : `${p.name}'s ${bName}`
                         }
                       >
+                        {relation === "ally" && !syncing && (
+                          <span className="map-unit-tag map-unit-tag-ally">
+                            <span className="map-unit-tag-name">{p.name}</span>
+                            <span className="map-unit-tag-sub">
+                              Ally · {bName}
+                            </span>
+                          </span>
+                        )}
                         {syncing && (
                           <span
                             className="building-sync-loader"
@@ -1395,13 +1416,16 @@ export function GameMap({
                         <BuildingSprite type={b.type} />
                         <HpBar hp={b.hp ?? maxHp} maxHp={maxHp} width={38} />
                         {relation === "enemy" && !syncing && (
-                          <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-[var(--signal-bright)] ring-1 ring-[var(--surface)]" />
+                          <span className="map-unit-dot map-unit-dot-enemy" />
                         )}
-                        {canRaze && !syncing && (
-                          <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-[var(--sand)] ring-1 ring-[var(--surface)]" />
-                        )}
-                        {relation === "ally" && !canRaze && !syncing && (
-                          <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-[var(--field-bright)] ring-1 ring-[var(--surface)]" />
+                        {relation === "ally" && !syncing && (
+                          <span
+                            className={`map-unit-dot ${
+                              canRaze
+                                ? "map-unit-dot-clear"
+                                : "map-unit-dot-ally"
+                            }`}
+                          />
                         )}
                       </button>
                     </Marker>
