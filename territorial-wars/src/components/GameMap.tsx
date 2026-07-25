@@ -1065,6 +1065,9 @@ export function GameMap({
                     }
                     aria-label={relation === "self" ? "You" : p.name}
                   >
+                    {relation === "self" && (
+                      <span className="player-pin-name">You</span>
+                    )}
                     <span className="player-pin-dot" />
                   </button>
                 </Marker>
