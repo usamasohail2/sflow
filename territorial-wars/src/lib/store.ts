@@ -33,6 +33,7 @@ import { pointInRing } from "@/lib/geo";
 import {
   distMeters,
   offsetBearing,
+  offsetMeters,
   pickRoamGem,
   ringCentroid,
   seedSpotsForSector,
@@ -135,17 +136,115 @@ function migrateLegacy(raw: unknown): GameState {
   };
 }
 
+const BOT_ID = "bot_garrison";
+const BOT_SECTOR_ID = "sec_e7";
+const BOT_RESTOCK_MS = 3 * 60_000;
+
+/**
+ * Keep a bot-held sector stocked with buildings + soldiers so players can
+ * practice attacks. Razed defenses restock a few minutes after the raid.
+ */
+function ensureRivalGarrison(state: GameState): boolean {
+  let changed = false;
+  const now = Date.now();
+
+  let sector = state.sectors.find((s) => s.id === BOT_SECTOR_ID);
+  if (!sector) {
+    const seeded = buildDummySectors(now).find((s) => s.id === BOT_SECTOR_ID);
+    if (!seeded) return changed;
+    sector = seeded;
+    state.sectors.push(sector);
+    changed = true;
+  }
+
+  const center = ringCentroid(sector.ring);
+  const defaultBuildings = () => {
+    const turretPos = offsetMeters(center, 65, 5);
+    const millPos = offsetMeters(center, -80, -25);
+    const warehousePos = offsetMeters(center, 15, 85);
+    return [
+      {
+        id: "bot_b_turret",
+        type: "turret" as BuildingType,
+        lat: turretPos.lat,
+        lng: turretPos.lng,
+        hp: catalogItem("turret").hp,
+        builtAt: now,
+      },
+      {
+        id: "bot_b_mill",
+        type: "mill" as BuildingType,
+        lat: millPos.lat,
+        lng: millPos.lng,
+        hp: catalogItem("mill").hp,
+        builtAt: now,
+      },
+      {
+        id: "bot_b_warehouse",
+        type: "warehouse" as BuildingType,
+        lat: warehousePos.lat,
+        lng: warehousePos.lng,
+        hp: catalogItem("warehouse").hp,
+        builtAt: now,
+      },
+    ];
+  };
+
+  const bot = state.players[BOT_ID];
+  if (!bot) {
+    state.players[BOT_ID] = {
+      id: BOT_ID,
+      name: "Rival Garrison",
+      homeSectorId: BOT_SECTOR_ID,
+      house: center,
+      villagers: 1,
+      soldiers: 1,
+      tanks: 0,
+      gold: 40,
+      totalFarmed: 0,
+      buildings: defaultBuildings(),
+      discoveredSpotIds: [],
+      inviteCode: "RIVAL0",
+      invitedBy: null,
+      lastGatherAt: now,
+      // Reused as the restock timer for the bot
+      lastRoamSpawnAt: now,
+      lastAttackAt: 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+    state.invites["RIVAL0"] = BOT_ID;
+    changed = true;
+  } else {
+    const razed = bot.buildings.length < 3 || (bot.soldiers || 0) < 1;
+    // lastAttackAt on the bot marks when it was last raided
+    if (razed && now - (bot.lastAttackAt || 0) > BOT_RESTOCK_MS) {
+      state.players[BOT_ID] = {
+        ...bot,
+        soldiers: Math.max(bot.soldiers || 0, 1),
+        buildings: defaultBuildings(),
+        updatedAt: now,
+      };
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
 export async function loadState(): Promise<GameState> {
   const r = redis();
   if (!r) {
     const cached = memory.get(STATE_KEY) ?? emptyState();
     const seeded = seedSectorsIfEmpty(cached);
+    ensureRivalGarrison(seeded);
     memory.set(STATE_KEY, seeded);
     return structuredClone(seeded);
   }
   const raw = await r.get(STATE_KEY);
   const state = seedSectorsIfEmpty(migrateLegacy(raw));
-  if (!raw) await saveState(state);
+  const garrisonChanged = ensureRivalGarrison(state);
+  if (!raw || garrisonChanged) await saveState(state);
   return structuredClone(state);
 }
 
@@ -730,6 +829,7 @@ export async function attackSector(
           0,
           (defender.soldiers || 0) - Math.floor(me.soldiers / 2)
         ),
+        lastAttackAt: now,
         updatedAt: now,
       };
       defenderSoldiersLost =
@@ -762,6 +862,7 @@ export async function attackSector(
         0,
         (defender.soldiers || 0) - defenderSoldiersLost
       ),
+      lastAttackAt: now,
       updatedAt: now,
     };
   }
