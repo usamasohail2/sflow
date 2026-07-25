@@ -1023,7 +1023,6 @@ export function GameMap({
           }
           setMapReady(true);
         }}
-        interactiveLayerIds={["sector-fill"]}
         cursor={introActive ? "default" : placing ? "crosshair" : "grab"}
         onMove={onMove}
         onMouseMove={(e: MapMouseEvent) => {
@@ -1036,10 +1035,20 @@ export function GameMap({
             onPlace(e.lngLat.lat, e.lngLat.lng);
             return;
           }
-          const id = e.features?.[0]?.properties?.id;
-          if (typeof id === "string") onSelect(id);
 
-          // Tap a nearby business in your sector → Google review reward sheet
+          // Always accept map clicks (not only sector-fill) so taps on
+          // 3D buildings / POI labels still open the review sheet.
+          try {
+            const hits = e.target.queryRenderedFeatures(e.point, {
+              layers: ["sector-fill"],
+            });
+            const id = hits[0]?.properties?.id;
+            if (typeof id === "string") onSelect(id);
+          } catch {
+            /* layer may not be ready */
+          }
+
+          // Tap near a business in your sector → Google review reward sheet
           if (
             onSelectBusiness &&
             me?.homeSectorId &&
@@ -1048,7 +1057,7 @@ export function GameMap({
             pointInOrNearRing(
               { lat: e.lngLat.lat, lng: e.lngLat.lng },
               homeSector.ring,
-              25
+              40
             )
           ) {
             const at = { lat: e.lngLat.lat, lng: e.lngLat.lng };
@@ -1058,7 +1067,7 @@ export function GameMap({
                 !pointInOrNearRing(
                   { lat: biz.lat, lng: biz.lng },
                   homeSector.ring,
-                  40
+                  55
                 )
               ) {
                 return;
