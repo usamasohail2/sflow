@@ -401,6 +401,39 @@ export function playCoinSound(): void {
   tone({ type: "sine", f0: 1174.66, dur: 0.32, vol: 0.14, attack: 0.01 });
 }
 
+/** Contested gem appeared on the map — bright sparkle arpeggio */
+export function playGemSpawnSound(): void {
+  if (!sfxOn) return;
+  const c = ensureCtx();
+  if (!c || !sfxGain) return;
+  const t = c.currentTime;
+  const notes = [783.99, 987.77, 1318.51, 1567.98]; // G5 B5 E6 G6
+  notes.forEach((f, i) => {
+    const osc = c.createOscillator();
+    osc.type = i % 2 === 0 ? "triangle" : "sine";
+    osc.frequency.setValueAtTime(f, t + i * 0.055);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, t + i * 0.055);
+    g.gain.exponentialRampToValueAtTime(0.2 - i * 0.03, t + i * 0.055 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.055 + 0.35);
+    osc.connect(g).connect(sfxGain);
+    osc.start(t + i * 0.055);
+    osc.stop(t + i * 0.055 + 0.38);
+  });
+  // Soft shimmer noise
+  const src = c.createBufferSource();
+  src.buffer = noiseBuffer(c, 0.22);
+  const filt = c.createBiquadFilter();
+  filt.type = "bandpass";
+  filt.frequency.value = 3200;
+  filt.Q.value = 2.5;
+  const g2 = c.createGain();
+  g2.gain.setValueAtTime(0.12, t);
+  g2.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+  src.connect(filt).connect(g2).connect(sfxGain);
+  src.start(t);
+}
+
 /* ------------------------------------------------------------------ */
 /* Villager working loop — proximity gain set by the map              */
 /* ------------------------------------------------------------------ */
