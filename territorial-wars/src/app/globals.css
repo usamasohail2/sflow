@@ -343,18 +343,49 @@ body {
   display: grid;
   place-items: center;
   border-radius: 3px;
-  background: rgba(10, 14, 10, 0.55);
+  background: rgba(10, 14, 10, 0.62);
   pointer-events: none;
 }
 
 .cameo-dock-spinner {
-  width: 1.2rem;
-  height: 1.2rem;
+  width: 1.35rem;
+  height: 1.35rem;
+  margin-top: -0.35rem;
   border-radius: 999px;
-  border: 2px solid rgba(232, 207, 138, 0.25);
-  border-top-color: #e8cf8a;
-  animation: building-sync-spin 0.7s linear infinite;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  border: 2.5px solid rgba(232, 207, 138, 0.22);
+  border-top-color: #f0e0a0;
+  animation: building-sync-spin 0.65s linear infinite;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.55);
+}
+
+.cameo-dock-progress {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 14px;
+  height: 3px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: rgba(232, 207, 138, 0.18);
+}
+
+.cameo-dock-progress::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 42%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #c4a45a, #f0e0a0);
+  animation: cameo-dock-progress-slide 0.9s ease-in-out infinite;
+}
+
+@keyframes cameo-dock-progress-slide {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(280%);
+  }
 }
 
 .gem-claiming {

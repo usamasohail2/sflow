@@ -564,6 +564,8 @@ export function PlayShell() {
   const syncingBuildTypes = new Set(syncingBuilds.map((b) => b.type));
   const syncingBuildIdsRef = useRef<string[]>([]);
   syncingBuildIdsRef.current = syncingBuildIds;
+  /** Rocket stock purchase in flight — dock tile shows a loader */
+  const [buyingRocket, setBuyingRocket] = useState(false);
   /** Gem/resource spot ids currently claiming on the server */
   const [claimingSpotIds, setClaimingSpotIds] = useState<string[]>([]);
   const claimingSpotIdsRef = useRef<string[]>([]);
@@ -4319,31 +4321,54 @@ export function PlayShell() {
                   <button
                     type="button"
                     className={`cameo cameo-dock ${
-                      displayGold >= ROCKET_COST && me.house
+                      buyingRocket ? "cameo-building" : ""
+                    } ${
+                      !buyingRocket &&
+                      displayGold >= ROCKET_COST &&
+                      me.house
                         ? "cameo-blink"
                         : ""
                     }`}
-                    disabled={busy || displayGold < ROCKET_COST || !me.house}
-                    title={
+                    disabled={
+                      busy ||
+                      buyingRocket ||
+                      displayGold < ROCKET_COST ||
                       !me.house
-                        ? "Rebuild your house first"
-                        : `Buy rocket — ${GOLD_COIN}${ROCKET_COST} · +1 attack (expended when you fire)`
                     }
-                    onClick={() =>
-                      void act("buy_rocket").then((d) => {
-                        if (d) {
-                          playRecruitSound();
-                          showToast("Rocket stocked · +1 attack");
-                        }
-                      })
+                    title={
+                      buyingRocket
+                        ? "Stocking rocket…"
+                        : !me.house
+                          ? "Rebuild your house first"
+                          : `Buy rocket — ${GOLD_COIN}${ROCKET_COST} · +1 attack (expended when you fire)`
                     }
+                    onClick={() => {
+                      if (buyingRocket || busyRef.current) return;
+                      setBuyingRocket(true);
+                      void act("buy_rocket", {}, undefined, { silent: true })
+                        .then((d) => {
+                          if (d) {
+                            playRecruitSound();
+                            showToast("Rocket stocked · +1 attack");
+                          }
+                        })
+                        .finally(() => setBuyingRocket(false));
+                    }}
                   >
                     <RocketSprite className="h-8 w-8 sm:h-9 sm:w-9" />
                     <span className="cameo-cost">
                       <GoldCoinIcon size={10} />
                       {ROCKET_COST}
                     </span>
-                    <span className="cameo-label">Rocket</span>
+                    <span className="cameo-label">
+                      {buyingRocket ? "Buying…" : "Rocket"}
+                    </span>
+                    {buyingRocket && (
+                      <span className="cameo-dock-loader" aria-hidden>
+                        <span className="cameo-dock-spinner" />
+                        <span className="cameo-dock-progress" />
+                      </span>
+                    )}
                   </button>
 
                   <div className="w-px shrink-0 self-stretch bg-[var(--line)]" />
@@ -4408,11 +4433,9 @@ export function PlayShell() {
                           {syncing ? "Building…" : shortLabel}
                         </span>
                         {syncing && (
-                          <span
-                            className="cameo-dock-loader"
-                            aria-hidden
-                          >
+                          <span className="cameo-dock-loader" aria-hidden>
                             <span className="cameo-dock-spinner" />
+                            <span className="cameo-dock-progress" />
                           </span>
                         )}
                       </button>
