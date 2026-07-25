@@ -29,6 +29,14 @@ npm run dev
 - `NEXT_PUBLIC_MAPBOX_TOKEN`
 - `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`
 - `AUTH_SECRET`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`
-- `AUTH_URL` (e.g. `https://itw-sectors.vercel.app`)
+- `AUTH_URL` / `NEXT_PUBLIC_SITE_URL` (e.g. `https://www.wars.usama.fun`)
 
-Add Google OAuth redirect: `https://itw-sectors.vercel.app/api/auth/callback/google`
+In [Google Cloud Console → Credentials → OAuth client](https://console.cloud.google.com/apis/credentials), add:
+
+**Authorized JavaScript origins**
+- `https://www.wars.usama.fun`
+- `https://wars.usama.fun`
+
+**Authorized redirect URIs**
+- `https://www.wars.usama.fun/api/auth/callback/google`
+- `https://wars.usama.fun/api/auth/callback/google`
