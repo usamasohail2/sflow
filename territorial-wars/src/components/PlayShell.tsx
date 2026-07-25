@@ -1183,6 +1183,27 @@ export function PlayShell() {
             >
               ♫
             </button>
+            {me && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowInvite((v) => !v);
+                  setShowMenu(false);
+                  setShowBattles(false);
+                  setShowRanks(false);
+                  setShowMissions(false);
+                  setShowPlayers(false);
+                }}
+                className={`hud-chip px-2.5 py-1.5 font-mono text-[11px] sm:px-3 ${
+                  showInvite
+                    ? "text-[var(--sand)]"
+                    : "text-[var(--ink-muted)] hover:text-[var(--sand)]"
+                }`}
+                title="Invite friends — +1 villager each"
+              >
+                Invite
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -1256,7 +1277,7 @@ export function PlayShell() {
         </div>
       </div>
 
-      {/* Menu dropdown — battles / ranks / goals / editor / account */}
+      {/* Menu dropdown — battles / goals / editor / account */}
       {showMenu && (
         <div className="absolute right-2 top-[4.75rem] z-30 w-56 hud-panel p-2 sm:right-3 sm:top-16">
           <button
@@ -1276,16 +1297,6 @@ export function PlayShell() {
             type="button"
             onClick={() => {
               setShowMenu(false);
-              setShowRanks(true);
-            }}
-            className="flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-[12px] text-[var(--ink-muted)] hover:bg-[var(--wash)] hover:text-[var(--sand)]"
-          >
-            <span>🏆 Sector leaderboard</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setShowMenu(false);
               setShowMissions(true);
             }}
             className="flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-[12px] text-[var(--ink-muted)] hover:bg-[var(--wash)] hover:text-[var(--sand)]"
@@ -1295,21 +1306,6 @@ export function PlayShell() {
               {missionsDone}/{missionList.length}
             </span>
           </button>
-          {me && (
-            <button
-              type="button"
-              onClick={() => {
-                setShowMenu(false);
-                setShowInvite(true);
-              }}
-              className="flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-[12px] text-[var(--ink-muted)] hover:bg-[var(--wash)] hover:text-[var(--sand)]"
-            >
-              <span>◈ Invite friends</span>
-              <span className="font-mono text-[10px] text-[var(--sand)]">
-                +{INVITE_VILLAGER_BONUS} villager
-              </span>
-            </button>
-          )}
           <button
             type="button"
             onClick={openWalkthrough}
