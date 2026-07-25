@@ -209,6 +209,8 @@ export function PlayShell() {
   const [battleSummary, setBattleSummary] = useState<BattleSummary | null>(
     null
   );
+  /** Live GPS pin shown on the map while picking a sector */
+  const [liveLocation, setLiveLocation] = useState<LatLng | null>(null);
   /** GPS fix confirmed inside the sector being claimed */
   const [gpsFix, setGpsFix] = useState<{
     sectorId: string;
@@ -216,6 +218,8 @@ export function PlayShell() {
     lng: number;
   } | null>(null);
   const [gpsBusy, setGpsBusy] = useState(false);
+  const [locationFocus, setLocationFocus] = useState(0);
+  const gpsWatchStarted = useRef(false);
   const identityChecked = useRef(false);
   const seenEvents = useRef<Set<string>>(new Set());
   const eventsPrimed = useRef(false);
@@ -517,7 +521,25 @@ export function PlayShell() {
     }
   };
 
-  const confirmGpsForSector = (sectorId: string, sectorName: string) => {
+  const applyGpsReading = (lat: number, lng: number, sectorId?: string) => {
+    setLiveLocation({ lat, lng });
+    setLocationFocus((n) => n + 1);
+    if (!sectorId || !snap) return;
+    const sector = snap.sectors.find((s) => s.id === sectorId);
+    if (!sector) return;
+    if (!pointInOrNearRing({ lat, lng }, sector.ring, 120)) {
+      setGpsFix(null);
+      setError(
+        `GPS says you're outside ${sector.name} — go there, then try again`
+      );
+      window.setTimeout(() => setError(null), 4200);
+      return;
+    }
+    setGpsFix({ sectorId, lat, lng });
+    showToast(`Location confirmed in ${sector.name}`);
+  };
+
+  const requestGps = (sectorId?: string) => {
     if (!navigator.geolocation) {
       setError("GPS is not available on this device");
       window.setTimeout(() => setError(null), 3200);
@@ -528,29 +550,56 @@ export function PlayShell() {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setGpsBusy(false);
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        const sector = snap?.sectors.find((s) => s.id === sectorId);
-        if (!sector) return;
-        if (!pointInOrNearRing({ lat, lng }, sector.ring, 120)) {
-          setError(
-            `GPS says you're outside ${sectorName} — go there, then try again`
-          );
-          window.setTimeout(() => setError(null), 4200);
-          setGpsFix(null);
-          return;
-        }
-        setGpsFix({ sectorId, lat, lng });
-        showToast(`Location confirmed in ${sectorName}`);
+        applyGpsReading(pos.coords.latitude, pos.coords.longitude, sectorId);
       },
       () => {
         setGpsBusy(false);
         setError("Couldn't read GPS — allow location access and retry");
         window.setTimeout(() => setError(null), 4200);
       },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 10_000 }
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 5_000 }
     );
   };
+
+  const confirmGpsForSector = (sectorId: string, _sectorName: string) => {
+    requestGps(sectorId);
+  };
+
+  // While choosing a sector, show the player's live GPS on the map
+  useEffect(() => {
+    if (claimed || !me || !navigator.geolocation || gpsWatchStarted.current) {
+      return;
+    }
+    gpsWatchStarted.current = true;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLiveLocation({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+        });
+        setLocationFocus((n) => n + 1);
+      },
+      () => {
+        /* user can still tap Confirm later */
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 15_000 }
+    );
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        setLiveLocation({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+        });
+      },
+      () => undefined,
+      { enableHighAccuracy: true, maximumAge: 8_000, timeout: 20000 }
+    );
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+      gpsWatchStarted.current = false;
+    };
+  }, [claimed, me]);
 
   const handlePlace = async (lat: number, lng: number) => {
     if (!placing) return;
@@ -761,6 +810,8 @@ export function PlayShell() {
           selectedId={selectedId}
           placing={placing}
           previewHouse={pendingHouse}
+          userLocation={!claimed ? liveLocation : null}
+          userLocationFocus={locationFocus}
           march={march}
           impact={impact}
           onSelect={setSelectedId}
@@ -1134,8 +1185,15 @@ export function PlayShell() {
             <p className="mt-1 text-[11px] text-[var(--ink-muted)]">
               {sectorOwner.has(selected.id)
                 ? `Claimed by ${sectorOwner.get(selected.id)!.name}`
-                : "Open territory — confirm you're here with GPS, then place your house."}
+                : "Open territory — your blue pin is your GPS. Confirm you're inside, then place your house."}
             </p>
+            {!sectorOwner.has(selected.id) && liveLocation && (
+              <p className="mt-1 font-mono text-[9px] text-[#9fd0ff]">
+                {pointInOrNearRing(liveLocation, selected.ring, 120)
+                  ? `Blue pin is inside ${selected.name}`
+                  : `Blue pin is outside ${selected.name} — move closer`}
+              </p>
+            )}
             {!sectorOwner.has(selected.id) && (
               <>
                 <button
@@ -1154,7 +1212,9 @@ export function PlayShell() {
                     ? "Reading GPS…"
                     : gpsFix?.sectorId === selected.id
                       ? "✓ Location confirmed"
-                      : "📍 Confirm I'm in this sector"}
+                      : liveLocation
+                        ? "📍 Confirm this pin for claim"
+                        : "📍 Show my location"}
                 </button>
                 <button
                   type="button"

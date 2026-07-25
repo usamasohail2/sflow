@@ -113,6 +113,10 @@ type Props = {
   placing: Placing | null;
   /** House chosen but not yet committed (during claim flow) */
   previewHouse: LatLng | null;
+  /** Live GPS pin while picking / claiming a sector */
+  userLocation?: LatLng | null;
+  /** Increment to re-center the map on the GPS pin */
+  userLocationFocus?: number;
   march: MarchAnim | null;
   impact: ImpactAnim | null;
   onSelect: (id: string) => void;
@@ -172,6 +176,8 @@ export function GameMap({
   selectedId,
   placing,
   previewHouse,
+  userLocation = null,
+  userLocationFocus = 0,
   march,
   impact,
   onSelect,
@@ -189,6 +195,7 @@ export function GameMap({
   const [spawnFlash, setSpawnFlash] = useState<string | null>(null);
   const [hover, setHover] = useState<LatLng | null>(null);
   const lastCenter = useRef<LatLng | null>(null);
+  const lastFlownGps = useRef<string | null>(null);
   const spawning = useRef(false);
   const roamAcc = useRef(0);
   const exploreAcc = useRef(0);
@@ -199,6 +206,36 @@ export function GameMap({
     const id = window.setInterval(() => setNow(Date.now()), 80);
     return () => window.clearInterval(id);
   }, []);
+
+  // Fly to the player's GPS once when it first appears (not on every watch tick)
+  useEffect(() => {
+    if (!userLocation) {
+      lastFlownGps.current = null;
+      return;
+    }
+    if (lastFlownGps.current) return;
+    lastFlownGps.current = "flown";
+    const map = mapRef.current;
+    if (!map) return;
+    map.flyTo({
+      center: [userLocation.lng, userLocation.lat],
+      zoom: Math.max(map.getZoom(), 14.2),
+      duration: 1200,
+      essential: true,
+    });
+  }, [userLocation]);
+
+  // Re-center when picking a sector, or when parent requests focus (GPS confirm)
+  useEffect(() => {
+    if (!userLocation) return;
+    const map = mapRef.current;
+    if (!map) return;
+    map.easeTo({
+      center: [userLocation.lng, userLocation.lat],
+      zoom: Math.max(map.getZoom(), 14),
+      duration: 800,
+    });
+  }, [selectedId, userLocationFocus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const homeSector = useMemo(
     () => sectors.find((s) => s.id === me?.homeSectorId) ?? null,
@@ -730,6 +767,21 @@ export function GameMap({
             anchor="bottom"
           >
             <HouseSprite className="h-10 w-11 opacity-70" />
+          </Marker>
+        )}
+
+        {/* Exact GPS while selecting / claiming a sector */}
+        {userLocation && (
+          <Marker
+            longitude={userLocation.lng}
+            latitude={userLocation.lat}
+            anchor="center"
+          >
+            <div className="you-are-here" title="Your location">
+              <span className="you-are-here-pulse" />
+              <span className="you-are-here-dot" />
+              <span className="you-are-here-label">You</span>
+            </div>
           </Marker>
         )}
 
