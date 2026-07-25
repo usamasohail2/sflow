@@ -13,11 +13,16 @@ export default function EditPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
+  const [storage, setStorage] = useState<string>("…");
 
   const load = useCallback(async () => {
     const res = await fetch("/api/sectors", { cache: "no-store" });
-    const data = (await res.json()) as { sectors: Sector[] };
+    const data = (await res.json()) as {
+      sectors: Sector[];
+      storageBackend?: string;
+    };
     setSectors(data.sectors || []);
+    setStorage(data.storageBackend || "unknown");
   }, []);
 
   useEffect(() => {
@@ -69,8 +74,20 @@ export default function EditPage() {
           <span className="font-display text-sm text-[var(--ink)]">
             Define territories
           </span>
-          <span className="hidden font-mono text-[9px] text-[var(--ink-faint)] sm:inline">
-            {sectors.length} loaded · durable storage
+          <span
+            className={`hidden font-mono text-[9px] sm:inline ${
+              storage === "supabase"
+                ? "text-[var(--field-bright)]"
+                : "text-[var(--signal-bright)]"
+            }`}
+            title={
+              storage === "supabase"
+                ? "Supabase Postgres — permanent"
+                : "Not on Supabase yet — see SUPABASE.md"
+            }
+          >
+            {sectors.length} sectors · {storage}
+            {storage !== "supabase" ? " (set up Supabase!)" : ""}
           </span>
         </div>
         {status === "authenticated" && session?.user ? (

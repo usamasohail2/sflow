@@ -3,13 +3,16 @@ import { auth } from "@/auth";
 import type { Sector } from "@/lib/gameTypes";
 import { closeRing } from "@/lib/geo";
 import { AUTH_DISABLED } from "@/lib/devMode";
-import { getSectors, saveSectors } from "@/lib/store";
+import { getSectors, saveSectors, storageBackend } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   const sectors = await getSectors();
-  return NextResponse.json({ sectors });
+  return NextResponse.json({
+    sectors,
+    storageBackend: storageBackend(),
+  });
 }
 
 export async function PUT(req: Request) {

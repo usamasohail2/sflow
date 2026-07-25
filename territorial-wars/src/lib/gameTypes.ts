@@ -213,6 +213,8 @@ export type GameSnapshot = {
   gatherTripMs: number;
   buildingCatalog: BuildingCatalogItem[];
   authDisabled: boolean;
+  /** Where game state is stored — supabase is the durable target */
+  storageBackend: "supabase" | "redis" | "blob" | "memory";
 };
 
 /** One gather trip duration — villager walk loop matches this */

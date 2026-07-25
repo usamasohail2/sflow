@@ -44,6 +44,7 @@ import {
 } from "@/lib/mapMath";
 import { accrueGather } from "@/lib/rules";
 import { sendAttackEmail } from "@/lib/email";
+import { supabase, supabaseConfigured } from "@/lib/supabase";
 
 /**
  * Storage layout (v3) — granular keys so concurrent requests can't clobber
@@ -117,7 +118,17 @@ function blobToken(): string | null {
 }
 
 function blobActive(): boolean {
-  return !redis() && Boolean(blobToken());
+  // Supabase is the durable primary — Blob is only a last-resort fallback
+  return !supabaseConfigured() && !redis() && Boolean(blobToken());
+}
+
+export type StorageBackend = "supabase" | "redis" | "blob" | "memory";
+
+export function storageBackend(): StorageBackend {
+  if (supabaseConfigured()) return "supabase";
+  if (redis()) return "redis";
+  if (blobToken()) return "blob";
+  return "memory";
 }
 
 /** Unguessable state path (blob store URLs are public) */
@@ -342,10 +353,36 @@ export async function flushStore(): Promise<void> {
 }
 
 /* ------------------------------------------------------------------ */
-/* Low-level ops                                                       */
+/* Low-level ops — Supabase (primary) > Redis > Blob/memory            */
 /* ------------------------------------------------------------------ */
 
+async function sbGet<T>(key: string): Promise<T | null> {
+  const sb = supabase();
+  if (!sb) return null;
+  const { data, error } = await sb
+    .from("itw_kv")
+    .select("value")
+    .eq("key", key)
+    .maybeSingle();
+  if (error) {
+    console.error("supabase get", key, error.message);
+    return null;
+  }
+  return (data?.value as T) ?? null;
+}
+
+async function sbSet(key: string, value: unknown): Promise<void> {
+  const sb = supabase();
+  if (!sb) return;
+  const { error } = await sb.from("itw_kv").upsert(
+    { key, value, updated_at: new Date().toISOString() },
+    { onConflict: "key" }
+  );
+  if (error) console.error("supabase set", key, error.message);
+}
+
 async function getJSON<T>(key: string): Promise<T | null> {
+  if (supabaseConfigured()) return sbGet<T>(key);
   const r = redis();
   if (r) return ((await r.get(key)) as T) ?? null;
   const v = mem().json.get(key);
@@ -353,6 +390,10 @@ async function getJSON<T>(key: string): Promise<T | null> {
 }
 
 async function setJSON(key: string, value: unknown): Promise<void> {
+  if (supabaseConfigured()) {
+    await sbSet(key, value);
+    return;
+  }
   const r = redis();
   if (r) {
     await r.set(key, value);
@@ -364,6 +405,21 @@ async function setJSON(key: string, value: unknown): Promise<void> {
 
 async function mgetJSON<T>(keys: string[]): Promise<(T | null)[]> {
   if (keys.length === 0) return [];
+  if (supabaseConfigured()) {
+    const sb = supabase()!;
+    const { data, error } = await sb
+      .from("itw_kv")
+      .select("key, value")
+      .in("key", keys);
+    if (error) {
+      console.error("supabase mget", error.message);
+      return keys.map(() => null);
+    }
+    const map = new Map(
+      (data ?? []).map((row) => [row.key as string, row.value])
+    );
+    return keys.map((k) => (map.has(k) ? (map.get(k) as T) : null));
+  }
   const r = redis();
   if (r) {
     const out = (await r.mget(...keys)) as (T | null)[];
@@ -376,6 +432,13 @@ async function mgetJSON<T>(keys: string[]): Promise<(T | null)[]> {
 }
 
 async function sAdd(key: string, member: string): Promise<void> {
+  if (supabaseConfigured()) {
+    const cur = (await sbGet<string[]>(key)) ?? [];
+    if (!cur.includes(member)) {
+      await sbSet(key, [...cur, member]);
+    }
+    return;
+  }
   const r = redis();
   if (r) {
     await r.sadd(key, member);
@@ -388,18 +451,29 @@ async function sAdd(key: string, member: string): Promise<void> {
 }
 
 async function sMembers(key: string): Promise<string[]> {
+  if (supabaseConfigured()) return (await sbGet<string[]>(key)) ?? [];
   const r = redis();
   if (r) return ((await r.smembers(key)) as string[]) ?? [];
   return Array.from(mem().sets.get(key) ?? []);
 }
 
 async function hGet(key: string, field: string): Promise<string | null> {
+  if (supabaseConfigured()) {
+    const h = (await sbGet<Record<string, string>>(key)) ?? {};
+    return h[field] ?? null;
+  }
   const r = redis();
   if (r) return ((await r.hget(key, field)) as string) ?? null;
   return mem().hashes.get(key)?.get(field) ?? null;
 }
 
 async function hSet(key: string, field: string, value: string): Promise<void> {
+  if (supabaseConfigured()) {
+    const h = (await sbGet<Record<string, string>>(key)) ?? {};
+    h[field] = value;
+    await sbSet(key, h);
+    return;
+  }
   const r = redis();
   if (r) {
     await r.hset(key, { [field]: value });
@@ -412,6 +486,11 @@ async function hSet(key: string, field: string, value: string): Promise<void> {
 }
 
 async function lPushTrim(key: string, value: string, max: number): Promise<void> {
+  if (supabaseConfigured()) {
+    const l = (await sbGet<string[]>(key)) ?? [];
+    await sbSet(key, [value, ...l].slice(0, max));
+    return;
+  }
   const r = redis();
   if (r) {
     await r.lpush(key, value);
@@ -425,6 +504,9 @@ async function lPushTrim(key: string, value: string, max: number): Promise<void>
 }
 
 async function lRangeAll(key: string, max: number): Promise<string[]> {
+  if (supabaseConfigured()) {
+    return ((await sbGet<string[]>(key)) ?? []).slice(0, max);
+  }
   const r = redis();
   if (r) return ((await r.lrange(key, 0, max - 1)) as string[]) ?? [];
   return (mem().lists.get(key) ?? []).slice(0, max);
@@ -432,6 +514,19 @@ async function lRangeAll(key: string, max: number): Promise<string[]> {
 
 /** Atomic set-if-absent — the sector claim lock */
 async function setNX(key: string, value: string): Promise<boolean> {
+  if (supabaseConfigured()) {
+    const sb = supabase()!;
+    const { error } = await sb.from("itw_kv").insert({
+      key,
+      value,
+      updated_at: new Date().toISOString(),
+    });
+    if (!error) return true;
+    // Unique violation = already claimed
+    if (error.code === "23505") return false;
+    console.error("supabase setNX", key, error.message);
+    return false;
+  }
   const r = redis();
   if (r) {
     const res = await r.set(key, value, { nx: true });
@@ -444,6 +539,10 @@ async function setNX(key: string, value: string): Promise<boolean> {
 }
 
 async function keyExists(key: string): Promise<boolean> {
+  if (supabaseConfigured()) {
+    const v = await sbGet(key);
+    return v !== null;
+  }
   const r = redis();
   if (r) return (await r.exists(key)) === 1;
   return mem().json.has(key);
@@ -594,7 +693,38 @@ type LegacyState = {
   events?: GameEvent[];
 };
 
+/** One-time copy from Vercel Blob → Supabase when the new DB is empty */
+async function migrateBlobToSupabase(): Promise<void> {
+  if (!supabaseConfigured() || !blobToken()) return;
+  const flag = `${P}:supabase_migrated`;
+  if (await keyExists(flag)) return;
+  // Only migrate if Supabase has no sectors yet
+  const existing = await sbGet<Sector[]>(K_SECTORS);
+  if (existing && existing.length > 0) {
+    await sbSet(flag, Date.now());
+    return;
+  }
+  const remote = await fetchRemoteState();
+  if (remote) {
+    for (const [k, v] of Object.entries(remote.json ?? {})) {
+      await sbSet(k, v);
+    }
+    for (const [k, v] of Object.entries(remote.sets ?? {})) {
+      await sbSet(k, v);
+    }
+    for (const [k, v] of Object.entries(remote.hashes ?? {})) {
+      await sbSet(k, v);
+    }
+    for (const [k, v] of Object.entries(remote.lists ?? {})) {
+      await sbSet(k, v);
+    }
+    console.log("Migrated Blob game state → Supabase");
+  }
+  await sbSet(flag, Date.now());
+}
+
 async function doBootstrap(): Promise<void> {
+  await migrateBlobToSupabase();
   const migrated = await keyExists(K_MIGRATED);
   if (!migrated) {
     const legacy = await getJSON<LegacyState>(LEGACY_BLOB_KEY);
@@ -945,6 +1075,7 @@ export async function getSnapshot(meId?: string | null): Promise<GameSnapshot> {
     gatherTripMs: GATHER_TRIP_MS,
     buildingCatalog: BUILDING_CATALOG,
     authDisabled: AUTH_DISABLED,
+    storageBackend: storageBackend(),
   };
 }
 
