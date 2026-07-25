@@ -20,6 +20,9 @@ import {
   GEM_META,
   HOUSE_FOOTPRINT_M,
   HOUSE_MAX_HP,
+  PLAY_MAX_ZOOM,
+  PLAY_MIN_ZOOM,
+  PLAY_ZOOM,
   ROAM_METERS_TO_SPAWN,
   ROAM_MIN_EXPLORE_MS,
   SPAWN_COOLDOWN_MS,
@@ -201,7 +204,7 @@ export function GameMap({
   className = "",
 }: Props) {
   const mapRef = useRef<MapRef>(null);
-  const [zoom, setZoom] = useState(12.2);
+  const [zoom, setZoom] = useState(PLAY_ZOOM);
   const [now, setNow] = useState(() => Date.now());
   const [roamMeters, setRoamMeters] = useState(0);
   const [exploreMs, setExploreMs] = useState(0);

@@ -52,6 +52,12 @@ export const GEM_META: Record<
 
 /** Fully zoomed-in explore threshold (Mapbox zoom) */
 export const EXPLORE_ZOOM = 15.6;
+/** Play map starts here — sector-level, walls readable */
+export const PLAY_ZOOM = 14.4;
+/** Don't pull out past a couple of sectors */
+export const PLAY_MIN_ZOOM = 13.2;
+/** Street-close ceiling (keeps explore zoom reachable) */
+export const PLAY_MAX_ZOOM = 16.2;
 /** How far (m) you must roam while zoomed before a gem can appear */
 export const ROAM_METERS_TO_SPAWN = 240;
 /** Must stay exploring (zoomed in, in sector) this long before a find */
