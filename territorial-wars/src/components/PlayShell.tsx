@@ -17,12 +17,20 @@ import {
   type Placing,
 } from "@/components/GameMap";
 import { GoogleSignInButton } from "@/components/GoogleSignInButton";
+import { HealthPanel } from "@/components/HealthPanel";
 import { PublicChat } from "@/components/PublicChat";
 import { SectorAnalyticsModal } from "@/components/SectorAnalytics";
 import {
   Walkthrough,
   readWalkthroughDone,
 } from "@/components/Walkthrough";
+import {
+  healthDotClass,
+  healthLabel,
+  levelFromIssues,
+  type ClientHealth,
+  type ServerHealth,
+} from "@/lib/health";
 import { mappedSectorAnalytics } from "@/lib/sectorAnalytics";
 import { useMapPresence } from "@/hooks/useMapPresence";
 import type { LatLng } from "@/lib/gameTypes";
@@ -568,6 +576,18 @@ export function PlayShell() {
   const [analyticsSectorId, setAnalyticsSectorId] = useState<string | null>(
     null
   );
+  const [showHealth, setShowHealth] = useState(false);
+  const [serverHealth, setServerHealth] = useState<ServerHealth | null>(null);
+  const [serverHealthLoading, setServerHealthLoading] = useState(false);
+  const [clientHealthRaw, setClientHealthRaw] = useState({
+    lastOkAt: null as number | null,
+    lastAttemptAt: null as number | null,
+    lastLatencyMs: null as number | null,
+    failStreak: 0,
+    lastError: null as string | null,
+    clockSkewMs: null as number | null,
+    online: true,
+  });
   const [showMenu, setShowMenu] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [showBattles, setShowBattles] = useState(false);
@@ -896,52 +916,96 @@ export function PlayShell() {
   const load = useCallback(async () => {
     const invite = captureInviteFromUrl();
     const q = invite ? `?invite=${encodeURIComponent(invite)}` : "";
-    const res = await fetch(`/api/game${q}`);
-    const data = (await res.json()) as GameSnapshot;
-
-    // Guest mode only: restore last guest if the cookie was reset.
-    if (
-      data.authDisabled &&
-      !identityChecked.current &&
-      typeof window !== "undefined"
-    ) {
-      identityChecked.current = true;
-      let stored: string | null = null;
-      try {
-        stored = window.localStorage.getItem(IDENT_KEY);
-      } catch {
-        stored = null;
+    const started = Date.now();
+    setClientHealthRaw((h) => ({ ...h, lastAttemptAt: started }));
+    try {
+      const res = await fetch(`/api/game${q}`);
+      const latencyMs = Date.now() - started;
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        throw new Error(body?.error || `Game sync HTTP ${res.status}`);
       }
+      const data = (await res.json()) as GameSnapshot;
+
+      // Guest mode only: restore last guest if the cookie was reset.
       if (
-        stored &&
-        stored.startsWith("guest_") &&
-        data.me &&
-        data.me.id !== stored
+        data.authDisabled &&
+        !identityChecked.current &&
+        typeof window !== "undefined"
       ) {
+        identityChecked.current = true;
+        let stored: string | null = null;
         try {
-          const r2 = await fetch("/api/game", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "switch_player",
-              targetId: stored,
-            }),
-          });
-          if (r2.ok) {
-            const restored = (await r2.json()) as GameSnapshot;
-            applySnap(restored);
-            return;
-          }
+          stored = window.localStorage.getItem(IDENT_KEY);
         } catch {
-          /* fall through to the fresh identity */
+          stored = null;
         }
+        if (
+          stored &&
+          stored.startsWith("guest_") &&
+          data.me &&
+          data.me.id !== stored
+        ) {
+          try {
+            const r2 = await fetch("/api/game", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: "switch_player",
+                targetId: stored,
+              }),
+            });
+            if (r2.ok) {
+              const restored = (await r2.json()) as GameSnapshot;
+              applySnap(restored);
+              setClientHealthRaw((h) => ({
+                ...h,
+                lastOkAt: Date.now(),
+                lastLatencyMs: Date.now() - started,
+                failStreak: 0,
+                lastError: null,
+                clockSkewMs:
+                  typeof restored.serverNow === "number"
+                    ? Date.now() - restored.serverNow
+                    : h.clockSkewMs,
+                online: navigator.onLine,
+              }));
+              return;
+            }
+          } catch {
+            /* fall through to the fresh identity */
+          }
+        }
+        rememberIdentity(data.me?.id);
+      } else if (!identityChecked.current) {
+        identityChecked.current = true;
       }
-      rememberIdentity(data.me?.id);
-    } else if (!identityChecked.current) {
-      identityChecked.current = true;
-    }
 
-    applySnap(data);
+      applySnap(data);
+      setClientHealthRaw((h) => ({
+        ...h,
+        lastOkAt: Date.now(),
+        lastLatencyMs: latencyMs,
+        failStreak: 0,
+        lastError: null,
+        clockSkewMs:
+          typeof data.serverNow === "number"
+            ? Date.now() - data.serverNow
+            : h.clockSkewMs,
+        online: navigator.onLine,
+      }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Game sync failed";
+      setClientHealthRaw((h) => ({
+        ...h,
+        failStreak: h.failStreak + 1,
+        lastError: msg,
+        lastLatencyMs: Date.now() - started,
+        online: typeof navigator !== "undefined" ? navigator.onLine : h.online,
+      }));
+    }
   }, [applySnap]);
 
   useEffect(() => {
@@ -953,6 +1017,130 @@ export function PlayShell() {
     }, 4000);
     return () => window.clearInterval(id);
   }, [load]);
+
+  const probeServerHealth = useCallback(async () => {
+    setServerHealthLoading(true);
+    try {
+      const res = await fetch("/api/health", { cache: "no-store" });
+      const data = (await res.json()) as ServerHealth;
+      setServerHealth(data);
+    } catch (err) {
+      setServerHealth({
+        ok: false,
+        level: "down",
+        checkedAt: Date.now(),
+        latencyMs: 0,
+        storage: {
+          backend: "memory",
+          reachable: false,
+          latencyMs: null,
+          error: err instanceof Error ? err.message : "Health probe failed",
+        },
+        game: { sectors: 0, players: 0, events: 0 },
+        env: {
+          authSecret: false,
+          googleOAuth: false,
+          mapbox: Boolean(process.env.NEXT_PUBLIC_MAPBOX_TOKEN),
+          authDisabled: false,
+        },
+        issues: [
+          err instanceof Error ? err.message : "Could not reach /api/health",
+        ],
+      });
+    } finally {
+      setServerHealthLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void probeServerHealth();
+    const id = window.setInterval(() => {
+      void probeServerHealth();
+    }, 60_000);
+    return () => window.clearInterval(id);
+  }, [probeServerHealth]);
+
+  useEffect(() => {
+    const onOnline = () =>
+      setClientHealthRaw((h) => ({ ...h, online: true }));
+    const onOffline = () =>
+      setClientHealthRaw((h) => ({ ...h, online: false }));
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    setClientHealthRaw((h) => ({ ...h, online: navigator.onLine }));
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, []);
+
+  const clientHealth: ClientHealth = useMemo(() => {
+    let localStorageOk = true;
+    if (typeof window !== "undefined") {
+      try {
+        const k = "__itw_health__";
+        window.localStorage.setItem(k, "1");
+        window.localStorage.removeItem(k);
+      } catch {
+        localStorageOk = false;
+      }
+    }
+    const mapboxToken = Boolean(
+      process.env.NEXT_PUBLIC_MAPBOX_TOKEN?.trim()
+    );
+    const snapshotAgeMs = clientHealthRaw.lastOkAt
+      ? Date.now() - clientHealthRaw.lastOkAt
+      : null;
+    const issues: string[] = [];
+    if (!clientHealthRaw.online) issues.push("Browser is offline");
+    if (clientHealthRaw.failStreak >= 2) {
+      issues.push(`${clientHealthRaw.failStreak} failed game syncs in a row`);
+    }
+    if (
+      clientHealthRaw.lastLatencyMs != null &&
+      clientHealthRaw.lastLatencyMs > 3000
+    ) {
+      issues.push(`Slow game sync (${clientHealthRaw.lastLatencyMs}ms)`);
+    }
+    if (snapshotAgeMs != null && snapshotAgeMs > 20_000) {
+      issues.push("Game state looks stale");
+    }
+    if (
+      clientHealthRaw.clockSkewMs != null &&
+      Math.abs(clientHealthRaw.clockSkewMs) > 15_000
+    ) {
+      issues.push("Clock skew vs server is large");
+    }
+    if (!localStorageOk) issues.push("localStorage blocked");
+    if (!mapboxToken) issues.push("Mapbox token missing in client build");
+
+    const hardFail =
+      !clientHealthRaw.online || clientHealthRaw.failStreak >= 3;
+    return {
+      level: levelFromIssues(issues, hardFail),
+      online: clientHealthRaw.online,
+      poll: {
+        lastOkAt: clientHealthRaw.lastOkAt,
+        lastAttemptAt: clientHealthRaw.lastAttemptAt,
+        lastLatencyMs: clientHealthRaw.lastLatencyMs,
+        failStreak: clientHealthRaw.failStreak,
+        lastError: clientHealthRaw.lastError,
+      },
+      clockSkewMs: clientHealthRaw.clockSkewMs,
+      localStorage: localStorageOk,
+      mapboxToken,
+      snapshotAgeMs,
+      issues,
+    };
+  }, [clientHealthRaw]);
+
+  const combinedHealthLevel = useMemo(() => {
+    const levels = [clientHealth.level, serverHealth?.level ?? "unknown"];
+    if (levels.includes("down")) return "down" as const;
+    if (levels.includes("degraded")) return "degraded" as const;
+    if (levels.includes("unknown")) return "unknown" as const;
+    return "ok" as const;
+  }, [clientHealth.level, serverHealth?.level]);
 
   // Smooth gold preview between syncs
   useEffect(() => {
@@ -2405,13 +2593,17 @@ export function PlayShell() {
                 setShowMissions(false);
                 setShowInvite(false);
               }}
-              className={`hud-chip px-2.5 py-1.5 font-mono text-[11px] sm:px-3 ${
+              className={`hud-chip inline-flex items-center gap-1.5 px-2.5 py-1.5 font-mono text-[11px] sm:px-3 ${
                 showMenu
                   ? "text-[var(--sand)]"
                   : "text-[var(--ink-muted)] hover:text-[var(--sand)]"
               }`}
-              title="Menu"
+              title={`Menu · ${healthLabel(combinedHealthLevel)}`}
             >
+              <span
+                className={`inline-block h-1.5 w-1.5 rounded-full ${healthDotClass(combinedHealthLevel)}`}
+                aria-hidden
+              />
               ☰
             </button>
           </div>
@@ -2569,6 +2761,26 @@ export function PlayShell() {
           </button>
           <button
             type="button"
+            onClick={() => {
+              setShowMenu(false);
+              setShowHealth(true);
+              void probeServerHealth();
+            }}
+            className="flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-[12px] text-[var(--ink-muted)] hover:bg-[var(--wash)] hover:text-[var(--sand)]"
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <span
+                className={`inline-block h-1.5 w-1.5 rounded-full ${healthDotClass(combinedHealthLevel)}`}
+                aria-hidden
+              />
+              Health
+            </span>
+            <span className="font-mono text-[10px] text-[var(--ink-faint)]">
+              {healthLabel(combinedHealthLevel)}
+            </span>
+          </button>
+          <button
+            type="button"
             onClick={openWalkthrough}
             className="flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-[12px] text-[var(--ink-muted)] hover:bg-[var(--wash)] hover:text-[var(--sand)]"
           >
@@ -2694,6 +2906,16 @@ export function PlayShell() {
             setRazeTarget(null);
             setShowAnalytics(false);
           }}
+        />
+      )}
+
+      {showHealth && (
+        <HealthPanel
+          client={clientHealth}
+          server={serverHealth}
+          serverLoading={serverHealthLoading}
+          onRefresh={() => void probeServerHealth()}
+          onClose={() => setShowHealth(false)}
         />
       )}
 

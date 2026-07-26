@@ -148,6 +148,106 @@ export function storageBackend(): StorageBackend {
   return "memory";
 }
 
+/** Lightweight probe for /api/health — never throws. */
+export async function getSystemHealth(): Promise<{
+  ok: boolean;
+  level: "ok" | "degraded" | "down";
+  checkedAt: number;
+  latencyMs: number;
+  storage: {
+    backend: StorageBackend;
+    reachable: boolean;
+    latencyMs: number | null;
+    error?: string;
+  };
+  game: { sectors: number; players: number; events: number };
+  env: {
+    authSecret: boolean;
+    googleOAuth: boolean;
+    mapbox: boolean;
+    authDisabled: boolean;
+  };
+  issues: string[];
+}> {
+  const started = Date.now();
+  const issues: string[] = [];
+  const backend = storageBackend();
+  let storageLatency: number | null = null;
+  let reachable = false;
+  let storageError: string | undefined;
+  let sectors = 0;
+  let players = 0;
+  let events = 0;
+
+  try {
+    const t0 = Date.now();
+    await bootstrap();
+    const [secs, pids, evRaw] = await Promise.all([
+      getJSON<Sector[]>(K_SECTORS),
+      sMembers(K_PIDS),
+      lRangeAll(K_EVENTS, 5),
+    ]);
+    storageLatency = Date.now() - t0;
+    reachable = true;
+    sectors = Array.isArray(secs) ? secs.length : 0;
+    players = pids.length;
+    events = evRaw.length;
+    if (backend === "memory") {
+      issues.push("Storage is in-memory — state won't survive restarts");
+    } else if (backend === "blob") {
+      issues.push("Using Blob fallback — prefer Supabase for durability");
+    }
+    if (storageLatency > 2500) {
+      issues.push(`Storage slow (${storageLatency}ms)`);
+    }
+    if (sectors === 0) {
+      issues.push("No sectors loaded");
+    }
+  } catch (err) {
+    reachable = false;
+    storageError = err instanceof Error ? err.message : "Storage probe failed";
+    issues.push(`Storage unreachable: ${storageError}`);
+  }
+
+  const env = {
+    authSecret: Boolean(process.env.AUTH_SECRET?.trim()),
+    googleOAuth: Boolean(
+      process.env.AUTH_GOOGLE_ID?.trim() &&
+        process.env.AUTH_GOOGLE_SECRET?.trim()
+    ),
+    mapbox: Boolean(process.env.NEXT_PUBLIC_MAPBOX_TOKEN?.trim()),
+    authDisabled: AUTH_DISABLED,
+  };
+  if (!env.mapbox) issues.push("Mapbox token missing");
+  if (!env.authDisabled) {
+    if (!env.authSecret) issues.push("AUTH_SECRET missing");
+    if (!env.googleOAuth) issues.push("Google OAuth credentials missing");
+  }
+
+  const hardFail = !reachable;
+  const level = hardFail
+    ? "down"
+    : issues.length > 0
+      ? "degraded"
+      : "ok";
+
+  return {
+    ok: !hardFail && issues.length === 0,
+    level,
+    checkedAt: Date.now(),
+    latencyMs: Date.now() - started,
+    storage: {
+      backend,
+      reachable,
+      latencyMs: storageLatency,
+      error: storageError,
+    },
+    game: { sectors, players, events },
+    env,
+    issues,
+  };
+}
+
 /** Unguessable state path (blob store URLs are public) */
 function blobStatePath(): string {
   const secret = process.env.AUTH_SECRET || "itw-fallback";
