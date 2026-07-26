@@ -1,16 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Islamabad Territorial Wars">
-  <defs>
-    <radialGradient id="g" cx="50%" cy="48%" r="48%">
-      <stop offset="0%" stop-color="#3d6b45" stop-opacity="0.55"/>
-      <stop offset="100%" stop-color="#0c100e" stop-opacity="0"/>
-    </radialGradient>
-  </defs>
   <rect width="32" height="32" rx="7" fill="#0c100e"/>
-  <circle cx="16" cy="15.5" r="11" fill="url(#g)"/>
-  <path d="M5.5 22.5 L8.5 6.5 L23 4.5 L27.5 13 L25.5 25.5 L13 28 Z"
-        fill="#3d6b45" fill-opacity="0.38"/>
-  <path d="M5.5 22.5 L8.5 6.5 L23 4.5 L27.5 13 L25.5 25.5 L13 28 Z"
-        fill="none" stroke="#e23b2f" stroke-width="2.5" stroke-linejoin="round"/>
-  <circle cx="16.5" cy="15.2" r="3.5" fill="#c4b089"/>
-  <circle cx="15.5" cy="14" r="1.15" fill="#efe2bc"/>
+  <g transform="translate(8,5)">
+    <!-- hair -->
+    <rect x="4" y="1" width="8" height="3" fill="#4a3428"/>
+    <rect x="3" y="3" width="2" height="2" fill="#4a3428"/>
+    <rect x="11" y="3" width="2" height="2" fill="#4a3428"/>
+    <!-- face -->
+    <rect x="4" y="3" width="8" height="7" fill="#e8b890"/>
+    <!-- eyes -->
+    <rect x="5" y="5" width="2" height="2" fill="#1a1a1a"/>
+    <rect x="9" y="5" width="2" height="2" fill="#1a1a1a"/>
+    <!-- shirt -->
+    <rect x="3" y="10" width="10" height="7" fill="#e23b2f"/>
+    <!-- arms -->
+    <rect x="1" y="11" width="2" height="5" fill="#e8b890"/>
+    <rect x="13" y="11" width="2" height="5" fill="#e8b890"/>
+    <!-- legs -->
+    <rect x="4" y="17" width="3" height="4" fill="#2a2a2a"/>
+    <rect x="9" y="17" width="3" height="4" fill="#2a2a2a"/>
+  </g>
 </svg>
