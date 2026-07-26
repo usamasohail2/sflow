@@ -29,11 +29,14 @@ function GoogleGlyph({ className = "" }: { className?: string }) {
 export function GoogleSignInButton({
   callbackUrl = "/play",
   label = "Continue with Google",
+  className = "",
 }: {
   callbackUrl?: string;
   label?: string;
+  className?: string;
 }) {
   const [busy, setBusy] = useState(false);
+  const playStyle = label.trim().toLowerCase() === "play";
 
   return (
     <button
@@ -46,10 +49,15 @@ export function GoogleSignInButton({
           setBusy(false);
         });
       }}
-      className="inline-flex items-center gap-2 rounded-sm border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--ink)] disabled:opacity-50"
+      className={
+        className ||
+        (playStyle
+          ? "entry-play-btn"
+          : "inline-flex items-center gap-2 rounded-sm border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--ink)] disabled:opacity-50")
+      }
     >
-      <GoogleGlyph className="h-4 w-4" />
-      {busy ? "Redirecting…" : label}
+      {!playStyle && <GoogleGlyph className="h-4 w-4" />}
+      {busy ? "…" : label}
     </button>
   );
 }

@@ -16,6 +16,7 @@ import {
   type MarchAnim,
   type Placing,
 } from "@/components/GameMap";
+import { EntryGate } from "@/components/EntryGate";
 import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 import { HealthPanel } from "@/components/HealthPanel";
 import { PublicChat } from "@/components/PublicChat";
@@ -2800,26 +2801,7 @@ export function PlayShell() {
 
   // Google auth required — gate the game until signed in
   if (snap && !snap.authDisabled && !me) {
-    return (
-      <main className="war-grid flex min-h-[100dvh] flex-col items-center justify-center px-5">
-        <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-[var(--ink-faint)]">
-          Islamabad Territorial Wars
-        </p>
-        <h1 className="mt-2 font-display text-4xl text-[var(--ink)]">
-          Sign in to play
-        </h1>
-        <p className="mt-2 max-w-sm text-center text-sm text-[var(--ink-muted)]">
-          Your sector, arsenal, and battle reports stay tied to your Google
-          account — no more lost guest progress.
-        </p>
-        <div className="mt-6">
-          <GoogleSignInButton callbackUrl={inviteCallbackUrl()} />
-        </div>
-        <Link href="/" className="mt-8 text-xs text-[var(--ink-faint)]">
-          Back
-        </Link>
-      </main>
-    );
+    return <EntryGate mode="signin" callbackUrl={inviteCallbackUrl()} />;
   }
 
   const shareInvite = async () => {

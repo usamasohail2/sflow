@@ -121,6 +121,62 @@ body {
   animation: war-scan 7s linear infinite;
 }
 
+/* Logged-out entry — brand + Play over the world map */
+.entry-brand {
+  text-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.55),
+    0 10px 32px rgba(0, 0, 0, 0.45);
+  animation: entry-rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.entry-play {
+  animation: entry-rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.12s both;
+}
+
+.entry-play-btn {
+  display: inline-flex;
+  min-width: 9.5rem;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 2px;
+  background: var(--signal);
+  padding: 0.85rem 1.75rem;
+  font-family: var(--font-display), "Archivo Black", sans-serif;
+  font-size: 1.05rem;
+  letter-spacing: 0.02em;
+  color: #fff;
+  text-decoration: none;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  transition:
+    transform 0.15s ease,
+    background 0.15s ease;
+}
+
+.entry-play-btn:hover {
+  background: var(--signal-bright);
+  transform: translateY(-1px);
+}
+
+.entry-play-btn:active {
+  transform: translateY(1px);
+}
+
+.entry-play-btn:disabled {
+  opacity: 0.65;
+}
+
+@keyframes entry-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* —— Sprites —— */
 @keyframes villager-bob {
   0%,

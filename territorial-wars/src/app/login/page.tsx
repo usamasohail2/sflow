@@ -1,7 +1,6 @@
 "use client";
 
-import { GoogleSignInButton } from "@/components/GoogleSignInButton";
-import Link from "next/link";
+import { EntryGate } from "@/components/EntryGate";
 import { useEffect, useState } from "react";
 
 const INVITE_KEY = "itw_invite";
@@ -31,19 +30,5 @@ export default function LoginPage() {
     setCallbackUrl(playCallbackUrl());
   }, []);
 
-  return (
-    <main className="war-grid flex min-h-[100dvh] flex-col items-center justify-center px-5">
-      <h1 className="font-display text-3xl text-[var(--ink)]">Sign in</h1>
-      <p className="mt-2 max-w-sm text-center text-sm text-[var(--ink-muted)]">
-        Continue with Google to keep your sector, arsenal, and battle reports
-        across devices.
-      </p>
-      <div className="mt-6">
-        <GoogleSignInButton callbackUrl={callbackUrl} />
-      </div>
-      <Link href="/" className="mt-8 text-xs text-[var(--ink-faint)]">
-        Back
-      </Link>
-    </main>
-  );
+  return <EntryGate mode="signin" callbackUrl={callbackUrl} />;
 }
