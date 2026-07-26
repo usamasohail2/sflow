@@ -117,6 +117,11 @@ export type Building = {
   lng: number;
   hp: number;
   builtAt: number;
+  /**
+   * Performance tier — 1 default, 2 = upgraded (×2 output).
+   * Upgrade costs 10× the catalog build price.
+   */
+  level?: number;
 };
 
 export type Player = {
@@ -480,6 +485,10 @@ export const ROCKET_COST = 35;
 export const ATTACK_COOLDOWN_MS = 90_000;
 /** Min time between same-sector building razes */
 export const RAZE_COOLDOWN_MS = 20_000;
+/** Upgrade multiplies building output; costs catalog price × this */
+export const BUILDING_UPGRADE_COST_MULT = 10;
+/** Max building performance tier */
+export const BUILDING_MAX_LEVEL = 2;
 
 /**
  * Building HP uses the same small scale as attack/defense points
@@ -568,9 +577,30 @@ export function buildingCost(type: BuildingType): number {
   return catalogItem(type).cost;
 }
 
+/** Gold to raise a building from level 1 → 2 (10× build price). */
+export function buildingUpgradeCost(type: BuildingType | string): number {
+  return catalogItem(type).cost * BUILDING_UPGRADE_COST_MULT;
+}
+
+export function buildingLevel(b: Pick<Building, "level">): number {
+  const n = Math.floor(b.level ?? 1);
+  return Math.max(1, Math.min(BUILDING_MAX_LEVEL, n || 1));
+}
+
+/** Trip bonus for one building, including upgrade multiplier. */
+export function buildingTripBonus(b: Building): number {
+  return catalogItem(b.type).tripBonus * buildingLevel(b);
+}
+
+/** Gold per shovel dig click (1 base, 2 when upgraded). */
+export function shovelDigYield(b: Pick<Building, "type" | "level">): number {
+  if (b.type !== "shovel") return 0;
+  return buildingLevel(b);
+}
+
 export function buildingBonus(buildings: Building[]): number {
   let n = 0;
-  for (const b of buildings) n += catalogItem(b.type).tripBonus;
+  for (const b of buildings) n += buildingTripBonus(b);
   return n;
 }
 

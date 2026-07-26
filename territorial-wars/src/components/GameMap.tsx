@@ -213,6 +213,8 @@ type Props = {
   ) => void;
   /** Tap your own clicker shovel to dig for gold */
   onSelectShovel?: (buildingId: string) => void;
+  /** Tap any of your own buildings to manage (upgrade / delete) */
+  onSelectOwnBuilding?: (buildingId: string) => void;
   /** Live camera peers floating above the map */
   presencePeers?: PresencePeer[];
   presenceSelf?: {
@@ -348,6 +350,7 @@ export function GameMap({
   selectedPlayerId = null,
   onSelectRaze,
   onSelectShovel,
+  onSelectOwnBuilding,
   selectedRazeBuildingId = null,
   onPlace,
   onPlaceBlocked,
@@ -1811,14 +1814,13 @@ export function GameMap({
                             return;
                           }
                           if (syncing) return;
-                          if (
-                            p.id === me?.id &&
-                            b.type === "shovel" &&
-                            onSelectShovel
-                          ) {
+                          if (p.id === me?.id) {
                             onSelectPlayer?.(null);
                             onSelectRaze?.(null);
-                            onSelectShovel(b.id);
+                            if (b.type === "shovel" && onSelectShovel) {
+                              onSelectShovel(b.id);
+                            }
+                            onSelectOwnBuilding?.(b.id);
                             return;
                           }
                           if (canRaid) {
@@ -1841,9 +1843,9 @@ export function GameMap({
                             : syncing
                               ? `Syncing ${bName}…`
                               : p.id === me?.id && b.type === "shovel"
-                                ? "Tap to dig — +1 gold each click"
+                                ? "Tap to dig — upgrade or delete from the panel"
                                 : p.id === me?.id
-                                  ? `Your ${bName}`
+                                  ? `Your ${bName} — tap to upgrade or delete`
                                   : canRaid
                                     ? `Tap to raid ${p.name}`
                                     : canRaze
@@ -1866,6 +1868,14 @@ export function GameMap({
                           />
                         )}
                         <BuildingSprite type={b.type} />
+                        {(b.level ?? 1) >= 2 && !syncing && (
+                          <span
+                            className="absolute -right-1 -top-1 rounded-sm bg-[#e8cf8a] px-0.5 font-mono text-[8px] font-bold leading-tight text-black"
+                            title="Upgraded · ×2 output"
+                          >
+                            ×2
+                          </span>
+                        )}
                         <HpBar hp={b.hp ?? maxHp} maxHp={maxHp} width={38} />
                         {p.id === me?.id &&
                           b.type === "shovel" &&

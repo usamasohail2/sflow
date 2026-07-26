@@ -70,12 +70,16 @@ import type {
 import {
   AZAD_ARENA_NAME,
   AZAD_PENDING_ID,
+  BUILDING_MAX_LEVEL,
   GEM_META,
   GOLD_COIN,
   HOUSE_MAX_HP,
   ROCKET_COST,
   attackPower,
   buildingBonus,
+  buildingLevel,
+  buildingTripBonus,
+  buildingUpgradeCost,
   catalogItem,
   defenseBreakdown,
   defensePower,
@@ -86,6 +90,7 @@ import {
   isGemClaimEvent,
   isRazeEvent,
   makeAzadPlacementSector,
+  shovelDigYield,
 } from "@/lib/gameTypes";
 import { pointInOrNearRing, pointInRing } from "@/lib/geo";
 import { ringCentroid } from "@/lib/mapMath";
@@ -647,10 +652,12 @@ export function PlayShell() {
   const [shovelId, setShovelId] = useState<string | null>(null);
   const shovelIdRef = useRef<string | null>(null);
   shovelIdRef.current = shovelId;
+  /** Own building selected for upgrade / demolish */
+  const [manageBuildingId, setManageBuildingId] = useState<string | null>(null);
   const [showShovelIntro, setShowShovelIntro] = useState(false);
   const [shovelDigging, setShovelDigging] = useState(false);
   const [shovelFloats, setShovelFloats] = useState<
-    { id: number; x: number }[]
+    { id: number; x: number; amount: number }[]
   >([]);
   const shovelFloatSeq = useRef(0);
   const [musicOn, setMusicOn] = useState(false);
@@ -2191,10 +2198,23 @@ export function PlayShell() {
   const openShovel = (buildingId: string) => {
     setSelectedPlayerId(null);
     setRazeTarget(null);
+    setManageBuildingId(buildingId);
     setShovelId(buildingId);
     if (!readShovelIntroDone()) {
       setShowShovelIntro(true);
     }
+  };
+
+  const openOwnBuilding = (buildingId: string) => {
+    setSelectedPlayerId(null);
+    setRazeTarget(null);
+    const b = me?.buildings.find((x) => x.id === buildingId);
+    if (b?.type === "shovel") {
+      // shovel path handled by openShovel
+      return;
+    }
+    setShovelId(null);
+    setManageBuildingId(buildingId);
   };
 
   const dismissShovelIntro = () => {
@@ -2207,7 +2227,11 @@ export function PlayShell() {
     setShowShovelIntro(false);
     setShovelDigging(false);
     setShovelFloats([]);
-  }, []);
+    setManageBuildingId((id) => {
+      const b = me?.buildings.find((x) => x.id === id);
+      return b?.type === "shovel" ? null : id;
+    });
+  }, [me?.buildings]);
 
   // Close digger if the shovel was razed / lost (poll or local patch)
   useEffect(() => {
@@ -2218,10 +2242,58 @@ export function PlayShell() {
     if (!still) closeShovel();
   }, [shovelId, me, closeShovel]);
 
-  /** Optimistic +1 gold dig — syncs in background without blocking the UI */
+  useEffect(() => {
+    if (!manageBuildingId || !me) return;
+    const still = me.buildings.some(
+      (b) => b.id === manageBuildingId && (b.hp ?? 0) > 0
+    );
+    if (!still) {
+      setManageBuildingId(null);
+      if (shovelId === manageBuildingId) closeShovel();
+    }
+  }, [manageBuildingId, me, shovelId, closeShovel]);
+
+  const managedBuilding = useMemo(() => {
+    if (!manageBuildingId || !me) return null;
+    return me.buildings.find((b) => b.id === manageBuildingId) ?? null;
+  }, [manageBuildingId, me]);
+
+  const upgradeManagedBuilding = async () => {
+    if (!managedBuilding || !me) return;
+    const cost = buildingUpgradeCost(managedBuilding.type);
+    if (buildingLevel(managedBuilding) >= BUILDING_MAX_LEVEL) {
+      setError("Already upgraded to ×2");
+      window.setTimeout(() => setError(null), 2800);
+      return;
+    }
+    if (displayGold < cost) {
+      setError(`Need ${formatGold(cost)} to upgrade`);
+      window.setTimeout(() => setError(null), 3200);
+      return;
+    }
+    const data = await act("upgrade_building", {
+      buildingId: managedBuilding.id,
+    });
+    if (!data) return;
+    playBuildSound();
+    showToast(`${catalogItem(managedBuilding.type).name} upgraded to ×2`);
+  };
+
+  const demolishManagedBuilding = async () => {
+    if (!managedBuilding || !me) return;
+    const name = catalogItem(managedBuilding.type).name;
+    const id = managedBuilding.id;
+    const data = await act("demolish_building", { buildingId: id });
+    if (!data) return;
+    if (shovelId === id) closeShovel();
+    setManageBuildingId(null);
+    showToast(`Deleted your ${name}`);
+  };
+
+  /** Optimistic dig — syncs in background without blocking the UI */
   const digShovel = () => {
     if (!shovelId || !me || busyRef.current) return;
-    const stillMine = me.buildings.some(
+    const stillMine = me.buildings.find(
       (b) => b.id === shovelId && b.type === "shovel" && (b.hp ?? 0) > 0
     );
     if (!stillMine) {
@@ -2231,13 +2303,14 @@ export function PlayShell() {
       return;
     }
 
-    setDisplayGold((g) => g + 1);
+    const gained = shovelDigYield(stillMine);
+    setDisplayGold((g) => g + gained);
     setSnap((prev) => {
       if (!prev?.me) return prev;
       const nextMe: Player = {
         ...prev.me,
-        gold: prev.me.gold + 1,
-        totalFarmed: (prev.me.totalFarmed || 0) + 1,
+        gold: prev.me.gold + gained,
+        totalFarmed: (prev.me.totalFarmed || 0) + gained,
         // Keep server updatedAt — optimistic digs must not block raze sync
         updatedAt: prev.me.updatedAt,
       };
@@ -2262,7 +2335,7 @@ export function PlayShell() {
     window.setTimeout(() => setShovelDigging(false), 180);
     const fid = ++shovelFloatSeq.current;
     const x = 36 + Math.random() * 28;
-    setShovelFloats((list) => [...list.slice(-8), { id: fid, x }]);
+    setShovelFloats((list) => [...list.slice(-8), { id: fid, x, amount: gained }]);
     window.setTimeout(() => {
       setShovelFloats((list) => list.filter((f) => f.id !== fid));
     }, 700);
@@ -2276,14 +2349,14 @@ export function PlayShell() {
       .then(async (res) => {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          // Roll back the optimistic +1
-          setDisplayGold((g) => Math.max(0, g - 1));
+          // Roll back the optimistic dig
+          setDisplayGold((g) => Math.max(0, g - gained));
           setSnap((prev) => {
             if (!prev?.me) return prev;
             const nextMe: Player = {
               ...prev.me,
-              gold: Math.max(0, prev.me.gold - 1),
-              totalFarmed: Math.max(0, (prev.me.totalFarmed || 0) - 1),
+              gold: Math.max(0, prev.me.gold - gained),
+              totalFarmed: Math.max(0, (prev.me.totalFarmed || 0) - gained),
             };
             return {
               ...prev,
@@ -2439,6 +2512,7 @@ export function PlayShell() {
             setShovelId(null);
           }}
           onSelectShovel={openShovel}
+          onSelectOwnBuilding={openOwnBuilding}
           selectedRazeBuildingId={razeTarget?.buildingId ?? null}
           onPlace={(lat, lng) => void handlePlace(lat, lng)}
           onPlaceBlocked={flashPlaceBlocked}
@@ -3546,9 +3620,8 @@ export function PlayShell() {
             </h2>
             <p className="mt-2 text-sm leading-relaxed text-[var(--ink-muted)]">
               Tap the shovel to dig.{" "}
-              <strong className="text-[var(--sand)]">Each click gives +1 gold</strong>
-              — no wait, no trip. Plant it near your house and mash when you need a
-              quick stash.
+              <strong className="text-[var(--sand)]">Each click gives gold</strong>
+              — no wait, no trip. Upgrade it to ×2 digs, or delete it from the panel.
             </p>
             <button
               type="button"
@@ -3588,7 +3661,14 @@ export function PlayShell() {
               </button>
             </div>
             <p className="mt-0.5 text-left text-[11px] text-[var(--ink-muted)]">
-              Each tap = +1 <GoldCoinIcon size={11} className="inline-block align-[-2px]" />
+              Each tap = +
+              {managedBuilding && managedBuilding.type === "shovel"
+                ? shovelDigYield(managedBuilding)
+                : 1}{" "}
+              <GoldCoinIcon size={11} className="inline-block align-[-2px]" />
+              {managedBuilding && buildingLevel(managedBuilding) >= 2
+                ? " · upgraded ×2"
+                : ""}
             </p>
             <div className="relative mx-auto mt-2 flex h-36 w-full max-w-[14rem] items-center justify-center">
               {shovelFloats.map((f) => (
@@ -3597,7 +3677,7 @@ export function PlayShell() {
                   className="shovel-float"
                   style={{ left: `${f.x}%` }}
                 >
-                  +1
+                  +{f.amount}
                 </span>
               ))}
               <button
@@ -3617,9 +3697,113 @@ export function PlayShell() {
                 <span className="shovel-dig-label">DIG</span>
               </button>
             </div>
+            {managedBuilding && managedBuilding.type === "shovel" && (
+              <div className="mt-2 grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  disabled={
+                    busy ||
+                    buildingLevel(managedBuilding) >= BUILDING_MAX_LEVEL ||
+                    displayGold < buildingUpgradeCost(managedBuilding.type)
+                  }
+                  onClick={() => void upgradeManagedBuilding()}
+                  className="rounded-sm border border-[var(--line)] px-2 py-1.5 font-mono text-[10px] text-[var(--sand)] hover:border-[var(--sand)] disabled:opacity-40"
+                  title={
+                    buildingLevel(managedBuilding) >= BUILDING_MAX_LEVEL
+                      ? "Already ×2"
+                      : `Upgrade dig to ×2 for ${formatGold(buildingUpgradeCost(managedBuilding.type))}`
+                  }
+                >
+                  {buildingLevel(managedBuilding) >= BUILDING_MAX_LEVEL
+                    ? "Upgraded ×2"
+                    : `Upgrade ×2 · ${formatGoldCompact(buildingUpgradeCost(managedBuilding.type))}`}
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void demolishManagedBuilding()}
+                  className="rounded-sm border border-[#6a3f3a] px-2 py-1.5 font-mono text-[10px] text-[#e88a7a] hover:border-[#e88a7a] disabled:opacity-40"
+                >
+                  Delete
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
+
+      {/* Own building manage — upgrade / delete */}
+      {managedBuilding &&
+        managedBuilding.type !== "shovel" &&
+        !shovelId &&
+        !placing && (
+          <div className="absolute inset-x-0 bottom-0 z-[50] flex justify-center p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pointer-events-none">
+            <div
+              className="pointer-events-auto hud-panel w-full max-w-sm p-3"
+              role="dialog"
+              aria-label="Manage building"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-mono text-[8px] uppercase tracking-[0.2em] text-[var(--ink-faint)]">
+                    Your building
+                  </p>
+                  <p className="font-display text-lg text-[var(--ink)]">
+                    {catalogItem(managedBuilding.type).name}
+                    {buildingLevel(managedBuilding) >= 2 ? " · ×2" : ""}
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-[var(--ink-muted)]">
+                    {catalogItem(managedBuilding.type).tripBonus > 0
+                      ? `+${buildingTripBonus(managedBuilding)} gold / trip`
+                      : catalogItem(managedBuilding.type).blurb}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setManageBuildingId(null)}
+                  className="font-mono text-[14px] text-[var(--ink-faint)] hover:text-[var(--sand)]"
+                  aria-label="Close"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  disabled={
+                    busy ||
+                    buildingLevel(managedBuilding) >= BUILDING_MAX_LEVEL ||
+                    displayGold < buildingUpgradeCost(managedBuilding.type)
+                  }
+                  onClick={() => void upgradeManagedBuilding()}
+                  className="rounded-sm border border-[var(--line)] bg-[var(--wash)] px-2 py-2 font-mono text-[11px] text-[var(--sand)] hover:border-[var(--sand)] disabled:opacity-40"
+                  title={
+                    buildingLevel(managedBuilding) >= BUILDING_MAX_LEVEL
+                      ? "Already upgraded"
+                      : `Pay 10× build price for ×2 output`
+                  }
+                >
+                  {buildingLevel(managedBuilding) >= BUILDING_MAX_LEVEL
+                    ? "Upgraded ×2"
+                    : `Upgrade ×2 · ${GOLD_COIN}${formatGoldCompact(buildingUpgradeCost(managedBuilding.type))}`}
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void demolishManagedBuilding()}
+                  className="rounded-sm border border-[#6a3f3a] px-2 py-2 font-mono text-[11px] text-[#e88a7a] hover:border-[#e88a7a] disabled:opacity-40"
+                >
+                  Delete
+                </button>
+              </div>
+              {buildingLevel(managedBuilding) < BUILDING_MAX_LEVEL && (
+                <p className="mt-2 font-mono text-[9px] text-[var(--ink-faint)]">
+                  Upgrade costs 10× build price and doubles output.
+                </p>
+              )}
+            </div>
+          </div>
+        )}
 
       {/* Toast / error */}
       {(toast || error) && !battleSummary && !savingLabel && (

@@ -25,8 +25,12 @@ import {
   catalogItem,
   colorForPlayerId,
   defensePower,
+  BUILDING_MAX_LEVEL,
+  buildingLevel,
+  buildingUpgradeCost,
   formatGold,
   isAzadHomeId,
+  shovelDigYield,
   type BattleReport,
   type Building,
   type BuildingType,
@@ -761,7 +765,11 @@ function normalizePlayer(raw: Player): Player {
   p.buildings = (p.buildings || []).map((b) => {
     const max = catalogItem(b.type).hp;
     const hp = b.hp ?? max;
-    return { ...b, hp: Math.min(hp, max) };
+    return {
+      ...b,
+      hp: Math.min(hp, max),
+      level: buildingLevel(b),
+    };
   });
   if (p.house) {
     const hp = p.houseHp == null ? HOUSE_MAX_HP : p.houseHp;
@@ -2113,6 +2121,7 @@ export async function buildBuilding(
         lng: pos.lng,
         hp: cat.hp,
         builtAt: now,
+        level: 1,
       },
     ],
     updatedAt: now,
@@ -2120,11 +2129,78 @@ export async function buildBuilding(
   return { ok: true };
 }
 
-/** Manual dig — each click on your shovel building grants +1 gold. */
+/** Remove one of your own buildings (no refund). */
+export async function demolishBuilding(
+  playerId: string,
+  buildingId: string
+): Promise<{ ok: true } | { error: string }> {
+  await bootstrap();
+  const me = await getPlayer(playerId);
+  if (!me?.homeSectorId) return { error: "Settle first" };
+  if (!buildingId) return { error: "Missing building" };
+  const target = me.buildings.find((b) => b.id === buildingId);
+  if (!target) return { error: "Building not found" };
+
+  const now = Date.now();
+  await setPlayer({
+    ...me,
+    buildings: me.buildings.filter((b) => b.id !== buildingId),
+    updatedAt: now,
+  });
+  return { ok: true };
+}
+
+/**
+ * Upgrade your building to level 2 (×2 output) for 10× catalog price.
+ * Already-upgraded buildings cannot be upgraded again.
+ */
+export async function upgradeBuilding(
+  playerId: string,
+  buildingId: string
+): Promise<{ ok: true; level: number } | { error: string }> {
+  await bootstrap();
+  const me = await getPlayer(playerId);
+  if (!me?.homeSectorId) return { error: "Settle first" };
+  if (!me.house) return { error: "Rebuild your house first" };
+  if (!buildingId) return { error: "Missing building" };
+
+  const target = me.buildings.find((b) => b.id === buildingId);
+  if (!target) return { error: "Building not found" };
+  if ((target.hp ?? 0) <= 0) return { error: "That building is destroyed" };
+
+  const level = buildingLevel(target);
+  if (level >= BUILDING_MAX_LEVEL) {
+    return { error: "Already upgraded to ×2" };
+  }
+
+  const cost = buildingUpgradeCost(target.type);
+  const spots = await getSpots();
+  const { player: fresh } = await accruePlayer(me, spots, true);
+  if (fresh.gold < cost) {
+    return { error: `Need ${formatGold(cost)} gold to upgrade` };
+  }
+
+  const now = Date.now();
+  const nextLevel = BUILDING_MAX_LEVEL;
+  await setPlayer({
+    ...fresh,
+    gold: fresh.gold - cost,
+    buildings: fresh.buildings.map((b) =>
+      b.id === buildingId ? { ...b, level: nextLevel } : b
+    ),
+    updatedAt: now,
+  });
+  return { ok: true, level: nextLevel };
+}
+
+/** Manual dig — each click on your shovel grants gold (×2 if upgraded). */
 export async function clickShovel(
   playerId: string,
   buildingId: string
-): Promise<{ ok: true; gold: number; totalFarmed: number } | { error: string }> {
+): Promise<
+  | { ok: true; gold: number; totalFarmed: number; gained: number }
+  | { error: string }
+> {
   await bootstrap();
   const me = await getPlayer(playerId);
   if (!me?.homeSectorId) return { error: "Settle first" };
@@ -2137,6 +2213,8 @@ export async function clickShovel(
   if (!shovel) return { error: "Shovel missing — place one near your house" };
   if ((shovel.hp ?? 0) <= 0) return { error: "That shovel is destroyed" };
 
+  const gained = shovelDigYield(shovel);
+
   // Soft rate limit (~25 taps/sec) — still feels instant for humans
   const now = Date.now();
   const last = me.lastShovelClickAt;
@@ -2145,13 +2223,14 @@ export async function clickShovel(
       ok: true,
       gold: me.gold,
       totalFarmed: me.totalFarmed || 0,
+      gained: 0,
     };
   }
 
   const spots = await getSpots();
   const { player: fresh } = await accruePlayer(me, spots, true);
-  const nextGold = fresh.gold + 1;
-  const nextFarmed = (fresh.totalFarmed || 0) + 1;
+  const nextGold = fresh.gold + gained;
+  const nextFarmed = (fresh.totalFarmed || 0) + gained;
   await setPlayer({
     ...fresh,
     gold: nextGold,
@@ -2160,7 +2239,7 @@ export async function clickShovel(
     updatedAt: now,
   });
 
-  return { ok: true, gold: nextGold, totalFarmed: nextFarmed };
+  return { ok: true, gold: nextGold, totalFarmed: nextFarmed, gained };
 }
 
 export async function buyRocket(

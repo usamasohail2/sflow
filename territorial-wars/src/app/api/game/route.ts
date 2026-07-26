@@ -13,6 +13,7 @@ import {
   claimSector,
   clickShovel,
   collectHidden,
+  demolishBuilding,
   discoverSpot,
   endTutorialTest,
   ensurePlayer,
@@ -22,6 +23,7 @@ import {
   resetPlayerProgress,
   razeBuilding,
   spawnRoamFind,
+  upgradeBuilding,
 } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
@@ -313,6 +315,22 @@ export async function POST(req: Request) {
       );
     }
     result = await clickShovel(id, body.buildingId);
+  } else if (body.action === "demolish_building") {
+    if (!body.buildingId) {
+      return withGuestCookie(
+        NextResponse.json({ error: "Missing building" }, { status: 400 }),
+        setCookie
+      );
+    }
+    result = await demolishBuilding(id, body.buildingId);
+  } else if (body.action === "upgrade_building") {
+    if (!body.buildingId) {
+      return withGuestCookie(
+        NextResponse.json({ error: "Missing building" }, { status: 400 }),
+        setCookie
+      );
+    }
+    result = await upgradeBuilding(id, body.buildingId);
   } else if (
     body.action === "buy_rocket" ||
     body.action === "recruit_soldier" ||
