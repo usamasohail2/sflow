@@ -44,7 +44,8 @@ export function PublicChat({
     onSent,
   });
 
-  const latest = messages.length > 0 ? messages[messages.length - 1]! : null;
+  /** Newest messages shown while chat is collapsed */
+  const previewMessages = messages.slice(-3);
 
   useEffect(() => {
     setNameDraft(displayName);
@@ -151,19 +152,25 @@ export function PublicChat({
   ) : null;
 
   const collapsedPreview =
-    !open && latest ? (
+    !open && previewMessages.length > 0 ? (
       <button
         type="button"
         onClick={() => setOpen(true)}
         className="public-chat-preview max-w-[min(16rem,calc(100vw-5rem))] text-left"
         title="Open chat"
       >
-        <span className="block truncate text-[10px] font-bold text-[var(--ink)]">
-          {latest.name}
-        </span>
-        <span className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-[var(--ink)]/90">
-          {latest.text}
-        </span>
+        <ul className="flex flex-col gap-1.5">
+          {previewMessages.map((m) => (
+            <li key={m.id} className="min-w-0">
+              <span className="block truncate text-[10px] font-bold text-[var(--ink)]">
+                {m.name}
+              </span>
+              <span className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-[var(--ink)]/90">
+                {m.text}
+              </span>
+            </li>
+          ))}
+        </ul>
       </button>
     ) : null;
 

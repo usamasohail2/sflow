@@ -1948,8 +1948,13 @@ button.cameo:not(:disabled):hover {
   background: rgba(12, 16, 14, 0.38);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
   backdrop-filter: blur(8px);
-  padding: 0.4rem 0.65rem;
+  padding: 0.45rem 0.65rem;
   transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.public-chat-preview li + li {
+  padding-top: 0.35rem;
+  border-top: 1px solid rgba(232, 235, 228, 0.1);
 }
 
 .public-chat-preview:hover {
