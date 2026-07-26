@@ -3066,9 +3066,28 @@ export function PlayShell() {
           </div>
         </div>
 
-        <div className="flex justify-end">
+        <div className="flex items-start justify-between gap-2">
+          {/* Killfeed sits under ITW/home — never overlaps the top chips */}
+          <div
+            className="kill-feed pointer-events-none flex min-w-0 flex-1 flex-col items-stretch gap-1"
+            aria-live="polite"
+          >
+            {killFeed.map((item) => {
+              const age = killFeedNow - item.shownAt;
+              const fading = age >= KILL_FEED_TTL_MS - KILL_FEED_FADE_MS;
+              return (
+                <div
+                  key={item.id}
+                  className={`kill-feed-line ${fading ? "is-fading" : ""}`}
+                >
+                  {killFeedLine(item.event, me?.id, playerColors)}
+                </div>
+              );
+            })}
+          </div>
+
           {/* Minimal leaderboard — sectors or Azad Umeed players */}
-          <div className="sector-board pointer-events-auto w-[9.5rem] px-1.5 py-1.5 text-left sm:w-44">
+          <div className="sector-board pointer-events-auto w-[9.5rem] shrink-0 px-1.5 py-1.5 text-left sm:w-44">
             <div className="mb-1 flex flex-col gap-1">
               <span className="font-mono text-[8px] uppercase tracking-[0.16em] text-white/55">
                 {isAzadPlayer || azadMode ? "Azad Umeed" : "Top sectors"}
@@ -3170,30 +3189,6 @@ export function PlayShell() {
           </div>
         </div>
       </div>
-
-      {/* CS-style killfeed — newest wars, fade out */}
-      {killFeed.length > 0 && (
-        <div
-          className="kill-feed pointer-events-none absolute left-2 z-[25] flex w-[min(17rem,calc(100%-7.5rem))] flex-col items-stretch gap-1 sm:left-3 sm:w-[min(19rem,calc(100%-11rem))]"
-          style={{
-            top: "max(2.85rem, calc(env(safe-area-inset-top) + 2.35rem))",
-          }}
-          aria-live="polite"
-        >
-          {killFeed.map((item) => {
-            const age = killFeedNow - item.shownAt;
-            const fading = age >= KILL_FEED_TTL_MS - KILL_FEED_FADE_MS;
-            return (
-              <div
-                key={item.id}
-                className={`kill-feed-line ${fading ? "is-fading" : ""}`}
-              >
-                {killFeedLine(item.event, me?.id, playerColors)}
-              </div>
-            );
-          })}
-        </div>
-      )}
 
       {/* Menu dropdown — battles / goals / editor / account */}
       {showMenu && (
