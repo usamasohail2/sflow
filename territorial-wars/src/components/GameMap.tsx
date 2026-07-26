@@ -56,6 +56,39 @@ import {
   wallBandMultiPolygon,
 } from "@/lib/geo";
 
+/**
+ * Mapbox Standard light presets — driven by Islamabad local clock
+ * (Asia/Karachi, UTC+5, no DST).
+ */
+export type MapLightPreset = "day" | "dusk" | "night" | "dawn";
+
+export function lightPresetForIslamabad(now = new Date()): MapLightPreset {
+  // en-GB + hourCycle h23 → "14" style hour
+  const hourStr = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Karachi",
+    hour: "numeric",
+    hourCycle: "h23",
+  }).format(now);
+  const hour = Number.parseInt(hourStr, 10);
+  if (!Number.isFinite(hour)) return "dusk";
+  // Rough civil windows for Islamabad year-round
+  if (hour >= 5 && hour < 7) return "dawn";
+  if (hour >= 7 && hour < 17) return "day";
+  if (hour >= 17 && hour < 20) return "dusk";
+  return "night";
+}
+
+function applyMapLightPreset(
+  map: { setConfigProperty: (c: string, k: string, v: unknown) => void },
+  preset: MapLightPreset
+) {
+  try {
+    map.setConfigProperty("basemap", "lightPreset", preset);
+  } catch {
+    /* older style / not ready */
+  }
+}
+
 /** Extruded wall band thickness (meters) — lines stay on the single perimeter */
 const SECTOR_WALL_M = 48;
 /**
@@ -514,6 +547,26 @@ export function GameMap({
   }, [homeSector, me?.house, sectors]);
   const introFocusRef = useRef(introFocus);
   introFocusRef.current = introFocus;
+
+  /** Auto day → dusk → night (Islamabad local time); recheck each minute */
+  useEffect(() => {
+    if (!mapReady) return;
+    const sync = () => {
+      const map = mapRef.current?.getMap();
+      if (!map) return;
+      applyMapLightPreset(map, lightPresetForIslamabad());
+    };
+    sync();
+    const id = window.setInterval(sync, 60_000);
+    const onVis = () => {
+      if (document.visibilityState === "visible") sync();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [mapReady]);
 
   const applyBasemapLabels = useCallback((show: boolean) => {
     if (labelsVisible.current === show) return;
@@ -1377,10 +1430,10 @@ export function GameMap({
         touchZoomRotate={!introActive}
         keyboard={!introActive}
         onLoad={(e) => {
-          // Dusk atmosphere; Standard style ships 3D buildings by default
+          // Day/dusk/night from Islamabad clock; Standard ships 3D buildings
           const m = e.target;
           try {
-            m.setConfigProperty("basemap", "lightPreset", "dusk");
+            applyMapLightPreset(m, lightPresetForIslamabad());
             m.setConfigProperty("basemap", "show3dObjects", true);
             m.setConfigProperty("basemap", "showPlaceLabels", false);
             m.setConfigProperty("basemap", "showPointOfInterestLabels", false);
