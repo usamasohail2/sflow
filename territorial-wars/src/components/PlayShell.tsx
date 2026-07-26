@@ -2596,19 +2596,19 @@ export function PlayShell() {
         />
       </div>
 
-      {/* ---- Top bar (safe-area + wrap so chips aren't clipped) ---- */}
-      <div className="pointer-events-none absolute left-0 right-0 top-0 z-20 flex flex-wrap items-start justify-between gap-2 px-2 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] sm:px-3 sm:pt-[max(0.75rem,env(safe-area-inset-top))]">
-        <div className="pointer-events-auto flex flex-col items-start gap-1.5">
-          <div className="flex items-center gap-1.5">
+      {/* ---- Top bar: one compact row on mobile, board below ---- */}
+      <div className="pointer-events-none absolute left-0 right-0 top-0 z-20 flex flex-col items-stretch gap-1.5 px-2 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] sm:px-3 sm:pt-[max(0.75rem,env(safe-area-inset-top))]">
+        <div className="flex min-w-0 flex-nowrap items-center justify-between gap-1 sm:gap-2">
+          <div className="pointer-events-auto flex min-w-0 shrink items-center gap-1 sm:gap-1.5">
             <Link
               href="/"
-              className="hud-chip px-2.5 py-1.5 sm:px-3"
+              className="hud-chip max-w-[9.5rem] truncate px-2 py-1.5 sm:max-w-none sm:px-3"
               title="Islamabad Territorial Wars"
             >
               <span className="font-display text-xs text-[var(--ink)] sm:text-sm">
                 ITW
               </span>
-              <span className="ml-1.5 font-mono text-[8px] uppercase tracking-[0.18em] text-[var(--ink-faint)]">
+              <span className="ml-1 font-mono text-[8px] uppercase tracking-[0.14em] text-[var(--ink-faint)] sm:ml-1.5 sm:tracking-[0.18em]">
                 {claimed ? homeName : "settle"}
               </span>
             </Link>
@@ -2616,7 +2616,7 @@ export function PlayShell() {
               <button
                 type="button"
                 onClick={() => setHomeFocus((n) => n + 1)}
-                className="hud-chip flex h-[31px] w-[31px] items-center justify-center p-0"
+                className="hud-chip flex h-[30px] w-[30px] shrink-0 items-center justify-center p-0"
                 title="Back to home"
                 aria-label="Back to home"
               >
@@ -2624,15 +2624,13 @@ export function PlayShell() {
               </button>
             )}
           </div>
-        </div>
 
-        <div className="pointer-events-auto flex flex-col items-end gap-1.5">
-          <div className="flex max-w-[calc(100vw-5.5rem)] flex-wrap items-center justify-end gap-1.5 sm:max-w-none sm:gap-2">
+          <div className="pointer-events-auto flex shrink-0 flex-nowrap items-center gap-1 sm:gap-1.5">
             <div
-              className="flex h-[31px] items-center gap-1 px-0.5 font-mono text-[11px] font-bold text-[#e8cf8a]"
+              className="flex h-[30px] items-center gap-0.5 px-0.5 font-mono text-[10px] font-bold text-[#e8cf8a] sm:gap-1 sm:text-[11px]"
               title={claimed ? `${Math.floor(displayGold)} gold · +${perTrip}/trip` : `${Math.floor(displayGold)} gold`}
             >
-              <GoldCoinIcon size={15} />
+              <GoldCoinIcon size={14} />
               <span className="leading-none tabular-nums">
                 {Math.floor(displayGold)}
               </span>
@@ -2647,7 +2645,7 @@ export function PlayShell() {
                 setShowMissions(false);
                 setShowInvite(false);
               }}
-              className={`hud-chip px-2.5 py-1.5 font-mono text-[11px] sm:px-3 ${
+              className={`hud-chip px-2 py-1.5 font-mono text-[10px] sm:px-3 sm:text-[11px] ${
                 showActivity
                   ? "text-[var(--sand)]"
                   : "text-[var(--ink-muted)] hover:text-[var(--sand)]"
@@ -2660,7 +2658,7 @@ export function PlayShell() {
               type="button"
               data-nohover="1"
               onClick={() => setMusicOn(toggleMusic())}
-              className={`hud-chip px-2.5 py-1.5 font-mono text-[11px] sm:px-3 ${
+              className={`hud-chip flex h-[30px] w-[30px] items-center justify-center p-0 font-mono text-[11px] sm:h-auto sm:w-auto sm:px-3 sm:py-1.5 ${
                 musicOn
                   ? "text-[var(--sand)]"
                   : "text-[var(--ink-muted)] hover:text-[var(--sand)]"
@@ -2679,7 +2677,7 @@ export function PlayShell() {
                   setShowRanks(false);
                   setShowMissions(false);
                 }}
-                className={`hud-chip px-2.5 py-1.5 font-mono text-[11px] sm:px-3 ${
+                className={`hud-chip hidden px-2.5 py-1.5 font-mono text-[11px] sm:inline-flex sm:px-3 ${
                   showInvite
                     ? "text-[var(--sand)]"
                     : "text-[var(--ink-muted)] hover:text-[var(--sand)]"
@@ -2698,7 +2696,7 @@ export function PlayShell() {
                 setShowMissions(false);
                 setShowInvite(false);
               }}
-              className={`hud-chip inline-flex items-center gap-1.5 px-2.5 py-1.5 font-mono text-[11px] sm:px-3 ${
+              className={`hud-chip inline-flex h-[30px] items-center gap-1 px-2 font-mono text-[11px] sm:h-auto sm:gap-1.5 sm:px-3 sm:py-1.5 ${
                 showMenu
                   ? "text-[var(--sand)]"
                   : "text-[var(--ink-muted)] hover:text-[var(--sand)]"
@@ -2712,7 +2710,9 @@ export function PlayShell() {
               ☰
             </button>
           </div>
+        </div>
 
+        <div className="flex justify-end">
           {/* Minimal leaderboard — sectors or Azad Umeed players */}
           <div className="sector-board pointer-events-auto w-[8.75rem] px-1.5 py-1.5 text-left sm:w-40">
             <div className="mb-0.5 flex items-center justify-between gap-1">
