@@ -173,6 +173,8 @@ type BattleSummary = {
   id: string;
   role: "attacker" | "defender";
   headline: string;
+  /** One-line outcome under the headline — destroyed vs attacked */
+  detail: string;
   sectorName: string;
   opponent: string;
   win: boolean;
@@ -284,16 +286,87 @@ function NameChip({
 
 type ActivityColors = Map<string, string> | Record<string, string> | null;
 
+function attackerOutcomeCopy(battle: BattleReport, defenderName: string): {
+  headline: string;
+  detail: string;
+} {
+  const name = personName(defenderName);
+  const wiped = destroyedCountFrom(battle.destroyed);
+  const parts: string[] = [];
+  if (battle.destroyed) parts.push(battle.destroyed);
+  if (battle.houseDestroyed) parts.push("House");
+  const destroyedList = parts.join(", ");
+
+  if (!battle.win) {
+    return {
+      headline: "Attack failed",
+      detail: `${name}'s defenses held — no buildings destroyed`,
+    };
+  }
+  if (wiped > 0 || battle.houseDestroyed) {
+    return {
+      headline: "Destroyed",
+      detail: `You destroyed ${destroyedList} at ${name}'s village`,
+    };
+  }
+  if (battle.damage > 0 || battle.damagedBuildings.length > 0 || battle.houseDamaged) {
+    const hit =
+      battle.damagedBuildings.length > 0
+        ? battle.damagedBuildings.join(", ")
+        : battle.houseDamaged
+          ? "their house"
+          : "their village";
+    return {
+      headline: "Attacked",
+      detail: `You attacked ${hit} (${battle.damage} dmg) — still standing`,
+    };
+  }
+  return {
+    headline: "Attacked",
+    detail: `You attacked ${name}'s village — no buildings destroyed`,
+  };
+}
+
+function defenderOutcomeCopy(battle: BattleReport, attackerName: string): {
+  headline: string;
+  detail: string;
+} {
+  const name = personName(attackerName);
+  const parts: string[] = [];
+  if (battle.destroyed) parts.push(battle.destroyed);
+  if (battle.houseDestroyed) parts.push("House");
+  const destroyedList = parts.join(", ");
+
+  if (!battle.win) {
+    return {
+      headline: "Defense held",
+      detail: `You stopped ${name}'s attack — nothing destroyed`,
+    };
+  }
+  if (destroyedCountFrom(battle.destroyed) > 0 || battle.houseDestroyed) {
+    return {
+      headline: "Destroyed",
+      detail: `${name} destroyed your ${destroyedList}`,
+    };
+  }
+  return {
+    headline: "Attacked",
+    detail: `${name} attacked your village (${battle.damage} dmg) — still standing`,
+  };
+}
+
 function summaryFromAttack(
   battle: BattleReport,
   sectorName: string,
   defenderName: string,
   id = `atk_${Date.now()}`
 ): BattleSummary {
+  const outcome = attackerOutcomeCopy(battle, defenderName);
   return {
     id,
     role: "attacker",
-    headline: battle.win ? "Raid succeeded" : "Raid failed",
+    headline: outcome.headline,
+    detail: outcome.detail,
     sectorName,
     opponent: personName(defenderName),
     win: battle.win,
@@ -334,10 +407,12 @@ function summaryFromEvent(e: GameEvent, asDefender = true): BattleSummary | null
     return summaryFromAttack(report, e.sectorName, e.defenderName, e.id);
   }
 
+  const outcome = defenderOutcomeCopy(report, e.attackerName);
   return {
     id: e.id,
     role: "defender",
-    headline: e.win ? "Village breached" : "Defense held",
+    headline: outcome.headline,
+    detail: outcome.detail,
     sectorName: e.sectorName,
     opponent: personName(e.attackerName),
     win: !e.win,
@@ -2480,13 +2555,13 @@ export function PlayShell() {
       window.setTimeout(() => setImpact(null), 1700);
       if (raze?.destroyed) {
         showToast(
-          `Cleared ${ownerName}'s ${name} with ${raze.rocketsLost ?? rockets} rocket${
+          `Destroyed ${ownerName}'s ${name} (${raze.rocketsLost ?? rockets} rocket${
             (raze.rocketsLost ?? rockets) === 1 ? "" : "s"
-          } — ground is free`
+          })`
         );
       } else {
         showToast(
-          `Hit ${ownerName}'s ${name} for ${raze?.damage ?? razeSalvoAttack} dmg — ${
+          `Attacked ${ownerName}'s ${name} — ${raze?.damage ?? razeSalvoAttack} dmg, ${
             raze?.buildingHp ?? "?"
           } HP left`
         );
@@ -3768,24 +3843,14 @@ export function PlayShell() {
               <div className="min-w-0">
                 <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-white/65">
                   {battleSummary.role === "defender" ? "Under attack" : "Your raid"}
+                  {" · "}
+                  {battleSummary.sectorName}
                 </p>
                 <p className="font-display text-xl leading-tight text-white sm:text-2xl">
                   {battleSummary.headline}
                 </p>
                 <p className="mt-1 text-[12px] leading-snug text-white/90">
-                  {battleSummary.role === "attacker" ? (
-                    <>
-                      You hit <strong>{battleSummary.opponent}</strong>
-                      {"'s village in "}
-                      {battleSummary.sectorName}
-                    </>
-                  ) : (
-                    <>
-                      <strong>{battleSummary.opponent}</strong>
-                      {" hit your village in "}
-                      {battleSummary.sectorName}
-                    </>
-                  )}
+                  {battleSummary.detail}
                 </p>
               </div>
               <button
@@ -3848,7 +3913,9 @@ export function PlayShell() {
                 <span className="battle-stat-val">
                   {battleSummary.destroyedCount}
                 </span>
-                <span className="battle-stat-lbl">Lost</span>
+                <span className="battle-stat-lbl">
+                  {battleSummary.role === "attacker" ? "Destroyed" : "Lost"}
+                </span>
               </div>
               <div className="battle-stat">
                 <span className="battle-stat-val">
@@ -4703,17 +4770,20 @@ export function PlayShell() {
               <div className="min-w-0">
                 <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-white/65">
                   Same sector
+                  {razeAlert.sectorName ? ` · ${razeAlert.sectorName}` : ""}
                 </p>
                 <p className="font-display text-xl leading-tight text-white sm:text-2xl">
-                  {razeAlert.destroyed === false
-                    ? "Building hit"
-                    : "Building lost"}
+                  {razeAlert.destroyed === false ? "Attacked" : "Destroyed"}
                 </p>
                 <p className="mt-1.5 text-[13px] leading-snug text-white/90">
-                  Your ally, <strong>{personName(razeAlert.attackerName)}</strong>,
-                  {razeAlert.destroyed === false ? " hit" : " rocketed"} your{" "}
+                  <strong>{personName(razeAlert.attackerName)}</strong>
+                  {razeAlert.destroyed === false
+                    ? " attacked your "
+                    : " destroyed your "}
                   <strong>{razeAlert.buildingName}</strong>
-                  {razeAlert.sectorName ? ` in ${razeAlert.sectorName}` : ""}
+                  {razeAlert.destroyed === false && razeAlert.damage
+                    ? ` (${razeAlert.damage} dmg)`
+                    : ""}
                   {razeAlert.rocketsLost
                     ? ` with ${razeAlert.rocketsLost} rocket${
                         razeAlert.rocketsLost === 1 ? "" : "s"
