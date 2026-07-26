@@ -2714,12 +2714,12 @@ export function PlayShell() {
 
         <div className="flex justify-end">
           {/* Minimal leaderboard — sectors or Azad Umeed players */}
-          <div className="sector-board pointer-events-auto w-[8.75rem] px-1.5 py-1.5 text-left sm:w-40">
-            <div className="mb-0.5 flex items-center justify-between gap-1">
-              <span className="font-mono text-[7px] uppercase tracking-[0.18em] text-white/55">
+          <div className="sector-board pointer-events-auto w-[9.5rem] px-1.5 py-1.5 text-left sm:w-44">
+            <div className="mb-1 flex flex-col gap-1">
+              <span className="font-mono text-[8px] uppercase tracking-[0.16em] text-white/55">
                 {isAzadPlayer || azadMode ? "Azad Umeed" : "Top sectors"}
               </span>
-              <span className="flex items-center gap-1.5">
+              <div className="flex items-stretch gap-1">
                 <button
                   type="button"
                   onClick={() =>
@@ -2731,10 +2731,10 @@ export function PlayShell() {
                           : sectorRanking[0]?.id
                     )
                   }
-                  className="font-mono text-[7px] text-white/45 underline decoration-dotted underline-offset-2 hover:text-white/80"
+                  className="hud-chip min-h-[32px] flex-1 px-1.5 py-1.5 font-mono text-[10px] font-semibold leading-none text-white/75 hover:text-white"
                   title="Sector analytics charts"
                 >
-                  charts
+                  Charts
                 </button>
                 <button
                   type="button"
@@ -2745,12 +2745,12 @@ export function PlayShell() {
                     setShowMissions(false);
                     setShowInvite(false);
                   }}
-                  className="font-mono text-[7px] text-white/45 underline decoration-dotted underline-offset-2 hover:text-white/80"
+                  className="hud-chip min-h-[32px] flex-1 px-1.5 py-1.5 font-mono text-[10px] font-semibold leading-none text-white/75 hover:text-white"
                   title="Open full leaderboard"
                 >
-                  all
+                  All
                 </button>
-              </span>
+              </div>
             </div>
             {sectorBoard.length === 0 ? (
               <p className="text-[9px] text-white/45">No farms yet</p>
