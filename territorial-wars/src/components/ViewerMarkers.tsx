@@ -1,8 +1,11 @@
 "use client";
 
+import { useMemo } from "react";
 import { Marker } from "react-map-gl/mapbox";
 import { cameraMarkerJitter } from "@/hooks/useMapPresence";
+import { distMeters } from "@/lib/mapMath";
 import type { PresencePeer } from "@/lib/presenceTypes";
+import type { LatLng } from "@/lib/gameTypes";
 
 const PALETTES = [
   { shirt: "#3d6b45", skin: "#f0c4a0", hair: "#2a2118" },
@@ -110,21 +113,46 @@ type Props = {
     bubble?: string | null;
     bubbleAt?: number | null;
   } | null;
+  /** Camera center — peers farther than maxDistanceM are hidden */
+  center?: LatLng | null;
+  maxDistanceM?: number;
 };
 
-export function ViewerMarkers({ peers, self = null }: Props) {
+export function ViewerMarkers({
+  peers,
+  self = null,
+  center = null,
+  maxDistanceM,
+}: Props) {
+  const nearbyPeers = useMemo(() => {
+    return peers.filter((peer) => {
+      if (typeof peer.lat !== "number" || typeof peer.lng !== "number") {
+        return false;
+      }
+      if (
+        center &&
+        typeof maxDistanceM === "number" &&
+        Number.isFinite(maxDistanceM)
+      ) {
+        return (
+          distMeters(center, { lat: peer.lat, lng: peer.lng }) <= maxDistanceM
+        );
+      }
+      return true;
+    });
+  }, [peers, center, maxDistanceM]);
+
   return (
     <>
-      {peers.map((peer) => {
-        if (typeof peer.lat !== "number" || typeof peer.lng !== "number") {
-          return null;
-        }
+      {nearbyPeers.map((peer) => {
+        const lat = peer.lat as number;
+        const lng = peer.lng as number;
         const jitter = cameraMarkerJitter(peer.id);
         return (
           <Marker
             key={`viewer-${peer.id}`}
-            latitude={peer.lat + jitter.lat}
-            longitude={peer.lng + jitter.lng}
+            latitude={lat + jitter.lat}
+            longitude={lng + jitter.lng}
             anchor="bottom"
             style={{ zIndex: 12, pointerEvents: "none" }}
           >

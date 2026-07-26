@@ -67,6 +67,16 @@ const SECTOR_WALL_STACK = [
   { id: "sector-wall-high", base: 250, height: 400, opacity: 0.22 },
 ] as const;
 
+/**
+ * Street-zoom cull: only show settlers / live viewers near the camera.
+ * Stops far-sector people stacking on the horizon when pitched in.
+ */
+const DETAIL_ENTITY_RADIUS_M = 950;
+/** Live map viewers — tighter than settlers so distant chat names disappear */
+const DETAIL_VIEWER_RADIUS_M = 700;
+/** Overview zoom: still hide ultra-distant viewers */
+const OVERVIEW_VIEWER_RADIUS_M = 4500;
+
 /** You = blue, same-sector ally = green, other sector = enemy red */
 function playerRelation(
   p: { id: string; homeSectorId: string | null },
@@ -390,6 +400,10 @@ export function GameMap({
   playersRef.current = players;
   const mapRef = useRef<MapRef>(null);
   const [zoom, setZoom] = useState(INTRO_GLOBE_ZOOM);
+  const [mapCenter, setMapCenter] = useState<LatLng>({
+    lat: INTRO_CITY_CENTER.lat,
+    lng: INTRO_CITY_CENTER.lng,
+  });
   const showDetail = zoom >= DETAIL_ZOOM;
   /** Keep footprints/buildings visible while settling even if zoomed out */
   const showPlaceOverlays = showDetail || Boolean(placing) || Boolean(previewHouse);
@@ -427,6 +441,27 @@ export function GameMap({
         : sectors.find((s) => s.id === me?.homeSectorId) ?? null,
     [sectors, me, isAzad]
   );
+  /** Sector under the camera — detail overlays only show this sector's people */
+  const viewSectorId = useMemo(() => {
+    if (placing?.sector?.id) return placing.sector.id;
+    const hit = sectors.find((s) => pointInRing(mapCenter, s.ring));
+    return hit?.id ?? null;
+  }, [sectors, mapCenter, placing?.sector?.id]);
+  /**
+   * Street-zoom / placement: settlers in the viewed sector (or near camera).
+   * Overview pins still use the full `players` list.
+   */
+  const detailPlayers = useMemo(() => {
+    if (!showPlaceOverlays) return players;
+    return players.filter((p) => {
+      if (me && p.id === me.id) return true;
+      if (!p.homeSectorId) return false;
+      if (viewSectorId && p.homeSectorId === viewSectorId) return true;
+      const at = playerAnchor(p);
+      if (!at) return false;
+      return distMeters(mapCenter, at) <= DETAIL_ENTITY_RADIUS_M;
+    });
+  }, [players, me, viewSectorId, mapCenter, showPlaceOverlays]);
   const meRef = useRef(me);
   meRef.current = me;
   const homeSectorRef = useRef(homeSector);
@@ -924,7 +959,7 @@ export function GameMap({
   const footprints = useMemo<FeatureCollection>(() => {
     const feats: Feature<Polygon>[] = [];
     const emphasis = placingMode ? 1 : 0;
-    for (const p of players) {
+    for (const p of detailPlayers) {
       if (!p.homeSectorId) continue;
       const relation = playerRelation(p, me);
       const rel = relation === "self" ? 0 : relation === "ally" ? 1 : 2;
@@ -1007,7 +1042,7 @@ export function GameMap({
       );
     }
     return { type: "FeatureCollection", features: feats };
-  }, [players, me, placing, hover, userLocation, previewHouse, placingMode]);
+  }, [detailPlayers, players, me, placing, hover, userLocation, previewHouse, placingMode]);
 
   // Seed / clear the drop-ring while placing so villager/house bounds show immediately
   useEffect(() => {
@@ -1048,7 +1083,7 @@ export function GameMap({
       walking: boolean;
     }[] = [];
 
-    for (const p of players) {
+    for (const p of detailPlayers) {
       if (!p.homeSectorId || p.villagers <= 0 || (!p.house && !p.villagerPost)) {
         continue;
       }
@@ -1109,7 +1144,7 @@ export function GameMap({
       }
     }
     return markers;
-  }, [players, spots, sectors, me, now]);
+  }, [detailPlayers, spots, sectors, me, now]);
 
   // Villager working audio — only audible up close (zoom + distance falloff)
   useEffect(() => {
@@ -1206,6 +1241,7 @@ export function GameMap({
         lng: e.viewState.longitude,
       };
       setZoom(z);
+      setMapCenter(center);
       onCameraReportRef.current?.(center);
       // Country / city / road names only when fully zoomed into street detail
       applyBasemapLabels(z >= DETAIL_ZOOM);
@@ -1689,7 +1725,7 @@ export function GameMap({
               />
             </Source>
 
-            {players
+            {detailPlayers
               .filter((p) => p.homeSectorId && p.house)
               .map((p) => {
                 const isKing = topPlayerId === p.id;
@@ -1771,7 +1807,7 @@ export function GameMap({
                 );
               })}
 
-            {players
+            {detailPlayers
               .filter((p) => p.homeSectorId)
               .flatMap((p) =>
                 p.buildings.map((b) => {
@@ -1902,7 +1938,7 @@ export function GameMap({
                 })
               )}
 
-            {players
+            {detailPlayers
               .filter((p) => p.homeSectorId && p.house && (p.rockets || 0) > 0)
               .map((p) => {
                 const pos = offsetMeters(p.house!, 26, -12);
@@ -2107,7 +2143,14 @@ export function GameMap({
           </Marker>
         )}
 
-        <ViewerMarkers peers={presencePeers} self={presenceSelf} />
+        <ViewerMarkers
+          peers={presencePeers}
+          self={presenceSelf}
+          center={mapCenter}
+          maxDistanceM={
+            showDetail ? DETAIL_VIEWER_RADIUS_M : OVERVIEW_VIEWER_RADIUS_M
+          }
+        />
 
         {/* Guided placement beacon — must stay inside MapboxMap */}
         {guidePulse && placing && (
