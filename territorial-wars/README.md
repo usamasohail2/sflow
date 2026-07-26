@@ -31,12 +31,14 @@ npm run dev
 - `AUTH_SECRET`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`
 - `AUTH_URL` / `NEXT_PUBLIC_SITE_URL` (e.g. `https://www.wars.usama.fun`)
 
+Canonical site host is **`https://www.wars.usama.fun`** (`AUTH_URL`). Apex
+`wars.usama.fun` / `usama.fun` redirect there via middleware so Google OAuth
+cookies and the callback host always match (avoids “sign in twice”).
+
 In [Google Cloud Console → Credentials → OAuth client](https://console.cloud.google.com/apis/credentials), add:
 
 **Authorized JavaScript origins**
 - `https://www.wars.usama.fun`
-- `https://wars.usama.fun`
 
 **Authorized redirect URIs**
 - `https://www.wars.usama.fun/api/auth/callback/google`
-- `https://wars.usama.fun/api/auth/callback/google`
