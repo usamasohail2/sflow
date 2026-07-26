@@ -438,7 +438,6 @@ function summaryFromEvent(e: GameEvent, asDefender = true): BattleSummary | null
   };
 }
 
-const RAZE_VERBS = ["destroyed", "wrecked", "razed", "tore down"] as const;
 const ATTACK_WIN_VERBS = ["attacked", "breached", "wrecked", "smashed"] as const;
 const ATTACK_HOLD_VERBS = ["held off", "stopped", "repelled"] as const;
 
