@@ -802,7 +802,7 @@ async function recordSectorHistories(
     const settlers = players.filter((p) => p.homeSectorId === sector.id);
     const spotCount = spots.filter((s) => s.sectorId === sector.id).length;
     const live = sectorPointFromPlayers(settlers, sector.id, spotCount, now);
-    let series = [...(hist[sector.id] ?? [])].sort((a, b) => a.ts - b.ts);
+    const series = [...(hist[sector.id] ?? [])].sort((a, b) => a.ts - b.ts);
 
     if (series.length === 0 && settlers.length > 0) {
       const firstJoin = Math.min(...settlers.map((p) => p.createdAt || now));

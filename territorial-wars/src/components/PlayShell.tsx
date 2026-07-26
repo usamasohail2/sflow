@@ -669,13 +669,17 @@ export function PlayShell() {
   const applySnap = useCallback((data: GameSnapshot) => {
     // Don't resurrect gems mid-claim if a poll races the write
     const claiming = new Set(claimingSpotIdsRef.current);
+    const normalized: GameSnapshot = {
+      ...data,
+      sectorHistory: data.sectorHistory ?? {},
+    };
     let next: GameSnapshot =
       claiming.size > 0
         ? {
-            ...data,
-            spots: data.spots.filter((s) => !claiming.has(s.id)),
+            ...normalized,
+            spots: normalized.spots.filter((s) => !claiming.has(s.id)),
           }
-        : data;
+        : normalized;
     const prevMe = lastGoodMe.current;
     const incoming = next.me;
     // Guard against a stale poll wiping a just-saved settlement (~3s race).
