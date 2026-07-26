@@ -4,9 +4,11 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { GoogleSignInButton } from "@/components/GoogleSignInButton";
+import { ManageChat } from "@/components/ManageChat";
 import {
   formatGoldCompact,
   GOLD_COIN,
+  isAzadHomeId,
   type GameSnapshot,
   type PublicPlayer,
   type SectorStatsPoint,
@@ -28,26 +30,36 @@ function formatWhen(ts: number): string {
   });
 }
 
-function StatCard({
-  label,
+/** Friendly “5 minutes ago” style time */
+function timeAgo(ts: number, now: number): string {
+  const sec = Math.max(0, Math.floor((now - ts) / 1000));
+  if (sec < 60) return "just now";
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} minute${min === 1 ? "" : "s"} ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 48) return `${hr} hour${hr === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hr / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+}
+
+function EasyCard({
+  title,
   value,
-  hint,
+  note,
 }: {
-  label: string;
+  title: string;
   value: string;
-  hint?: string;
+  note?: string;
 }) {
   return (
-    <div
-      className="rounded-sm border border-[var(--line)] bg-[var(--wash)] px-3 py-2.5"
-      title={hint}
-    >
-      <div className="font-mono text-[8px] uppercase tracking-[0.16em] text-[var(--ink-faint)]">
-        {label}
-      </div>
-      <div className="mt-1 font-mono text-xl font-semibold tabular-nums text-[var(--ink)]">
+    <div className="rounded-sm border border-[var(--line)] bg-[var(--wash)] px-3 py-2.5">
+      <div className="text-[12px] text-[var(--ink-muted)]">{title}</div>
+      <div className="mt-0.5 font-display text-2xl text-[var(--ink)]">
         {value}
       </div>
+      {note && (
+        <div className="mt-0.5 text-[11px] text-[var(--ink-faint)]">{note}</div>
+      )}
     </div>
   );
 }
@@ -61,16 +73,19 @@ function MiniBars({
 }) {
   const max = Math.max(1, ...items.map((i) => i.value));
   if (items.length === 0) {
-    return <p className="text-[12px] text-[var(--ink-faint)]">{empty}</p>;
+    return <p className="text-[13px] text-[var(--ink-faint)]">{empty}</p>;
   }
   return (
     <div className="space-y-1.5">
-      {items.map((item) => (
+      {items.map((item, i) => (
         <div key={item.id} className="flex items-center gap-2">
-          <span className="w-28 shrink-0 truncate text-[11px] text-[var(--ink-muted)]">
+          <span className="w-5 shrink-0 font-mono text-[11px] text-[var(--ink-faint)]">
+            {i + 1}.
+          </span>
+          <span className="w-28 shrink-0 truncate text-[13px] text-[var(--ink-muted)]">
             {item.label}
           </span>
-          <div className="h-3 min-w-0 flex-1 overflow-hidden rounded-sm bg-black/35">
+          <div className="h-3.5 min-w-0 flex-1 overflow-hidden rounded-sm bg-black/35">
             <div
               className="h-full rounded-sm"
               style={{
@@ -79,7 +94,8 @@ function MiniBars({
               }}
             />
           </div>
-          <span className="w-12 shrink-0 text-right font-mono text-[10px] text-[#e8cf8a]">
+          <span className="w-14 shrink-0 text-right font-mono text-[11px] text-[#e8cf8a]">
+            {GOLD_COIN}
             {formatGoldCompact(item.value)}
           </span>
         </div>
@@ -94,8 +110,8 @@ function GrowthSpark({ history }: { history: SectorStatsPoint[] }) {
   const pad = 6;
   if (history.length === 0) {
     return (
-      <p className="py-4 text-center text-[11px] text-[var(--ink-faint)]">
-        No samples yet
+      <p className="py-4 text-center text-[12px] text-[var(--ink-faint)]">
+        No growth numbers yet
       </p>
     );
   }
@@ -133,16 +149,13 @@ function userStats(players: PublicPlayer[], now: number) {
     settled: settled.length,
     newDay: players.filter((p) => inLast(created(p), DAY, now)).length,
     newWeek: players.filter((p) => inLast(created(p), 7 * DAY, now)).length,
-    newMonth: players.filter((p) => inLast(created(p), 30 * DAY, now)).length,
     activeDay: players.filter((p) => inLast(updated(p), DAY, now)).length,
     activeWeek: players.filter((p) => inLast(updated(p), 7 * DAY, now)).length,
-    activeMonth: players.filter((p) => inLast(updated(p), 30 * DAY, now))
-      .length,
   };
 }
 
 export default function ManagePage() {
-  const { status } = useSession();
+  const { data: session, status } = useSession();
   const [snap, setSnap] = useState<GameSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -152,17 +165,16 @@ export default function ManagePage() {
     setLoading(true);
     setError(null);
     try {
-      // Same snapshot the game already uses — full=1 for sector history
       const res = await fetch("/api/game?full=1", { cache: "no-store" });
       const data = (await res.json()) as GameSnapshot;
       if (!res.ok) {
-        setError("Could not load game snapshot");
+        setError("Could not load the game. Try again.");
         setSnap(null);
         return;
       }
       setSnap(data);
     } catch {
-      setError("Network error loading /api/game");
+      setError("No internet — try again.");
     } finally {
       setLoading(false);
     }
@@ -208,7 +220,7 @@ export default function ManagePage() {
   const topFarmers = useMemo(() => {
     return [...(snap?.players ?? [])]
       .sort((a, b) => (b.totalFarmed || 0) - (a.totalFarmed || 0))
-      .slice(0, 12)
+      .slice(0, 10)
       .map((p) => ({
         id: p.id,
         label: p.name,
@@ -219,7 +231,7 @@ export default function ManagePage() {
 
   const sectorBars = useMemo(
     () =>
-      analytics.slice(0, 12).map((a) => ({
+      analytics.slice(0, 10).map((a) => ({
         id: a.sectorId,
         label: a.name,
         value: a.farmed,
@@ -232,27 +244,31 @@ export default function ManagePage() {
     return [...(snap?.players ?? [])]
       .filter((p) => p.createdAt)
       .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
-      .slice(0, 15);
+      .slice(0, 20);
   }, [snap?.players]);
+
+  const chatVisitorId = snap?.me?.id || "";
+  const chatName =
+    snap?.me?.name ||
+    session?.user?.name ||
+    session?.user?.email?.split("@")[0] ||
+    "Admin";
 
   if (status === "unauthenticated") {
     return (
       <main className="flex min-h-[100dvh] flex-col items-center justify-center px-5">
-        <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--ink-faint)]">
-          Manage
-        </p>
-        <h1 className="mt-2 font-display text-3xl text-[var(--ink)]">
-          Sign in required
+        <h1 className="font-display text-3xl text-[var(--ink)]">
+          Please sign in
         </h1>
         <p className="mt-2 mb-4 max-w-sm text-center text-sm text-[var(--ink-muted)]">
-          Analytics are limited to admins. Sign in with Google to continue.
+          Only helpers can open this page. Sign in with Google.
         </p>
         <GoogleSignInButton callbackUrl="/manage" label="Sign in with Google" />
         <Link
           href="/play"
-          className="mt-6 font-mono text-[11px] text-[var(--sand)] underline"
+          className="mt-6 text-[13px] text-[var(--sand)] underline"
         >
-          Back to play
+          Back to the game
         </Link>
       </main>
     );
@@ -261,21 +277,17 @@ export default function ManagePage() {
   if (!loading && snap && !snap.isAdmin && !snap.authDisabled) {
     return (
       <main className="flex min-h-[100dvh] flex-col items-center justify-center px-5">
-        <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--ink-faint)]">
-          Manage
-        </p>
-        <h1 className="mt-2 font-display text-3xl text-[var(--ink)]">
-          Admins only
+        <h1 className="font-display text-3xl text-[var(--ink)]">
+          Helpers only
         </h1>
         <p className="mt-2 max-w-sm text-center text-sm text-[var(--ink-muted)]">
-          This dashboard uses the live game snapshot and is restricted to admin
-          accounts.
+          This page is for people who help run the game.
         </p>
         <Link
           href="/play"
-          className="mt-6 font-mono text-[11px] text-[var(--sand)] underline"
+          className="mt-6 text-[13px] text-[var(--sand)] underline"
         >
-          Back to play
+          Back to the game
         </Link>
       </main>
     );
@@ -286,17 +298,11 @@ export default function ManagePage() {
       <div className="mx-auto w-full max-w-4xl">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--ink-faint)]">
-              Manage · live snapshot
-            </p>
-            <h1 className="mt-1 font-display text-3xl text-[var(--ink)]">
-              Analytics
+            <h1 className="font-display text-3xl text-[var(--ink)]">
+              Game look-see
             </h1>
-            <p className="mt-1 text-[12px] text-[var(--ink-muted)]">
-              Built from <code className="text-[var(--sand)]">/api/game?full=1</code>{" "}
-              — no extra endpoints. Active ={" "}
-              <span className="text-[var(--ink)]">updatedAt</span> in window;
-              new = <span className="text-[var(--ink)]">createdAt</span>.
+            <p className="mt-1 max-w-md text-[14px] text-[var(--ink-muted)]">
+              See who just joined, read the chat, and check who is winning.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -304,228 +310,221 @@ export default function ManagePage() {
               type="button"
               onClick={() => void load()}
               disabled={loading}
-              className="rounded-sm border border-[var(--line)] px-3 py-1.5 font-mono text-[11px] text-[var(--sand)] hover:border-[var(--sand)] disabled:opacity-40"
+              className="rounded-sm border border-[var(--line)] px-3 py-1.5 text-[13px] font-semibold text-[var(--sand)] hover:border-[var(--sand)] disabled:opacity-40"
             >
               {loading ? "Loading…" : "Refresh"}
             </button>
             <Link
               href="/play"
-              className="rounded-sm border border-[var(--line)] px-3 py-1.5 font-mono text-[11px] text-[var(--ink-muted)] hover:text-[var(--sand)]"
+              className="rounded-sm border border-[var(--line)] px-3 py-1.5 text-[13px] text-[var(--ink-muted)] hover:text-[var(--sand)]"
             >
               Play
             </Link>
             <Link
               href="/edit"
-              className="rounded-sm border border-[var(--line)] px-3 py-1.5 font-mono text-[11px] text-[var(--ink-muted)] hover:text-[var(--sand)]"
+              className="rounded-sm border border-[var(--line)] px-3 py-1.5 text-[13px] text-[var(--ink-muted)] hover:text-[var(--sand)]"
             >
-              Map edit
+              Edit map
             </Link>
           </div>
         </div>
 
         {error && (
-          <p className="mt-4 rounded-sm border border-[#6a3f3a] px-3 py-2 text-[12px] text-[#e88a7a]">
+          <p className="mt-4 rounded-sm border border-[#6a3f3a] px-3 py-2 text-[13px] text-[#e88a7a]">
             {error}
           </p>
         )}
 
         {loading && !snap && (
-          <p className="mt-8 text-[13px] text-[var(--ink-faint)]">
-            Loading snapshot…
+          <p className="mt-8 text-[14px] text-[var(--ink-faint)]">
+            Loading the game…
           </p>
         )}
 
         {snap && (
           <div className="mt-6 space-y-8">
+            {/* 1) Recent joins — top */}
             <section>
-              <h2 className="font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--ink-faint)]">
-                World
+              <h2 className="font-display text-xl text-[var(--ink)]">
+                New players
               </h2>
-              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                <StatCard label="Players" value={String(users.total)} />
-                <StatCard label="Settled" value={String(users.settled)} />
-                <StatCard
-                  label="Sectors"
+              <p className="mt-0.5 text-[13px] text-[var(--ink-muted)]">
+                People who signed up most recently
+              </p>
+              <ul className="mt-3 space-y-1.5">
+                {recentJoins.length === 0 && (
+                  <li className="text-[13px] text-[var(--ink-faint)]">
+                    Nobody new yet
+                  </li>
+                )}
+                {recentJoins.map((p) => {
+                  const home =
+                    p.homeSectorId && !isAzadHomeId(p.homeSectorId)
+                      ? snap.sectors.find((s) => s.id === p.homeSectorId)?.name
+                      : p.homeSectorId
+                        ? "Azad Umeed"
+                        : null;
+                  return (
+                    <li
+                      key={p.id}
+                      className="flex items-center justify-between gap-2 rounded-sm border border-[var(--line)] bg-[var(--wash)] px-3 py-2 text-[13px]"
+                    >
+                      <span className="min-w-0 truncate">
+                        <strong style={{ color: p.color }}>{p.name}</strong>
+                        <span className="ml-2 text-[var(--ink-muted)]">
+                          {home
+                            ? `lives in ${home}`
+                            : "has not picked a home yet"}
+                          {" · "}
+                          {GOLD_COIN}
+                          {formatGoldCompact(p.totalFarmed || 0)} gold
+                        </span>
+                      </span>
+                      <span
+                        className="shrink-0 text-[12px] text-[var(--ink-faint)]"
+                        title={
+                          p.createdAt ? formatWhen(p.createdAt) : undefined
+                        }
+                      >
+                        {p.createdAt ? timeAgo(p.createdAt, now) : "—"}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+
+            {/* 2) Full chat */}
+            <section>
+              {chatVisitorId ? (
+                <ManageChat
+                  visitorId={chatVisitorId}
+                  displayName={chatName}
+                />
+              ) : (
+                <div className="rounded-sm border border-[var(--line)] bg-[var(--wash)] px-3 py-6 text-center text-[13px] text-[var(--ink-muted)]">
+                  Sign in fully to use chat here.
+                </div>
+              )}
+            </section>
+
+            {/* 3) Simple counts */}
+            <section>
+              <h2 className="font-display text-xl text-[var(--ink)]">
+                Quick numbers
+              </h2>
+              <p className="mt-0.5 text-[13px] text-[var(--ink-muted)]">
+                Easy totals for the whole map
+              </p>
+              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                <EasyCard title="People in the game" value={String(users.total)} />
+                <EasyCard
+                  title="Have a home"
+                  value={String(users.settled)}
+                  note="They planted a house"
+                />
+                <EasyCard
+                  title="Map areas"
                   value={String(snap.sectors.length)}
                 />
-                <StatCard
-                  label="Storage"
-                  value={snap.storageBackend}
-                  hint="From game snapshot"
-                />
-              </div>
-            </section>
-
-            <section>
-              <h2 className="font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--ink-faint)]">
-                Users — new vs active
-              </h2>
-              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                <StatCard
-                  label="New · 24h"
+                <EasyCard
+                  title="Joined today"
                   value={String(users.newDay)}
-                  hint="createdAt within 24h"
                 />
-                <StatCard
-                  label="New · 7d"
-                  value={String(users.newWeek)}
-                  hint="createdAt within 7 days"
-                />
-                <StatCard
-                  label="New · 30d"
-                  value={String(users.newMonth)}
-                  hint="createdAt within 30 days"
-                />
-                <StatCard
-                  label="Active · 24h"
+                <EasyCard
+                  title="Played today"
                   value={String(users.activeDay)}
-                  hint="updatedAt within 24h"
                 />
-                <StatCard
-                  label="Active · 7d"
-                  value={String(users.activeWeek)}
-                  hint="updatedAt within 7 days"
-                />
-                <StatCard
-                  label="Active · 30d"
-                  value={String(users.activeMonth)}
-                  hint="updatedAt within 30 days"
+                <EasyCard
+                  title="Joined this week"
+                  value={String(users.newWeek)}
                 />
               </div>
             </section>
 
+            {/* 4) Leaders */}
             <section className="grid gap-6 sm:grid-cols-2">
               <div>
-                <h2 className="mb-2 font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--ink-faint)]">
-                  Top farmers
+                <h2 className="font-display text-xl text-[var(--ink)]">
+                  Gold leaders
                 </h2>
+                <p className="mb-3 mt-0.5 text-[13px] text-[var(--ink-muted)]">
+                  Who farmed the most gold
+                </p>
                 <MiniBars items={topFarmers} empty="No players yet" />
               </div>
               <div>
-                <h2 className="mb-2 font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--ink-faint)]">
-                  Top sectors (farmed)
+                <h2 className="font-display text-xl text-[var(--ink)]">
+                  Strongest areas
                 </h2>
-                <MiniBars items={sectorBars} empty="No sectors yet" />
+                <p className="mb-3 mt-0.5 text-[13px] text-[var(--ink-muted)]">
+                  Which sector has the most gold
+                </p>
+                <MiniBars items={sectorBars} empty="No areas yet" />
               </div>
             </section>
 
+            {/* 5) One sector peek */}
             <section>
               <div className="flex flex-wrap items-end justify-between gap-2">
-                <h2 className="font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--ink-faint)]">
-                  Sector growth
-                </h2>
+                <div>
+                  <h2 className="font-display text-xl text-[var(--ink)]">
+                    One area up close
+                  </h2>
+                  <p className="mt-0.5 text-[13px] text-[var(--ink-muted)]">
+                    Pick an area to see if it is growing
+                  </p>
+                </div>
                 <select
                   value={selected?.sectorId ?? ""}
                   onChange={(e) => setSectorId(e.target.value)}
-                  className="rounded-sm border border-[var(--line)] bg-[var(--wash)] px-2 py-1 font-mono text-[11px] text-[var(--ink)]"
+                  className="rounded-sm border border-[var(--line)] bg-[var(--wash)] px-2 py-1.5 text-[13px] text-[var(--ink)]"
                 >
                   {analytics.map((a) => (
                     <option key={a.sectorId} value={a.sectorId}>
-                      {a.name} · {GOLD_COIN}
-                      {formatGoldCompact(a.farmed)} · {a.settlers}p
+                      {a.name}
                     </option>
                   ))}
                 </select>
               </div>
               {selected && (
-                <div className="mt-2 rounded-sm border border-[var(--line)] bg-[var(--wash)] p-3">
-                  <div className="flex flex-wrap gap-3 font-mono text-[11px] text-[var(--ink-muted)]">
+                <div className="mt-3 rounded-sm border border-[var(--line)] bg-[var(--wash)] p-3">
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-[13px] text-[var(--ink-muted)]">
                     <span>
-                      Farmed{" "}
+                      Gold:{" "}
                       <strong className="text-[#e8cf8a]">
                         {GOLD_COIN}
                         {formatGoldCompact(selected.farmed)}
                       </strong>
                     </span>
                     <span>
-                      Settlers <strong className="text-[var(--ink)]">{selected.settlers}</strong>
-                    </span>
-                    <span>
-                      Villagers <strong className="text-[var(--ink)]">{selected.villagers}</strong>
-                    </span>
-                    <span>
-                      Buildings <strong className="text-[var(--ink)]">{selected.buildings}</strong>
-                    </span>
-                    <span>
-                      Samples{" "}
+                      People:{" "}
                       <strong className="text-[var(--ink)]">
-                        {selected.history.length}
+                        {selected.settlers}
+                      </strong>
+                    </span>
+                    <span>
+                      Villagers:{" "}
+                      <strong className="text-[var(--ink)]">
+                        {selected.villagers}
+                      </strong>
+                    </span>
+                    <span>
+                      Buildings:{" "}
+                      <strong className="text-[var(--ink)]">
+                        {selected.buildings}
                       </strong>
                     </span>
                   </div>
                   <div className="mt-3">
                     <GrowthSpark history={selected.history} />
                   </div>
-                  <div className="mt-3 max-h-48 overflow-auto">
-                    <table className="w-full text-left font-mono text-[10px]">
-                      <thead className="text-[var(--ink-faint)]">
-                        <tr className="border-b border-[var(--line)]">
-                          <th className="py-1 pr-2 font-normal">When</th>
-                          <th className="py-1 pr-2 font-normal">Farmed</th>
-                          <th className="py-1 pr-2 font-normal">Settlers</th>
-                          <th className="py-1 font-normal">Villagers</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {[...selected.history].reverse().slice(0, 24).map((p) => (
-                          <tr
-                            key={p.ts}
-                            className="border-b border-[var(--line)]/50 text-[var(--ink-muted)]"
-                          >
-                            <td className="py-1 pr-2 whitespace-nowrap">
-                              {formatWhen(p.ts)}
-                            </td>
-                            <td className="py-1 pr-2 text-[#e8cf8a]">
-                              {formatGoldCompact(p.farmed)}
-                            </td>
-                            <td className="py-1 pr-2">{p.settlers}</td>
-                            <td className="py-1">{p.villagers}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
                 </div>
               )}
             </section>
 
-            <section>
-              <h2 className="mb-2 font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--ink-faint)]">
-                Recent joins
-              </h2>
-              <ul className="space-y-1">
-                {recentJoins.length === 0 && (
-                  <li className="text-[12px] text-[var(--ink-faint)]">
-                    No players with createdAt yet
-                  </li>
-                )}
-                {recentJoins.map((p) => (
-                  <li
-                    key={p.id}
-                    className="flex items-center justify-between gap-2 rounded-sm border border-[var(--line)] px-2.5 py-1.5 text-[12px]"
-                  >
-                    <span className="min-w-0 truncate">
-                      <strong style={{ color: p.color }}>{p.name}</strong>
-                      <span className="ml-2 font-mono text-[10px] text-[var(--ink-faint)]">
-                        {p.homeSectorId
-                          ? snap.sectors.find((s) => s.id === p.homeSectorId)
-                              ?.name ?? "settled"
-                          : "unsettled"}{" "}
-                        · {p.buildings?.length || 0}b · {GOLD_COIN}
-                        {formatGoldCompact(p.totalFarmed || 0)}
-                      </span>
-                    </span>
-                    <span className="shrink-0 font-mono text-[10px] text-[var(--ink-faint)]">
-                      {p.createdAt ? formatWhen(p.createdAt) : "—"}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-
-            <p className="pb-8 font-mono text-[9px] text-[var(--ink-faint)]">
-              Snapshot time {formatWhen(snap.serverNow)} · refresh reuses the
-              same game API the client already polls.
+            <p className="pb-8 text-[12px] text-[var(--ink-faint)]">
+              Updated {formatWhen(snap.serverNow)}. Press Refresh for new numbers.
             </p>
           </div>
         )}
