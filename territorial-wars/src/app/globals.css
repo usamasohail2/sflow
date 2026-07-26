@@ -343,19 +343,43 @@ body {
   display: grid;
   place-items: center;
   border-radius: 3px;
-  background: rgba(10, 14, 10, 0.62);
+  background: rgba(10, 14, 10, 0.55);
   pointer-events: none;
 }
 
-.cameo-dock-spinner {
-  width: 1.35rem;
-  height: 1.35rem;
-  margin-top: -0.35rem;
-  border-radius: 999px;
-  border: 2.5px solid rgba(232, 207, 138, 0.22);
-  border-top-color: #f0e0a0;
-  animation: building-sync-spin 0.65s linear infinite;
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.55);
+/* Hammer strike — “building” instead of a spinner */
+.cameo-hammer {
+  position: relative;
+  width: 1.55rem;
+  height: 1.55rem;
+  margin-top: -0.45rem;
+  transform-origin: 78% 82%;
+  animation: cameo-hammer-strike 0.58s ease-in-out infinite;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.65));
+}
+
+.cameo-hammer svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.cameo-hammer-spark {
+  position: absolute;
+  left: 50%;
+  top: 52%;
+  width: 0.55rem;
+  height: 0.55rem;
+  margin-left: -0.1rem;
+  border-radius: 1px;
+  background: #f0e0a0;
+  opacity: 0;
+  transform: scale(0.3);
+  box-shadow:
+    0 0 6px rgba(240, 224, 160, 0.9),
+    -4px -2px 0 -1px rgba(232, 207, 138, 0.85),
+    3px -3px 0 -1px rgba(255, 255, 255, 0.55);
+  animation: cameo-hammer-spark 0.58s ease-in-out infinite;
 }
 
 .cameo-dock-progress {
@@ -373,18 +397,55 @@ body {
   content: "";
   position: absolute;
   inset: 0;
-  width: 42%;
+  width: 38%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #c4a45a, #f0e0a0);
-  animation: cameo-dock-progress-slide 0.9s ease-in-out infinite;
+  background: linear-gradient(90deg, #8a6a35, #f0e0a0);
+  animation: cameo-dock-progress-build 0.58s ease-in-out infinite;
 }
 
-@keyframes cameo-dock-progress-slide {
+@keyframes cameo-hammer-strike {
+  0%,
+  35% {
+    transform: rotate(-42deg);
+  }
+  48% {
+    transform: rotate(22deg);
+  }
+  58% {
+    transform: rotate(10deg);
+  }
+  72%,
+  100% {
+    transform: rotate(-38deg);
+  }
+}
+
+@keyframes cameo-hammer-spark {
+  0%,
+  45% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  52% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(0.4) translate(2px, -3px);
+  }
+}
+
+@keyframes cameo-dock-progress-build {
   0% {
-    transform: translateX(-120%);
+    transform: translateX(-110%) scaleX(0.7);
+  }
+  50% {
+    transform: translateX(40%) scaleX(1);
   }
   100% {
-    transform: translateX(280%);
+    transform: translateX(260%) scaleX(0.85);
   }
 }
 

@@ -609,6 +609,34 @@ const KILL_FEED_FADE_MS = 1_800;
 
 type KillFeedItem = { id: string; event: GameEvent; shownAt: number };
 
+/** Dock overlay: hammer strikes while a buy/build syncs */
+function CameoBuildLoader() {
+  return (
+    <span className="cameo-dock-loader" aria-hidden>
+      <span className="cameo-hammer">
+        <svg viewBox="0 0 24 24" aria-hidden>
+          <rect x="11.2" y="8" width="2.2" height="13" rx="1" fill="#8b5a2b" />
+          <rect
+            x="11.5"
+            y="9"
+            width="0.7"
+            height="10"
+            rx="0.3"
+            fill="#c4a06a"
+            opacity="0.45"
+          />
+          <rect x="6.5" y="4.2" width="11" height="5.2" rx="1.2" fill="#9aa3a0" />
+          <rect x="6.5" y="4.2" width="11" height="2" rx="1" fill="#c5ccc8" />
+          <rect x="7.4" y="5.2" width="2.4" height="3.2" rx="0.4" fill="#6a726c" />
+          <rect x="14.2" y="5.2" width="2.4" height="3.2" rx="0.4" fill="#6a726c" />
+        </svg>
+        <span className="cameo-hammer-spark" />
+      </span>
+      <span className="cameo-dock-progress" />
+    </span>
+  );
+}
+
 export function PlayShell() {
   const [snap, setSnap] = useState<GameSnapshot | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -4867,7 +4895,7 @@ export function PlayShell() {
                     }
                     title={
                       buyingRocket
-                        ? "Stocking rocket…"
+                        ? "Building rocket…"
                         : !me.house
                           ? "Rebuild your house first"
                           : `Buy rocket — ${GOLD_COIN}${ROCKET_COST} · +1 attack (expended when you fire)`
@@ -4891,14 +4919,9 @@ export function PlayShell() {
                       {ROCKET_COST}
                     </span>
                     <span className="cameo-label">
-                      {buyingRocket ? "Buying…" : "Rocket"}
+                      {buyingRocket ? "Building…" : "Rocket"}
                     </span>
-                    {buyingRocket && (
-                      <span className="cameo-dock-loader" aria-hidden>
-                        <span className="cameo-dock-spinner" />
-                        <span className="cameo-dock-progress" />
-                      </span>
-                    )}
+                    {buyingRocket && <CameoBuildLoader />}
                   </button>
 
                   <div className="w-px shrink-0 self-stretch bg-[var(--line)]" />
@@ -4968,12 +4991,7 @@ export function PlayShell() {
                         <span className="cameo-label">
                           {syncing ? "Building…" : shortLabel}
                         </span>
-                        {syncing && (
-                          <span className="cameo-dock-loader" aria-hidden>
-                            <span className="cameo-dock-spinner" />
-                            <span className="cameo-dock-progress" />
-                          </span>
-                        )}
+                        {syncing && <CameoBuildLoader />}
                       </button>
                     );
                   })}
