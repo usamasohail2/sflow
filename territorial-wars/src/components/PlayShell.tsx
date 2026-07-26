@@ -668,6 +668,7 @@ export function PlayShell() {
   const busyRef = useRef(false);
   const settleGuardUntil = useRef(0);
   const lastGoodMe = useRef<Player | null>(null);
+  const sectorHistoryRef = useRef<GameSnapshot["sectorHistory"]>({});
   const lastActionErrorRef = useRef<string | null>(null);
   const snapRef = useRef(snap);
   snapRef.current = snap;
@@ -767,6 +768,9 @@ export function PlayShell() {
       }
     }
 
+    if (next.sectorHistory && Object.keys(next.sectorHistory).length > 0) {
+      sectorHistoryRef.current = next.sectorHistory;
+    }
     setSnap(next);
     if (next.me) setDisplayGold(next.me.gold);
     setSelectedId((cur) => {
@@ -920,13 +924,27 @@ export function PlayShell() {
     }
   };
 
-  const load = useCallback(async () => {
+  const pollInFlight = useRef(false);
+  const lastFullPollAt = useRef(0);
+
+  const load = useCallback(async (opts?: { full?: boolean }) => {
+    // Overlapping 4s polls while a slow sync is running inflated latency to 5s+
+    if (pollInFlight.current) return;
+    pollInFlight.current = true;
+
     const invite = captureInviteFromUrl();
-    const q = invite ? `?invite=${encodeURIComponent(invite)}` : "";
+    const wantFull =
+      Boolean(opts?.full) ||
+      Date.now() - lastFullPollAt.current > 60_000 ||
+      lastFullPollAt.current === 0;
+    const params = new URLSearchParams();
+    if (invite) params.set("invite", invite);
+    if (wantFull) params.set("full", "1");
+    const q = params.toString() ? `?${params}` : "";
     const started = Date.now();
     setClientHealthRaw((h) => ({ ...h, lastAttemptAt: started }));
     try {
-      const res = await fetch(`/api/game${q}`);
+      const res = await fetch(`/api/game${q}`, { cache: "no-store" });
       const latencyMs = Date.now() - started;
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as {
@@ -935,6 +953,7 @@ export function PlayShell() {
         throw new Error(body?.error || `Game sync HTTP ${res.status}`);
       }
       const data = (await res.json()) as GameSnapshot;
+      if (wantFull) lastFullPollAt.current = Date.now();
 
       // Guest mode only: restore last guest if the cookie was reset.
       if (
@@ -990,7 +1009,16 @@ export function PlayShell() {
         identityChecked.current = true;
       }
 
-      applySnap(data);
+      // Light polls may omit history — keep last full sample for analytics
+      const hasHistory =
+        Boolean(data.sectorHistory) &&
+        Object.keys(data.sectorHistory).length > 0;
+      applySnap({
+        ...data,
+        sectorHistory: hasHistory
+          ? data.sectorHistory
+          : sectorHistoryRef.current,
+      });
       setClientHealthRaw((h) => ({
         ...h,
         lastOkAt: Date.now(),
@@ -1012,14 +1040,16 @@ export function PlayShell() {
         lastLatencyMs: Date.now() - started,
         online: typeof navigator !== "undefined" ? navigator.onLine : h.online,
       }));
+    } finally {
+      pollInFlight.current = false;
     }
   }, [applySnap]);
 
   useEffect(() => {
-    void load();
+    void load({ full: true });
     const id = window.setInterval(() => {
       // Don't poll-overwrite while a settle/build write is in flight
-      if (busyRef.current) return;
+      if (busyRef.current || pollInFlight.current) return;
       void load();
     }, 4000);
     return () => window.clearInterval(id);

@@ -138,9 +138,13 @@ export function HealthPanel({
               ok={
                 client.poll.lastLatencyMs == null
                   ? null
-                  : client.poll.lastLatencyMs < 2000
+                  : client.poll.lastLatencyMs < 1500
               }
             />
+            <p className="mt-1 font-mono text-[9px] text-[var(--ink-faint)]">
+              Poll = full /api/game sync. Probe = lightweight /api/health.
+              Overlapping polls are skipped while one is in flight.
+            </p>
             <Row
               label="Fail streak"
               value={String(client.poll.failStreak)}

@@ -97,11 +97,19 @@ function withGuestCookie(res: NextResponse, guestId?: string) {
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const invite = url.searchParams.get("invite");
+  /** Regular polls skip history reads; analytics can pass full=1 */
+  const includeHistory =
+    url.searchParams.get("full") === "1" ||
+    url.searchParams.get("history") === "1";
+  const t0 = Date.now();
   const { identity, setCookie } = await resolveIdentity();
 
   if (!identity) {
-    const snap = await getSnapshot(null);
-    return NextResponse.json(snap);
+    const snap = await getSnapshot(null, { includeHistory });
+    const res = NextResponse.json(snap);
+    res.headers.set("Server-Timing", `total;dur=${Date.now() - t0}`);
+    res.headers.set("Cache-Control", "no-store");
+    return res;
   }
 
   await ensurePlayer(
@@ -111,8 +119,14 @@ export async function GET(req: Request) {
     identity.image,
     invite
   );
-  const snap = await getSnapshot(identity.id, { email: identity.email });
-  return withGuestCookie(NextResponse.json(snap), setCookie);
+  const snap = await getSnapshot(identity.id, {
+    email: identity.email,
+    includeHistory,
+  });
+  const res = withGuestCookie(NextResponse.json(snap), setCookie);
+  res.headers.set("Server-Timing", `total;dur=${Date.now() - t0}`);
+  res.headers.set("Cache-Control", "no-store");
+  return res;
 }
 
 export async function POST(req: Request) {

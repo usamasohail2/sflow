@@ -119,6 +119,13 @@ const g = globalThis as unknown as {
   __itwBlobHydratedAt?: number;
   __itwBlobDirty?: boolean;
   __itwFlushPromise?: Promise<void> | null;
+  /** One-shot migration: dummy E-7 enemy already purged in this isolate */
+  __itwDummyPurged?: boolean;
+  /** Last time sector history was checked/written (skip reads between) */
+  __itwSectorHistAt?: number;
+  __itwSectorHistCache?: Record<string, SectorStatsPoint[]>;
+  /** playerId → last invite-index sync time */
+  __itwInviteSyncAt?: Map<string, number>;
 };
 function mem(): MemStore {
   if (!g.__itwMem) {
@@ -901,8 +908,18 @@ async function recordSectorHistories(
   players: Player[],
   spots: ResourceSpot[]
 ): Promise<Record<string, SectorStatsPoint[]>> {
-  const hist = await getSectorHistory();
   const now = Date.now();
+  // Polls every ~4s — don't re-read/write history every time.
+  // Serve the isolate cache until the hourly sample window approaches.
+  const checkedAt = g.__itwSectorHistAt ?? 0;
+  if (
+    g.__itwSectorHistCache &&
+    now - checkedAt < Math.min(5 * 60_000, SECTOR_HISTORY_INTERVAL_MS / 2)
+  ) {
+    return g.__itwSectorHistCache;
+  }
+
+  const hist = await getSectorHistory();
   let changed = false;
 
   for (const sector of sectors) {
@@ -943,6 +960,8 @@ async function recordSectorHistories(
   }
 
   if (changed) await setJSON(K_SECTOR_HISTORY, hist);
+  g.__itwSectorHistAt = now;
+  g.__itwSectorHistCache = hist;
   return hist;
 }
 
@@ -1042,10 +1061,16 @@ async function doBootstrap(): Promise<void> {
 
 /** Drop the old dummy E-7 enemy sector + Rival Garrison bot if still present */
 async function removeDummyEnemySector(): Promise<void> {
+  // Avoid 2+ storage round-trips on every poll once the world is clean
+  if (g.__itwDummyPurged) return;
+
   const sectors = (await getJSON<Sector[]>(K_SECTORS)) ?? [];
   const hasSector = sectors.some((s) => s.id === DUMMY_ENEMY_SECTOR_ID);
   const bot = await getPlayer(BOT_ID);
-  if (!hasSector && !bot) return;
+  if (!hasSector && !bot) {
+    g.__itwDummyPurged = true;
+    return;
+  }
 
   if (hasSector) {
     await setJSON(
@@ -1084,6 +1109,7 @@ async function removeDummyEnemySector(): Promise<void> {
   await hDel(K_INVITES, "RIVAL0");
   await delKey(kOwner(DUMMY_ENEMY_SECTOR_ID));
   await flushStore();
+  g.__itwDummyPurged = true;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1228,11 +1254,18 @@ export async function ensurePlayer(
     me = { ...me, inviteCode, updatedAt: now };
     await setPlayer(me);
     await hSet(K_INVITES, inviteCode, id);
+    if (!g.__itwInviteSyncAt) g.__itwInviteSyncAt = new Map();
+    g.__itwInviteSyncAt.set(id, now);
   } else {
-    // Keep the invite index in sync (survives store migrations)
-    const mapped = await hGet(K_INVITES, me.inviteCode);
-    if (mapped !== id) {
-      await hSet(K_INVITES, me.inviteCode, id);
+    // Keep the invite index in sync — but not on every 4s poll
+    if (!g.__itwInviteSyncAt) g.__itwInviteSyncAt = new Map();
+    const lastSync = g.__itwInviteSyncAt.get(id) ?? 0;
+    if (now - lastSync > 5 * 60_000) {
+      const mapped = await hGet(K_INVITES, me.inviteCode);
+      if (mapped !== id) {
+        await hSet(K_INVITES, me.inviteCode, id);
+      }
+      g.__itwInviteSyncAt.set(id, now);
     }
   }
 
@@ -1250,37 +1283,43 @@ export async function ensurePlayer(
     }
   }
 
-  const spots = await getSpots();
-  const { player } = await accruePlayer(me, spots, true);
-  return player;
+  // Accrual happens in getSnapshot — avoid a second getSpots + write on every poll
+  return me;
 }
 
 export async function getSnapshot(
   meId?: string | null,
-  opts?: { email?: string | null }
+  opts?: { email?: string | null; includeHistory?: boolean }
 ): Promise<GameSnapshot> {
+  const includeHistory = opts?.includeHistory !== false;
   await bootstrap();
   await removeDummyEnemySector();
 
-  const [sectors, spotsAll, playersAll] = await Promise.all([
-    getSectors(),
-    getSpots(),
-    getAllPlayers(),
-  ]);
+  // One parallel storage wave instead of chained getSectors→bootstrap→reads
+  const [sectors, spotsAll, playersAll, allEvents, tutorialFlag] =
+    await Promise.all([
+      getJSON<Sector[]>(K_SECTORS).then((v) => v ?? []),
+      getSpots(),
+      getAllPlayers(),
+      recentEvents(),
+      meId ? hGet(K_TUTORIAL_BACKUP, meId) : Promise.resolve(null),
+    ]);
 
   let me = meId ? playersAll.find((p) => p.id === meId) ?? null : null;
+  let spotsWorking = spotsAll;
   if (me) {
-    const { player } = await accruePlayer(me, spotsAll, true);
-    me = player;
+    const accrued = await accruePlayer(me, spotsWorking, true);
+    me = accrued.player;
+    if (accrued.spotsChanged) spotsWorking = accrued.spots;
   }
 
   const players = playersAll.map((p) =>
-    p.id === me?.id ? publicPlayer(me) : publicPlayer(projectPlayer(p, spotsAll))
+    p.id === me?.id ? publicPlayer(me) : publicPlayer(projectPlayer(p, spotsWorking))
   );
 
   // Ensure every settled home has easy nodes so rival walk loops have a target
-  let spotsWorking = spotsAll;
   const settled = playersAll.filter((p) => p.homeSectorId && p.house);
+  let seeded = false;
   for (const p of settled) {
     if (!p.house || !p.homeSectorId) continue;
     if (isAzadHomeId(p.homeSectorId)) {
@@ -1288,6 +1327,7 @@ export async function getSnapshot(
         !spotsWorking.some((s) => s.sectorId === p.homeSectorId && s.kind === "easy")
       ) {
         spotsWorking = seedSpotsForAzad(p.homeSectorId, p.house, spotsWorking);
+        seeded = true;
       }
       continue;
     }
@@ -1295,9 +1335,10 @@ export async function getSnapshot(
     if (!sector) continue;
     if (!spotsWorking.some((s) => s.sectorId === sector.id && s.kind === "easy")) {
       spotsWorking = seedSpotsForSector(sector, p.house, spotsWorking);
+      seeded = true;
     }
   }
-  if (spotsWorking !== spotsAll) await setSpots(spotsWorking);
+  if (seeded) await setSpots(spotsWorking);
 
   // Easy nodes + contested claimable finds are world-visible;
   // legacy refillable hiddens stay private to discoverers/owners.
@@ -1308,7 +1349,6 @@ export async function getSnapshot(
     return s.ownerId === me.id || me.discoveredSpotIds.includes(s.id);
   });
 
-  const allEvents = await recentEvents();
   const events = me
     ? allEvents
         .filter((e) => e.attackerId === me!.id || e.defenderId === me!.id)
@@ -1316,11 +1356,10 @@ export async function getSnapshot(
     : [];
   const globalEvents = allEvents.slice(-40);
 
-  const sectorHistory = await recordSectorHistories(
-    sectors,
-    playersAll,
-    spotsWorking
-  );
+  // History is for analytics — don't block every poll on a storage read
+  const sectorHistory = includeHistory
+    ? await recordSectorHistories(sectors, playersAll, spotsWorking)
+    : g.__itwSectorHistCache ?? {};
 
   // Persist any accrual/seed/bootstrap writes made during this request
   await flushStore();
@@ -1328,10 +1367,6 @@ export async function getSnapshot(
   const inviteCount = meId
     ? playersAll.filter((p) => p.invitedBy === meId).length
     : 0;
-
-  const tutorialTestActive = meId
-    ? Boolean(await hGet(K_TUTORIAL_BACKUP, meId))
-    : false;
 
   return {
     sectors,
@@ -1348,7 +1383,7 @@ export async function getSnapshot(
     isAdmin: isAdminEmail(opts?.email ?? me?.email),
     storageBackend: storageBackend(),
     inviteCount,
-    tutorialTestActive,
+    tutorialTestActive: Boolean(tutorialFlag),
   };
 }
 
