@@ -57,9 +57,17 @@ export async function PUT(req: Request) {
           ? raw.id.trim()
           : `sec_${Math.random().toString(36).slice(2, 10)}`;
       const prev = byId.get(id);
+      const code =
+        typeof raw.code === "string" && raw.code.trim()
+          ? raw.code.trim().slice(0, 32)
+          : prev?.code?.trim() || name;
       return {
         id,
         name,
+        code,
+        tag: prev?.tag,
+        taggedBy: prev?.taggedBy,
+        taggedAt: prev?.taggedAt,
         ring: closeRing(ring),
         createdAt: prev?.createdAt ?? now,
         updatedAt: now,

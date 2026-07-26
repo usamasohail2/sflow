@@ -2,11 +2,38 @@ export type LatLng = { lat: number; lng: number };
 
 export type Sector = {
   id: string;
+  /** Display name — usually `code` + optional `tag` */
   name: string;
+  /**
+   * Immutable base label (e.g. H8). Locked on first rename / normalize.
+   * Falls back to `name` when missing.
+   */
+  code?: string;
+  /** Custom suffix set by the sector's current top scorer */
+  tag?: string;
+  taggedBy?: string;
+  taggedAt?: number;
   ring: [number, number][];
   createdAt: number;
   updatedAt: number;
 };
+
+/** Base sector code (H8, B17, …) — never includes the custom tag */
+export function sectorBaseCode(s: Pick<Sector, "name" | "code">): string {
+  const c = s.code?.trim();
+  if (c) return c;
+  return String(s.name || "").trim();
+}
+
+/** Full label shown on the map / boards */
+export function sectorDisplayName(
+  s: Pick<Sector, "name" | "code" | "tag">
+): string {
+  const code = sectorBaseCode(s);
+  const tag = s.tag?.trim();
+  if (!code) return tag || "Sector";
+  return tag ? `${code} ${tag}` : code;
+}
 
 export type ResourceSpotKind = "easy" | "hidden";
 

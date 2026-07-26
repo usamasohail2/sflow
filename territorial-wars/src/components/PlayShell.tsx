@@ -90,6 +90,7 @@ import {
   isGemClaimEvent,
   isRazeEvent,
   makeAzadPlacementSector,
+  sectorBaseCode,
   shovelDigYield,
 } from "@/lib/gameTypes";
 import { pointInOrNearRing, pointInRing } from "@/lib/geo";
@@ -663,6 +664,10 @@ export function PlayShell() {
   const [displayGold, setDisplayGold] = useState(0);
   const [showMissions, setShowMissions] = useState(false);
   const [showRanks, setShowRanks] = useState(false);
+  const [showSectorRename, setShowSectorRename] = useState(false);
+  const [sectorTagDraft, setSectorTagDraft] = useState("");
+  const [sectorRenameSaving, setSectorRenameSaving] = useState(false);
+  const wasSectorTop = useRef(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [analyticsSectorId, setAnalyticsSectorId] = useState<string | null>(
     null
@@ -1447,6 +1452,80 @@ export function PlayShell() {
     }
     return Array.from(bySector.values()).sort((a, b) => b.farmed - a.farmed);
   }, [snap]);
+
+  /** Top individual scorer inside the player's home sector */
+  const homeSectorTopPlayerId = useMemo(() => {
+    if (!me?.homeSectorId || isAzadHomeId(me.homeSectorId)) return null;
+    let bestId: string | null = null;
+    let best = -1;
+    for (const p of snap?.players ?? []) {
+      if (p.homeSectorId !== me.homeSectorId) continue;
+      const farmed = p.totalFarmed || 0;
+      if (farmed > best) {
+        best = farmed;
+        bestId = p.id;
+      }
+    }
+    return bestId;
+  }, [me?.homeSectorId, snap?.players]);
+
+  const canRenameHomeSector = Boolean(
+    me && homeSectorTopPlayerId && me.id === homeSectorTopPlayerId
+  );
+
+  const homeSectorRecord = useMemo(() => {
+    if (!me?.homeSectorId || isAzadHomeId(me.homeSectorId)) return null;
+    return snap?.sectors.find((s) => s.id === me.homeSectorId) ?? null;
+  }, [me?.homeSectorId, snap?.sectors]);
+
+  const openSectorRename = useCallback(() => {
+    if (!homeSectorRecord || !canRenameHomeSector) return;
+    setSectorTagDraft(homeSectorRecord.tag?.trim() || "");
+    setShowSectorRename(true);
+    setShowRanks(false);
+    setShowMenu(false);
+  }, [homeSectorRecord, canRenameHomeSector]);
+
+  const saveSectorRename = useCallback(async () => {
+    if (!homeSectorRecord || !canRenameHomeSector || sectorRenameSaving) return;
+    setSectorRenameSaving(true);
+    try {
+      const data = await act(
+        "rename_sector",
+        { sectorId: homeSectorRecord.id, tag: sectorTagDraft },
+        "Naming sector…"
+      );
+      if (data) {
+        setShowSectorRename(false);
+        showToast(
+          sectorTagDraft.trim()
+            ? `Sector named ${String((data as { name?: string }).name || homeSectorRecord.name)}`
+            : "Sector tag cleared"
+        );
+      }
+    } finally {
+      setSectorRenameSaving(false);
+    }
+  }, [
+    homeSectorRecord,
+    canRenameHomeSector,
+    sectorRenameSaving,
+    sectorTagDraft,
+    // act / showToast are stable enough via closure for this shell
+  ]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Modal when you become #1 in your sector (also after reclaiming the crown)
+  useEffect(() => {
+    if (canRenameHomeSector && homeSectorRecord) {
+      if (!wasSectorTop.current) {
+        wasSectorTop.current = true;
+        setSectorTagDraft(homeSectorRecord.tag?.trim() || "");
+        setShowSectorRename(true);
+      }
+    } else {
+      wasSectorTop.current = false;
+    }
+  }, [canRenameHomeSector, homeSectorRecord]);
 
   const sectorAnalyticsRows = useMemo(
     () =>
@@ -3208,6 +3287,88 @@ export function PlayShell() {
         />
       )}
 
+      {/* Top scorer — name your sector (code + custom tag) */}
+      {showSectorRename && homeSectorRecord && canRenameHomeSector && (
+        <div
+          className="absolute inset-0 z-[45] flex items-end justify-center bg-black/55 p-3 sm:items-center"
+          onClick={() => setShowSectorRename(false)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setShowSectorRename(false);
+          }}
+          role="presentation"
+        >
+          <div
+            className="hud-panel w-full max-w-sm p-4"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-label="Rename sector"
+          >
+            <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--sand)]">
+              Sector crown
+            </p>
+            <h2 className="mt-1 font-display text-xl text-[var(--ink)]">
+              Name your sector
+            </h2>
+            <p className="mt-1 text-[12px] text-[var(--ink-muted)]">
+              You&apos;re the top scorer in{" "}
+              <strong className="text-[var(--ink)]">
+                {sectorBaseCode(homeSectorRecord)}
+              </strong>
+              . Add a title — it shows as{" "}
+              <span className="text-[var(--sand)]">
+                {sectorBaseCode(homeSectorRecord)}
+                {sectorTagDraft.trim()
+                  ? ` ${sectorTagDraft.trim()}`
+                  : " …"}
+              </span>
+              .
+            </p>
+            <label className="mt-3 block">
+              <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-[var(--ink-faint)]">
+                Your title
+              </span>
+              <div className="mt-1 flex items-center gap-1.5 rounded-sm border border-[var(--line)] bg-[var(--wash)] px-2.5 py-2">
+                <span className="shrink-0 font-mono text-[12px] font-bold text-[var(--ink-muted)]">
+                  {sectorBaseCode(homeSectorRecord)}
+                </span>
+                <input
+                  value={sectorTagDraft}
+                  onChange={(e) => setSectorTagDraft(e.target.value)}
+                  maxLength={28}
+                  placeholder="e.g. Empire"
+                  className="min-w-0 flex-1 bg-transparent text-[13px] font-semibold text-[var(--ink)] outline-none placeholder:text-[var(--ink-faint)]"
+                  autoFocus
+                />
+              </div>
+            </label>
+            <p className="mt-2 font-mono text-[10px] text-[var(--ink-faint)]">
+              Preview:{" "}
+              <span className="text-[var(--sand)]">
+                {sectorBaseCode(homeSectorRecord)}
+                {sectorTagDraft.trim() ? ` ${sectorTagDraft.trim()}` : ""}
+              </span>
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setShowSectorRename(false)}
+                className="flex-1 rounded-sm border border-[var(--line)] px-3 py-2.5 text-sm text-[var(--ink-muted)] hover:border-[var(--sand)] hover:text-[var(--sand)]"
+              >
+                Later
+              </button>
+              <button
+                type="button"
+                disabled={sectorRenameSaving || busy}
+                onClick={() => void saveSectorRename()}
+                className="flex-1 rounded-sm bg-[var(--signal)] px-3 py-2.5 text-sm font-bold text-white disabled:opacity-40"
+              >
+                {sectorRenameSaving ? "Saving…" : "Save name"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Full leaderboard modal — sectors + Azad Umeed */}
       {showRanks && (
         <div
@@ -3264,6 +3425,7 @@ export function PlayShell() {
                   )}
                   {sectorRanking.map((r, i) => {
                     const mine = me?.homeSectorId === r.id;
+                    const canRenameHere = mine && canRenameHomeSector;
                     return (
                       <li key={r.id} className="flex gap-1">
                         <button
@@ -3301,6 +3463,17 @@ export function PlayShell() {
                             {GOLD_COIN} {formatGoldCompact(r.farmed)}
                           </span>
                         </button>
+                        {canRenameHere && (
+                          <button
+                            type="button"
+                            onClick={openSectorRename}
+                            className="shrink-0 rounded-sm border border-[var(--sand)] px-2 py-2 font-mono text-[10px] text-[var(--sand)] hover:bg-[var(--wash)]"
+                            title="Rename your sector"
+                            aria-label="Rename your sector"
+                          >
+                            ✎
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => openSectorAnalytics(r.id)}

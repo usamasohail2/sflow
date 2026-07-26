@@ -20,6 +20,7 @@ import {
   getSnapshot,
   placeHouse,
   renamePlayer,
+  renameSectorTag,
   resetPlayerProgress,
   razeBuilding,
   spawnRoamFind,
@@ -157,6 +158,8 @@ export async function POST(req: Request) {
     /** Google Maps business review reward */
     placeKey?: string;
     placeName?: string;
+    /** Custom sector tag (top scorer rename) */
+    tag?: string;
   };
 
   // Dev/test helper: hop between guest accounts (auth is disabled)
@@ -396,6 +399,15 @@ export async function POST(req: Request) {
     );
   } else if (body.action === "rename") {
     result = await renamePlayer(id, String(body.name || ""));
+  } else if (body.action === "rename_sector") {
+    const sid = String(body.sectorId || "").trim();
+    if (!sid) {
+      return withGuestCookie(
+        NextResponse.json({ error: "Missing sector" }, { status: 400 }),
+        setCookie
+      );
+    }
+    result = await renameSectorTag(id, sid, String(body.tag ?? ""));
   } else if (body.action === "claim_business_review") {
     if (
       !body.placeKey ||

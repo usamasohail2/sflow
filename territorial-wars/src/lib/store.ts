@@ -814,9 +814,24 @@ function normalizeSpot(s: ResourceSpot): ResourceSpot {
 /* Entity accessors                                                    */
 /* ------------------------------------------------------------------ */
 
+function normalizeSector(s: Sector): Sector {
+  const code = (s.code?.trim() || s.name?.trim() || "Sector").slice(0, 32);
+  const tag = s.tag?.trim() ? s.tag.trim().slice(0, 28) : undefined;
+  const name = tag ? `${code} ${tag}` : code;
+  return {
+    ...s,
+    code,
+    tag,
+    name,
+    taggedBy: s.taggedBy,
+    taggedAt: s.taggedAt,
+  };
+}
+
 export async function getSectors(): Promise<Sector[]> {
   await bootstrap();
-  return (await getJSON<Sector[]>(K_SECTORS)) ?? [];
+  const raw = (await getJSON<Sector[]>(K_SECTORS)) ?? [];
+  return raw.map(normalizeSector);
 }
 
 export async function saveSectors(sectors: Sector[]): Promise<void> {
@@ -830,7 +845,7 @@ export async function saveSectors(sectors: Sector[]): Promise<void> {
       );
     }
   }
-  await setJSON(K_SECTORS, sectors);
+  await setJSON(K_SECTORS, sectors.map(normalizeSector));
   const ids = new Set(sectors.map((s) => s.id));
   const spots = await getSpots();
   await setSpots(spots.filter((s) => ids.has(s.sectorId)));
@@ -2022,6 +2037,71 @@ export async function renamePlayer(
   if (!me) return { error: "Player missing" };
   await setPlayer({ ...me, name: trimmed, updatedAt: Date.now() });
   return { ok: true };
+}
+
+/**
+ * Top scorer in a mapped sector may set a custom tag.
+ * Display becomes `${code} ${tag}` (e.g. "H8 Empire").
+ */
+export async function renameSectorTag(
+  playerId: string,
+  sectorId: string,
+  tagRaw: string
+): Promise<{ ok: true; name: string } | { error: string }> {
+  await bootstrap();
+  const me = await getPlayer(playerId);
+  if (!me?.homeSectorId) return { error: "Settle in a sector first" };
+  if (isAzadHomeId(me.homeSectorId)) {
+    return { error: "Azad Umeed sectors can't be renamed" };
+  }
+  if (me.homeSectorId !== sectorId) {
+    return { error: "You can only rename your home sector" };
+  }
+
+  const tag = tagRaw.trim().replace(/\s+/g, " ").slice(0, 28);
+  if (tag.length > 0 && tag.length < 2) {
+    return { error: "Tag too short — use at least 2 characters" };
+  }
+  if (tag && !/^[A-Za-z0-9][A-Za-z0-9 '\-.]{0,27}$/.test(tag)) {
+    return { error: "Use letters, numbers, spaces, or - ' ." };
+  }
+
+  const sectors = await getSectors();
+  const idx = sectors.findIndex((s) => s.id === sectorId);
+  if (idx < 0) return { error: "Sector missing" };
+  const sector = sectors[idx]!;
+
+  // Must be #1 by totalFarmed inside this sector
+  const players = await getAllPlayers();
+  let topId: string | null = null;
+  let topFarmed = -1;
+  for (const p of players) {
+    if (p.homeSectorId !== sectorId) continue;
+    const farmed = p.totalFarmed || 0;
+    if (farmed > topFarmed) {
+      topFarmed = farmed;
+      topId = p.id;
+    }
+  }
+  if (topId !== playerId) {
+    return { error: "Only the top scorer in this sector can rename it" };
+  }
+
+  const code = (sector.code?.trim() || sector.name.trim()).slice(0, 32);
+  const now = Date.now();
+  const next: Sector = normalizeSector({
+    ...sector,
+    code,
+    tag: tag || undefined,
+    taggedBy: tag ? playerId : undefined,
+    taggedAt: tag ? now : undefined,
+    updatedAt: now,
+  });
+  const nextSectors = [...sectors];
+  nextSectors[idx] = next;
+  await setJSON(K_SECTORS, nextSectors);
+  await flushStore();
+  return { ok: true, name: next.name };
 }
 
 /**
