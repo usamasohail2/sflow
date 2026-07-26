@@ -1164,6 +1164,8 @@ function publicPlayer(p: Player): PublicPlayer {
     totalFarmed: p.totalFarmed || 0,
     buildings: p.buildings,
     discoveredSpotIds: p.discoveredSpotIds,
+    createdAt: p.createdAt || 0,
+    updatedAt: p.updatedAt || p.createdAt || 0,
   };
 }
 

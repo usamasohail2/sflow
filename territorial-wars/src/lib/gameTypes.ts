@@ -194,6 +194,10 @@ export type PublicPlayer = {
   totalFarmed: number;
   buildings: Building[];
   discoveredSpotIds: string[];
+  /** Account created — used for growth analytics */
+  createdAt: number;
+  /** Last server write (gather/build/etc.) — proxy for recent activity */
+  updatedAt: number;
 };
 
 export type BuildingCatalogItem = {

@@ -1320,7 +1320,8 @@ export function PlayShell() {
     setShowMissions(false);
     setShowInvite(false);
     setShowActivity(false);
-  }, []);
+    void load({ full: true });
+  }, [load]);
 
   /** Azad Umeed Wars — individual ranking by total farmed */
   const azadRanking = useMemo(() => {
@@ -2863,6 +2864,18 @@ export function PlayShell() {
               {sectorAnalyticsRows.length}
             </span>
           </button>
+          {(snap?.isAdmin || snap?.authDisabled) && (
+            <Link
+              href="/manage"
+              className="flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-[12px] text-[var(--ink-muted)] hover:bg-[var(--wash)] hover:text-[var(--sand)]"
+              onClick={() => setShowMenu(false)}
+            >
+              <span>▦ Manage analytics</span>
+              <span className="font-mono text-[10px] text-[var(--ink-faint)]">
+                admin
+              </span>
+            </Link>
+          )}
           <button
             type="button"
             onClick={() => {
