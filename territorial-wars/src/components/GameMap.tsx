@@ -562,28 +562,8 @@ export function GameMap({
   const introFocusRef = useRef(introFocus);
   introFocusRef.current = introFocus;
 
-  /** Auto day → dusk → night (Islamabad local time); recheck each minute */
-  useEffect(() => {
-    if (!mapReady) return;
-    const sync = () => {
-      const map = mapRef.current?.getMap();
-      if (!map) return;
-      applyMapLightPreset(map, lightPresetForIslamabad());
-    };
-    sync();
-    const id = window.setInterval(sync, 60_000);
-    const onVis = () => {
-      if (document.visibilityState === "visible") sync();
-    };
-    document.addEventListener("visibilitychange", onVis);
-    return () => {
-      window.clearInterval(id);
-      document.removeEventListener("visibilitychange", onVis);
-    };
-  }, [mapReady]);
-
-  const applyBasemapLabels = useCallback((show: boolean) => {
-    if (labelsVisible.current === show) return;
+  const applyBasemapLabels = useCallback((show: boolean, force = false) => {
+    if (!force && labelsVisible.current === show) return;
     const ref = mapRef.current;
     if (!ref) return;
     const map = ref.getMap();
@@ -597,6 +577,28 @@ export function GameMap({
       /* style may not expose config yet */
     }
   }, []);
+
+  /** Auto day → dusk → night (Islamabad local time); recheck each minute */
+  useEffect(() => {
+    if (!mapReady) return;
+    const sync = () => {
+      const map = mapRef.current?.getMap();
+      if (!map) return;
+      applyMapLightPreset(map, lightPresetForIslamabad());
+      // Light preset tweaks can drop label flags — re-assert for street zoom
+      if (labelsVisible.current) applyBasemapLabels(true, true);
+    };
+    sync();
+    const id = window.setInterval(sync, 60_000);
+    const onVis = () => {
+      if (document.visibilityState === "visible") sync();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [mapReady, applyBasemapLabels]);
 
   const finishIntro = useCallback(() => {
     if (introFinished.current) return;
@@ -645,43 +647,53 @@ export function GameMap({
     const map = mapRef.current?.getMap() as InteractiveMap | undefined;
     if (!map?.addInteraction) return;
 
-    const poiTarget = { featuresetId: "poi", importId: "basemap" };
-
-    try {
-      map.addInteraction("itw-poi-click", {
+    const bindPoi = (
+      id: string,
+      featuresetId: string,
+      onFeature: (feature: unknown) => boolean
+    ) => {
+      map.addInteraction?.(`${id}-click`, {
         type: "click",
-        target: poiTarget,
-        handler: ({ feature }) => {
-          const biz = businessFromPoiFeature(feature);
-          if (!biz) return false;
-          return trySelectBusiness(biz);
+        target: { featuresetId, importId: "basemap" },
+        handler: (e) => {
+          const feature = e?.feature;
+          if (!feature) return false;
+          return onFeature(feature);
         },
       });
-      map.addInteraction("itw-poi-enter", {
+      map.addInteraction?.(`${id}-enter`, {
         type: "mouseenter",
-        target: poiTarget,
+        target: { featuresetId, importId: "basemap" },
         handler: () => {
           map.getCanvas().style.cursor = "pointer";
         },
       });
-      map.addInteraction("itw-poi-leave", {
+      map.addInteraction?.(`${id}-leave`, {
         type: "mouseleave",
-        target: poiTarget,
+        target: { featuresetId, importId: "basemap" },
         handler: () => {
           map.getCanvas().style.cursor = "";
         },
+      });
+    };
+
+    try {
+      bindPoi("itw-poi", "poi", (feature) => {
+        const biz = businessFromPoiFeature(feature);
+        if (!biz) return false;
+        return trySelectBusiness(biz);
       });
     } catch {
       /* older GL / style without featuresets */
     }
 
     return () => {
-      try {
-        map.removeInteraction?.("itw-poi-click");
-        map.removeInteraction?.("itw-poi-enter");
-        map.removeInteraction?.("itw-poi-leave");
-      } catch {
-        /* ignore */
+      for (const id of ["itw-poi-click", "itw-poi-enter", "itw-poi-leave"]) {
+        try {
+          map.removeInteraction?.(id);
+        } catch {
+          /* ignore */
+        }
       }
     };
   }, [mapReady, trySelectBusiness]);
@@ -1548,43 +1560,49 @@ export function GameMap({
             return;
           }
 
-          // Always accept map clicks (not only sector-fill) so taps on
-          // 3D buildings / POI labels still open the place sheet.
-          let rendered: unknown[] = [];
-          try {
-            rendered = e.target.queryRenderedFeatures(e.point) as unknown[];
-            const sectorHit = (
-              rendered as { layer?: { id?: string }; properties?: { id?: unknown } }[]
-            ).find((f) => f.layer?.id === "sector-fill");
-            const id = sectorHit?.properties?.id;
-            if (typeof id === "string") onSelect(id);
-          } catch {
-            /* layer may not be ready */
-          }
+          // Prefer POI / place labels over sector-fill so shops stay tappable
+          // under our top-slot washes. Pad the hit box for fat-finger taps.
+          const at = { lat: e.lngLat.lat, lng: e.lngLat.lng };
+          const pad = 18;
+          const hitBox: [[number, number], [number, number]] = [
+            [e.point.x - pad, e.point.y - pad],
+            [e.point.x + pad, e.point.y + pad],
+          ];
+          type QueryMap = {
+            queryRenderedFeatures: (
+              geometry?:
+                | { x: number; y: number }
+                | [[number, number], [number, number]],
+              opts?: {
+                target?: { featuresetId: string; importId: string };
+                layers?: string[];
+              }
+            ) => unknown[];
+          };
+          const qmap = e.target as unknown as QueryMap;
 
-          // Fallback: only if a POI label is under the finger (no reverse-geocode)
           if (onSelectBusiness && me?.homeSectorId && showDetail) {
-            const at = { lat: e.lngLat.lat, lng: e.lngLat.lng };
             let featuresetHits: unknown[] = [];
             try {
-              featuresetHits = (
-                e.target as unknown as {
-                  queryRenderedFeatures: (
-                    point: { x: number; y: number },
-                    opts?: {
-                      target?: { featuresetId: string; importId: string };
-                    }
-                  ) => unknown[];
-                }
-              ).queryRenderedFeatures(e.point, {
+              featuresetHits = qmap.queryRenderedFeatures(hitBox, {
                 target: { featuresetId: "poi", importId: "basemap" },
               });
             } catch {
               featuresetHits = [];
             }
+            let rendered: unknown[] = [];
+            try {
+              rendered = qmap.queryRenderedFeatures(hitBox) as unknown[];
+            } catch {
+              rendered = [];
+            }
             const biz = resolveTappedPlaceLabel(at, rendered, featuresetHits);
-            if (biz) trySelectBusiness(biz);
+            if (biz && trySelectBusiness(biz)) return;
           }
+
+          // Sector pick via geometry (fill layer is non-interactive so POIs win)
+          const sectorHit = sectors.find((s) => pointInRing(at, s.ring));
+          if (sectorHit) onSelect(sectorHit.id);
         }}
         style={{ width: "100%", height: "100%" }}
       >
@@ -1593,7 +1611,7 @@ export function GameMap({
           <Layer
             id="sector-fill"
             type="fill"
-            slot="top"
+            slot="bottom"
             paint={{
               "fill-color": sectorFillColor,
               "fill-opacity": [
