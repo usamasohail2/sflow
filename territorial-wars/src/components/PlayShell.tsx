@@ -1367,6 +1367,14 @@ export function PlayShell() {
     me?.homeSectorId && isAzadHomeId(me.homeSectorId)
   );
   const needsHouseRebuild = Boolean(claimed && me && !me.house);
+
+  // House gone → only house rebuild is allowed; drop any other placement
+  useEffect(() => {
+    if (!needsHouseRebuild) return;
+    if (placing && placing.kind !== "house") {
+      setPlacing(null);
+    }
+  }, [needsHouseRebuild, placing]);
   const homeName = isAzadPlayer
     ? AZAD_ARENA_NAME
     : snap?.sectors.find((s) => s.id === me?.homeSectorId)?.name ?? null;
@@ -4349,48 +4357,6 @@ export function PlayShell() {
         </div>
       )}
 
-      {/* ---- Rebuild house after it was destroyed ---- */}
-      {needsHouseRebuild && me?.homeSectorId && !placing && (
-        <div className="absolute bottom-28 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-sm -translate-x-1/2 sm:bottom-8">
-          <div className="hud-panel p-4 text-center">
-            <p className="font-display text-xl text-[var(--signal-bright)]">
-              House destroyed
-            </p>
-            <p className="mt-1 text-[11px] text-[var(--ink-muted)]">
-              Gathering is paused. Rebuild your house in {homeName} to continue.
-            </p>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => {
-                if (isAzadHomeId(me.homeSectorId)) {
-                  setPendingHouse(null);
-                  setPlacing({
-                    kind: "house",
-                    sector: makeAzadPlacementSector(
-                      liveLocation ?? me.villagerPost
-                    ),
-                  });
-                  showToast("Tap near your pin to rebuild your house");
-                  return;
-                }
-                const sector = snap?.sectors.find(
-                  (s) => s.id === me.homeSectorId
-                );
-                if (!sector) return;
-                setSelectedId(sector.id);
-                setPendingHouse(null);
-                setPlacing({ kind: "house", sector });
-                showToast("Tap the map to rebuild your house");
-              }}
-              className="mt-3 w-full rounded-sm bg-[var(--signal)] px-3 py-2.5 text-sm font-bold text-white disabled:opacity-40"
-            >
-              🏠 Rebuild house
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* ---- Clear ground: rocket a same-sector neighbor building ---- */}
       {canRazeSelected && razeOwner && razeBuilding && !placing && (
         <div className="absolute bottom-28 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-xs -translate-x-1/2 sm:bottom-8">
@@ -4900,127 +4866,172 @@ export function PlayShell() {
 
             <div className="pointer-events-auto w-full min-w-0 sm:max-w-[min(100%,42rem)]">
               <div className="hud-panel hud-panel-arsenal p-1.5 sm:p-2">
-                <div className="arsenal-dock-row flex w-full items-stretch gap-1 sm:gap-1.5">
-                  <button
-                    type="button"
-                    className={`cameo cameo-dock ${
-                      buyingRocket ? "cameo-building" : ""
-                    } ${
-                      !buyingRocket &&
-                      displayGold >= ROCKET_COST &&
-                      me.house
-                        ? "cameo-blink"
-                        : ""
-                    }`}
-                    disabled={
-                      busy ||
-                      buyingRocket ||
-                      displayGold < ROCKET_COST ||
-                      !me.house
-                    }
-                    title={
-                      buyingRocket
-                        ? "Building rocket…"
-                        : !me.house
-                          ? "Rebuild your house first"
-                          : `Buy rocket — ${GOLD_COIN}${ROCKET_COST} · +1 attack (expended when you fire)`
-                    }
-                    onClick={() => {
-                      if (buyingRocket || busyRef.current) return;
-                      setBuyingRocket(true);
-                      void act("buy_rocket", {}, undefined, { silent: true })
-                        .then((d) => {
-                          if (d) {
-                            playRecruitSound();
-                            showToast("Rocket stocked · +1 attack");
-                          }
-                        })
-                        .finally(() => setBuyingRocket(false));
-                    }}
-                  >
-                    <RocketSprite className="h-8 w-8 sm:h-9 sm:w-9" />
-                    <span className="cameo-cost">
-                      <GoldCoinIcon size={10} />
-                      {ROCKET_COST}
-                    </span>
-                    <span className="cameo-label">
-                      {buyingRocket ? "Building…" : "Rocket"}
-                    </span>
-                    {buyingRocket && <CameoBuildLoader />}
-                  </button>
-
-                  <div className="w-px shrink-0 self-stretch bg-[var(--line)]" />
-
-                  {(snap?.buildingCatalog ?? []).map((b) => {
-                    const affordable = displayGold >= b.cost;
-                    const active = placing?.kind === b.type;
-                    const syncing = syncingBuildTypes.has(b.type);
-                    const homeSector = isAzadHomeId(me.homeSectorId)
-                      ? makeAzadPlacementSector(me.house)
-                      : snap?.sectors.find((s) => s.id === me.homeSectorId);
-                    const shortLabel =
-                      b.type === "warehouse"
-                        ? "Store"
-                        : b.type === "mill"
-                          ? "Mill"
-                          : b.type === "well"
-                            ? "Well"
-                            : b.type === "shovel"
-                              ? "Shovel"
-                              : b.type === "civic"
-                                ? "Civic"
-                                : b.type === "prado"
-                                  ? "Prado"
-                                  : b.type === "landcruiser"
-                                    ? "Cruiser"
-                                    : b.name;
-                    return (
+                {needsHouseRebuild ? (
+                  <>
+                    <p className="mb-1.5 text-center font-mono text-[9px] uppercase tracking-[0.16em] text-[var(--signal-bright)]">
+                      House destroyed — rebuild to gather &amp; build again
+                    </p>
+                    <div className="flex justify-center">
                       <button
-                        key={b.type}
                         type="button"
-                        className={`cameo cameo-dock ${
-                          active ? "cameo-active" : ""
-                        } ${syncing ? "cameo-building" : ""} ${
-                          affordable && !active && !syncing ? "cameo-blink" : ""
+                        className={`cameo cameo-dock min-w-[6.5rem] ${
+                          placing?.kind === "house"
+                            ? "cameo-active cameo-blink"
+                            : "cameo-blink"
                         }`}
-                        disabled={
-                          busy ||
-                          syncing ||
-                          !affordable ||
-                          !homeSector ||
-                          !me.house
-                        }
-                        title={
-                          syncing
-                            ? `Building ${b.name}…`
-                            : !me.house
-                              ? "Rebuild your house first"
-                              : `${b.name} — ${b.blurb} · ${b.footprintM}m ground`
-                        }
-                        onClick={() =>
-                          setPlacing((cur) =>
-                            cur?.kind === b.type || !homeSector || !me.house
-                              ? null
-                              : { kind: b.type, sector: homeSector }
-                          )
-                        }
+                        disabled={busy}
+                        title="Rebuild your house — rockets and buildings stay locked until then"
+                        onClick={() => {
+                          if (!me.homeSectorId) return;
+                          if (isAzadHomeId(me.homeSectorId)) {
+                            setPendingHouse(null);
+                            setPlacing({
+                              kind: "house",
+                              sector: makeAzadPlacementSector(
+                                liveLocation ?? me.villagerPost
+                              ),
+                            });
+                            showToast("Tap near your pin to rebuild your house");
+                            return;
+                          }
+                          const sector = snap?.sectors.find(
+                            (s) => s.id === me.homeSectorId
+                          );
+                          if (!sector) return;
+                          setSelectedId(sector.id);
+                          setPendingHouse(null);
+                          setPlacing({ kind: "house", sector });
+                          showToast("Tap the map to rebuild your house");
+                        }}
                       >
-                        <BuildingThumb
-                          type={b.type}
-                          className="h-8 w-9 sm:h-9 sm:w-10"
-                        />
-                        <span className="cameo-cost">
-                          <GoldCoinIcon size={10} />
-                          {formatGoldCompact(b.cost)}
-                        </span>
+                        <HouseSprite className="h-9 w-10 sm:h-10 sm:w-11" />
                         <span className="cameo-label">
-                          {syncing ? "Building…" : shortLabel}
+                          {placing?.kind === "house" ? "Placing…" : "House"}
                         </span>
-                        {syncing && <CameoBuildLoader />}
                       </button>
-                    );
-                  })}
-                </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="arsenal-dock-row flex w-full items-stretch gap-1 sm:gap-1.5">
+                    <button
+                      type="button"
+                      className={`cameo cameo-dock ${
+                        buyingRocket ? "cameo-building" : ""
+                      } ${
+                        !buyingRocket &&
+                        displayGold >= ROCKET_COST &&
+                        me.house
+                          ? "cameo-blink"
+                          : ""
+                      }`}
+                      disabled={
+                        busy ||
+                        buyingRocket ||
+                        displayGold < ROCKET_COST ||
+                        !me.house
+                      }
+                      title={
+                        buyingRocket
+                          ? "Building rocket…"
+                          : `Buy rocket — ${GOLD_COIN}${ROCKET_COST} · +1 attack (expended when you fire)`
+                      }
+                      onClick={() => {
+                        if (buyingRocket || busyRef.current) return;
+                        setBuyingRocket(true);
+                        void act("buy_rocket", {}, undefined, { silent: true })
+                          .then((d) => {
+                            if (d) {
+                              playRecruitSound();
+                              showToast("Rocket stocked · +1 attack");
+                            }
+                          })
+                          .finally(() => setBuyingRocket(false));
+                      }}
+                    >
+                      <RocketSprite className="h-8 w-8 sm:h-9 sm:w-9" />
+                      <span className="cameo-cost">
+                        <GoldCoinIcon size={10} />
+                        {ROCKET_COST}
+                      </span>
+                      <span className="cameo-label">
+                        {buyingRocket ? "Building…" : "Rocket"}
+                      </span>
+                      {buyingRocket && <CameoBuildLoader />}
+                    </button>
+
+                    <div className="w-px shrink-0 self-stretch bg-[var(--line)]" />
+
+                    {(snap?.buildingCatalog ?? []).map((b) => {
+                      const affordable = displayGold >= b.cost;
+                      const active = placing?.kind === b.type;
+                      const syncing = syncingBuildTypes.has(b.type);
+                      const homeSector = isAzadHomeId(me.homeSectorId)
+                        ? makeAzadPlacementSector(me.house)
+                        : snap?.sectors.find((s) => s.id === me.homeSectorId);
+                      const shortLabel =
+                        b.type === "warehouse"
+                          ? "Store"
+                          : b.type === "mill"
+                            ? "Mill"
+                            : b.type === "well"
+                              ? "Well"
+                              : b.type === "shovel"
+                                ? "Shovel"
+                                : b.type === "civic"
+                                  ? "Civic"
+                                  : b.type === "prado"
+                                    ? "Prado"
+                                    : b.type === "landcruiser"
+                                      ? "Cruiser"
+                                      : b.name;
+                      return (
+                        <button
+                          key={b.type}
+                          type="button"
+                          className={`cameo cameo-dock ${
+                            active ? "cameo-active" : ""
+                          } ${syncing ? "cameo-building" : ""} ${
+                            affordable && !active && !syncing
+                              ? "cameo-blink"
+                              : ""
+                          }`}
+                          disabled={
+                            busy ||
+                            syncing ||
+                            !affordable ||
+                            !homeSector ||
+                            !me.house
+                          }
+                          title={
+                            syncing
+                              ? `Building ${b.name}…`
+                              : `${b.name} — ${b.blurb} · ${b.footprintM}m ground`
+                          }
+                          onClick={() =>
+                            setPlacing((cur) =>
+                              cur?.kind === b.type || !homeSector || !me.house
+                                ? null
+                                : { kind: b.type, sector: homeSector }
+                            )
+                          }
+                        >
+                          <BuildingThumb
+                            type={b.type}
+                            className="h-8 w-9 sm:h-9 sm:w-10"
+                          />
+                          <span className="cameo-cost">
+                            <GoldCoinIcon size={10} />
+                            {formatGoldCompact(b.cost)}
+                          </span>
+                          <span className="cameo-label">
+                            {syncing ? "Building…" : shortLabel}
+                          </span>
+                          {syncing && <CameoBuildLoader />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           </div>

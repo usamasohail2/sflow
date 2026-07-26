@@ -1142,6 +1142,115 @@ button.cameo:not(:disabled):hover {
   pointer-events: none;
 }
 
+/* Village center — larger, glowing pad, always named */
+.house-marker {
+  z-index: 2;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.55));
+}
+
+.house-marker.is-selected .house-marker-pad {
+  box-shadow:
+    0 0 0 2px var(--sand),
+    0 0 14px rgba(232, 207, 138, 0.55);
+}
+
+.house-marker-pad {
+  display: grid;
+  place-items: center;
+  width: 3.35rem;
+  height: 2.85rem;
+  border-radius: 6px 6px 4px 4px;
+  border: 1.5px solid rgba(232, 235, 228, 0.35);
+  background:
+    radial-gradient(120% 90% at 50% 15%, rgba(255, 224, 138, 0.28), transparent 55%),
+    linear-gradient(180deg, rgba(55, 48, 36, 0.92), rgba(18, 16, 12, 0.95));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 0 0 1px rgba(0, 0, 0, 0.35),
+    0 4px 12px rgba(0, 0, 0, 0.45);
+}
+
+.house-marker-sprite {
+  width: 3rem !important;
+  height: 2.65rem !important;
+}
+
+.house-marker--self .house-marker-pad {
+  border-color: rgba(126, 200, 255, 0.75);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 0 0 1px rgba(59, 158, 255, 0.45),
+    0 0 16px rgba(59, 158, 255, 0.4),
+    0 4px 12px rgba(0, 0, 0, 0.45);
+}
+
+.house-marker--ally .house-marker-pad {
+  border-color: rgba(77, 255, 138, 0.65);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 0 0 1px rgba(61, 219, 122, 0.4),
+    0 0 14px rgba(61, 219, 122, 0.35),
+    0 4px 12px rgba(0, 0, 0, 0.45);
+}
+
+.house-marker--enemy .house-marker-pad {
+  border-color: rgba(255, 107, 92, 0.7);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 0 0 1px rgba(226, 59, 47, 0.4),
+    0 0 14px rgba(226, 59, 47, 0.32),
+    0 4px 12px rgba(0, 0, 0, 0.45);
+}
+
+.map-unit-tag-house {
+  margin-bottom: 4px;
+  max-width: 7.5rem;
+  padding: 3px 7px 4px;
+}
+
+.map-unit-tag-house .map-unit-tag-name {
+  font-size: 10px;
+}
+
+.map-unit-tag-house--self {
+  border-color: rgba(126, 200, 255, 0.55);
+  background: rgba(10, 18, 28, 0.9);
+}
+
+.map-unit-tag-house--self .map-unit-tag-name {
+  color: #9fd0ff;
+}
+
+.map-unit-tag-house--self .map-unit-tag-sub {
+  color: rgba(159, 208, 255, 0.7);
+}
+
+.map-unit-tag-house--ally {
+  border-color: color-mix(in srgb, var(--field-bright) 55%, var(--line));
+  background: color-mix(in srgb, #0e1a12 88%, var(--field));
+}
+
+.map-unit-tag-house--ally .map-unit-tag-name {
+  color: var(--field-bright);
+}
+
+.map-unit-tag-house--ally .map-unit-tag-sub {
+  color: color-mix(in srgb, var(--field-bright) 70%, var(--ink-muted));
+}
+
+.map-unit-tag-house--enemy {
+  border-color: rgba(255, 107, 92, 0.55);
+  background: rgba(28, 12, 12, 0.9);
+}
+
+.map-unit-tag-house--enemy .map-unit-tag-name {
+  color: #ffb0a4;
+}
+
+.map-unit-tag-house--enemy .map-unit-tag-sub {
+  color: rgba(255, 176, 164, 0.7);
+}
+
 @keyframes king-crown-bob-pin {
   0%,
   100% {

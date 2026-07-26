@@ -1724,6 +1724,14 @@ export function GameMap({
               .map((p) => {
                 const isKing = topPlayerId === p.id;
                 const relation = playerRelation(p, me);
+                const ownerLabel =
+                  relation === "self" ? "You" : p.name;
+                const houseSub =
+                  relation === "self"
+                    ? "Your house"
+                    : relation === "ally"
+                      ? "Ally house"
+                      : "Enemy house";
                 return (
                   <Marker
                     key={`house-${p.id}`}
@@ -1733,12 +1741,8 @@ export function GameMap({
                   >
                     <button
                       type="button"
-                      className={`relative flex flex-col items-center bg-transparent p-0 ${
-                        relation === "ally" ? "ally-structure" : ""
-                      } ${
-                        selectedPlayerId === p.id
-                          ? "ring-2 ring-[var(--sand)] rounded-sm"
-                          : ""
+                      className={`house-marker house-marker--${relation} relative flex flex-col items-center bg-transparent p-0 ${
+                        selectedPlayerId === p.id ? "is-selected" : ""
                       }`}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -1766,35 +1770,26 @@ export function GameMap({
                         placing && placing.kind !== "villager"
                           ? "Occupied — pick a clear spot"
                           : isKing
-                            ? p.id === me?.id
-                              ? "Your house — top settler"
-                              : `${p.name}'s house — top settler`
-                            : p.id === me?.id
-                              ? "Your house"
-                              : relation === "ally"
-                                ? `${p.name} (ally — same sector)`
-                                : `Tap to target ${p.name}`
+                            ? `${ownerLabel} — top settler`
+                            : houseSub
                       }
                     >
-                      {relation === "ally" && (
-                        <span className="map-unit-tag map-unit-tag-ally">
-                          <span className="map-unit-tag-name">
-                            {isKing ? "👑 " : ""}
-                            {p.name}
-                          </span>
-                          <span className="map-unit-tag-sub">Ally house</span>
+                      <span
+                        className={`map-unit-tag map-unit-tag-house map-unit-tag-house--${relation}`}
+                      >
+                        <span className="map-unit-tag-name">
+                          {isKing ? "👑 " : ""}
+                          {ownerLabel}
                         </span>
-                      )}
-                      {relation !== "ally" && isKing && (
-                        <span className="house-king-crown" aria-hidden>
-                          👑
-                        </span>
-                      )}
-                      <HouseSprite className="h-10 w-11 drop-shadow-md" />
+                        <span className="map-unit-tag-sub">{houseSub}</span>
+                      </span>
+                      <span className="house-marker-pad" aria-hidden>
+                        <HouseSprite className="house-marker-sprite drop-shadow-md" />
+                      </span>
                       <HpBar
                         hp={p.houseHp ?? HOUSE_MAX_HP}
                         maxHp={HOUSE_MAX_HP}
-                        width={38}
+                        width={48}
                       />
                     </button>
                   </Marker>
