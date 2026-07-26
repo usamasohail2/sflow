@@ -3066,25 +3066,31 @@ export function PlayShell() {
           </div>
         </div>
 
-        <div className="flex items-start justify-between gap-2">
+        <div
+          className={`flex items-start gap-2 ${
+            killFeed.length > 0 ? "justify-between" : "justify-end"
+          }`}
+        >
           {/* Killfeed sits under ITW/home — never overlaps the top chips */}
-          <div
-            className="kill-feed pointer-events-none flex min-w-0 flex-1 flex-col items-stretch gap-1"
-            aria-live="polite"
-          >
-            {killFeed.map((item) => {
-              const age = killFeedNow - item.shownAt;
-              const fading = age >= KILL_FEED_TTL_MS - KILL_FEED_FADE_MS;
-              return (
-                <div
-                  key={item.id}
-                  className={`kill-feed-line ${fading ? "is-fading" : ""}`}
-                >
-                  {killFeedLine(item.event, me?.id, playerColors)}
-                </div>
-              );
-            })}
-          </div>
+          {killFeed.length > 0 && (
+            <div
+              className="kill-feed pointer-events-none flex min-w-0 flex-col items-stretch gap-1"
+              aria-live="polite"
+            >
+              {killFeed.map((item) => {
+                const age = killFeedNow - item.shownAt;
+                const fading = age >= KILL_FEED_TTL_MS - KILL_FEED_FADE_MS;
+                return (
+                  <div
+                    key={item.id}
+                    className={`kill-feed-line ${fading ? "is-fading" : ""}`}
+                  >
+                    {killFeedLine(item.event, me?.id, playerColors)}
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {/* Minimal leaderboard — sectors or Azad Umeed players */}
           <div className="sector-board pointer-events-auto w-[9.5rem] shrink-0 px-1.5 py-1.5 text-left sm:w-44">

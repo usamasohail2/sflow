@@ -78,10 +78,9 @@ export function lightPresetForIslamabad(now = new Date()): MapLightPreset {
   }).format(now);
   const hour = Number.parseInt(hourStr, 10);
   if (!Number.isFinite(hour)) return "dusk";
-  // Rough civil windows for Islamabad year-round
-  if (hour >= 5 && hour < 7) return "dawn";
-  if (hour >= 7 && hour < 17) return "day";
-  if (hour >= 17 && hour < 20) return "dusk";
+  // Skip Mapbox "day" — too bright for this HUD. Soft dawn → dusk → night.
+  if (hour >= 5 && hour < 8) return "dawn";
+  if (hour >= 8 && hour < 20) return "dusk";
   return "night";
 }
 
