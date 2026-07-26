@@ -1392,6 +1392,30 @@ button.cameo:not(:disabled):hover {
   font-size: 9px;
 }
 
+.kill-feed-verb {
+  margin: 0 0.1rem;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.kill-feed-verb.is-destroy {
+  color: #ff8a7a;
+}
+
+.kill-feed-verb.is-attack {
+  color: #e8cf8a;
+}
+
+.kill-feed-verb.is-hold {
+  color: #8fe098;
+}
+
+.kill-feed-verb.is-claim {
+  color: #c4b089;
+}
+
 .kill-feed-sector {
   margin-left: 0.25rem;
   color: rgba(232, 235, 228, 0.45);
