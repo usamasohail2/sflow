@@ -18,10 +18,12 @@ import {
 } from "@/components/GameMap";
 import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 import { PublicChat } from "@/components/PublicChat";
+import { SectorAnalyticsModal } from "@/components/SectorAnalytics";
 import {
   Walkthrough,
   readWalkthroughDone,
 } from "@/components/Walkthrough";
+import { mappedSectorAnalytics } from "@/lib/sectorAnalytics";
 import { useMapPresence } from "@/hooks/useMapPresence";
 import type { LatLng } from "@/lib/gameTypes";
 import {
@@ -562,6 +564,10 @@ export function PlayShell() {
   const [displayGold, setDisplayGold] = useState(0);
   const [showMissions, setShowMissions] = useState(false);
   const [showRanks, setShowRanks] = useState(false);
+  const [showAnalytics, setShowAnalytics] = useState(false);
+  const [analyticsSectorId, setAnalyticsSectorId] = useState<string | null>(
+    null
+  );
   const [showMenu, setShowMenu] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [showBattles, setShowBattles] = useState(false);
@@ -1064,6 +1070,28 @@ export function PlayShell() {
     }
     return Array.from(bySector.values()).sort((a, b) => b.farmed - a.farmed);
   }, [snap]);
+
+  const sectorAnalyticsRows = useMemo(
+    () =>
+      mappedSectorAnalytics(
+        snap?.sectors ?? [],
+        snap?.players ?? [],
+        snap?.spots ?? [],
+        snap?.sectorHistory ?? {}
+      ),
+    [snap]
+  );
+
+  const openSectorAnalytics = useCallback((sectorId?: string | null) => {
+    setAnalyticsSectorId(sectorId ?? null);
+    setShowAnalytics(true);
+    setShowRanks(false);
+    setShowMenu(false);
+    setShowBattles(false);
+    setShowMissions(false);
+    setShowInvite(false);
+    setShowActivity(false);
+  }, []);
 
   /** Azad Umeed Wars — individual ranking by total farmed */
   const azadRanking = useMemo(() => {
@@ -2390,20 +2418,38 @@ export function PlayShell() {
               <span className="font-mono text-[7px] uppercase tracking-[0.18em] text-white/55">
                 {isAzadPlayer || azadMode ? "Azad Umeed" : "Top sectors"}
               </span>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowRanks(true);
-                  setShowMenu(false);
-                  setShowBattles(false);
-                  setShowMissions(false);
-                  setShowInvite(false);
-                }}
-                className="font-mono text-[7px] text-white/45 underline decoration-dotted underline-offset-2 hover:text-white/80"
-                title="Open full leaderboard"
-              >
-                all
-              </button>
+              <span className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() =>
+                    openSectorAnalytics(
+                      selectedId && !isAzadHomeId(selectedId)
+                        ? selectedId
+                        : me?.homeSectorId && !isAzadHomeId(me.homeSectorId)
+                          ? me.homeSectorId
+                          : sectorRanking[0]?.id
+                    )
+                  }
+                  className="font-mono text-[7px] text-white/45 underline decoration-dotted underline-offset-2 hover:text-white/80"
+                  title="Sector analytics charts"
+                >
+                  charts
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRanks(true);
+                    setShowMenu(false);
+                    setShowBattles(false);
+                    setShowMissions(false);
+                    setShowInvite(false);
+                  }}
+                  className="font-mono text-[7px] text-white/45 underline decoration-dotted underline-offset-2 hover:text-white/80"
+                  title="Open full leaderboard"
+                >
+                  all
+                </button>
+              </span>
             </div>
             {sectorBoard.length === 0 ? (
               <p className="text-[9px] text-white/45">No farms yet</p>
@@ -2497,6 +2543,24 @@ export function PlayShell() {
             <span>◈ Goals</span>
             <span className="font-mono text-[10px] text-[var(--ink-faint)]">
               {missionsDone}/{missionList.length}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              openSectorAnalytics(
+                selectedId && !isAzadHomeId(selectedId)
+                  ? selectedId
+                  : me?.homeSectorId && !isAzadHomeId(me.homeSectorId)
+                    ? me.homeSectorId
+                    : sectorRanking[0]?.id
+              )
+            }
+            className="flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-[12px] text-[var(--ink-muted)] hover:bg-[var(--wash)] hover:text-[var(--sand)]"
+          >
+            <span>▣ Sector charts</span>
+            <span className="font-mono text-[10px] text-[var(--ink-faint)]">
+              {sectorAnalyticsRows.length}
             </span>
           </button>
           <button
@@ -2614,6 +2678,21 @@ export function PlayShell() {
         </div>
       )}
 
+      {showAnalytics && (
+        <SectorAnalyticsModal
+          rows={sectorAnalyticsRows}
+          initialSectorId={analyticsSectorId}
+          onClose={() => setShowAnalytics(false)}
+          onFlyTo={(id) => {
+            setSelectedId(id);
+            setSectorFocus((n) => n + 1);
+            setSelectedPlayerId(null);
+            setRazeTarget(null);
+            setShowAnalytics(false);
+          }}
+        />
+      )}
+
       {/* Full leaderboard modal — sectors + Azad Umeed */}
       {showRanks && (
         <div
@@ -2639,13 +2718,23 @@ export function PlayShell() {
                   Total resources farmed
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowRanks(false)}
-                className="font-mono text-[14px] text-[var(--ink-faint)] hover:text-[var(--sand)]"
-              >
-                ✕
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => openSectorAnalytics(selectedId)}
+                  className="rounded-sm border border-[var(--line)] px-2 py-1 font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--sand)] hover:border-[var(--sand)]"
+                  title="Open sector analytics charts"
+                >
+                  Charts
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowRanks(false)}
+                  className="font-mono text-[14px] text-[var(--ink-faint)] hover:text-[var(--sand)]"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
             <div className="mt-3 max-h-[min(60dvh,28rem)] space-y-4 overflow-y-auto pr-1">
               <section>
@@ -2661,7 +2750,7 @@ export function PlayShell() {
                   {sectorRanking.map((r, i) => {
                     const mine = me?.homeSectorId === r.id;
                     return (
-                      <li key={r.id}>
+                      <li key={r.id} className="flex gap-1">
                         <button
                           type="button"
                           onClick={() => {
@@ -2671,7 +2760,7 @@ export function PlayShell() {
                             setRazeTarget(null);
                             setShowRanks(false);
                           }}
-                          className={`flex w-full items-center justify-between rounded-sm border px-2.5 py-2 text-left text-[12px] transition hover:border-[var(--sand)] hover:bg-[var(--wash)] ${
+                          className={`flex min-w-0 flex-1 items-center justify-between rounded-sm border px-2.5 py-2 text-left text-[12px] transition hover:border-[var(--sand)] hover:bg-[var(--wash)] ${
                             mine
                               ? "border-[var(--sand)] bg-[var(--wash)] text-[var(--sand)]"
                               : "border-[var(--line)] text-[var(--ink-muted)]"
@@ -2694,8 +2783,17 @@ export function PlayShell() {
                             </span>
                           </span>
                           <span className="shrink-0 font-mono font-semibold text-[#e8cf8a]">
-                            {GOLD_COIN} {r.farmed}
+                            {GOLD_COIN} {formatGoldCompact(r.farmed)}
                           </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openSectorAnalytics(r.id)}
+                          className="shrink-0 rounded-sm border border-[var(--line)] px-2 py-2 font-mono text-[10px] text-[var(--ink-muted)] hover:border-[var(--sand)] hover:text-[var(--sand)]"
+                          title={`Analytics for ${r.name}`}
+                          aria-label={`Analytics for ${r.name}`}
+                        >
+                          ▣
                         </button>
                       </li>
                     );

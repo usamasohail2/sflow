@@ -293,6 +293,53 @@ export function isGemClaimEvent(e: GameEvent): e is GemClaimEvent {
   return e.type === "gem_claim";
 }
 
+/** Hourly-ish snapshot of a sector's economy for growth charts */
+export type SectorStatsPoint = {
+  ts: number;
+  settlers: number;
+  farmed: number;
+  gold: number;
+  villagers: number;
+  buildings: number;
+  rockets: number;
+  spots: number;
+};
+
+/** Per-settler row inside sector analytics */
+export type SectorPlayerStat = {
+  id: string;
+  name: string;
+  color: string;
+  farmed: number;
+  gold: number;
+  villagers: number;
+  buildings: number;
+  rockets: number;
+  houseHp: number;
+  hasHouse: boolean;
+};
+
+/** Live + historical analytics for one mapped sector */
+export type SectorAnalytics = {
+  sectorId: string;
+  name: string;
+  settlers: number;
+  farmed: number;
+  gold: number;
+  villagers: number;
+  buildings: number;
+  rockets: number;
+  housesUp: number;
+  spotsEasy: number;
+  spotsClaimable: number;
+  /** Sum of easy-spot yields in the sector */
+  baseYield: number;
+  buildingMix: Partial<Record<BuildingType, number>>;
+  players: SectorPlayerStat[];
+  /** Oldest → newest growth samples */
+  history: SectorStatsPoint[];
+};
+
 export type GameSnapshot = {
   sectors: Sector[];
   spots: ResourceSpot[];
@@ -302,6 +349,8 @@ export type GameSnapshot = {
   events: GameEvent[];
   /** Recent world activity (raids + razes), newest last */
   globalEvents: GameEvent[];
+  /** Growth timelines keyed by sector id (oldest → newest) */
+  sectorHistory: Record<string, SectorStatsPoint[]>;
   serverNow: number;
   gatherTripMs: number;
   buildingCatalog: BuildingCatalogItem[];

@@ -37,7 +37,9 @@ import {
   type PublicPlayer,
   type ResourceSpot,
   type Sector,
+  type SectorStatsPoint,
 } from "@/lib/gameTypes";
+import { sectorPointFromPlayers } from "@/lib/sectorAnalytics";
 import { AUTH_DISABLED, buildDummySectors, isAdminEmail } from "@/lib/devMode";
 import { pointInOrNearRing, pointInRing } from "@/lib/geo";
 import {
@@ -63,6 +65,7 @@ import { supabase, supabaseConfigured } from "@/lib/supabase";
  *   itw:v3:invites        HASH inviteCode -> playerId
  *   itw:v3:events         LIST of JSON GameEvent (newest first)
  *   itw:v3:owner:{sid}    sector claim lock (SET NX -> playerId)
+ *   itw:v3:sector_history JSON Record<sectorId, SectorStatsPoint[]> (oldest→newest)
  */
 
 const P = "itw:v3";
@@ -71,11 +74,17 @@ const K_SPOTS = `${P}:spots`;
 const K_PIDS = `${P}:pids`;
 const K_INVITES = `${P}:invites`;
 const K_EVENTS = `${P}:events`;
+const K_SECTOR_HISTORY = `${P}:sector_history`;
 const K_MIGRATED = `${P}:migrated`;
 /** HASH playerId -> JSON Player backup while testing new-account tutorial */
 const K_TUTORIAL_BACKUP = `${P}:tutorial_backup`;
 const kPlayer = (id: string) => `${P}:p:${id}`;
 const kOwner = (sid: string) => `${P}:owner:${sid}`;
+
+/** Min gap between persisted growth samples per sector */
+const SECTOR_HISTORY_INTERVAL_MS = 60 * 60 * 1000;
+/** Keep about a week of hourly samples */
+const SECTOR_HISTORY_MAX_POINTS = 168;
 
 const LEGACY_BLOB_KEY = "itw:v2:state";
 
@@ -761,6 +770,74 @@ async function recentEvents(): Promise<GameEvent[]> {
   return parsed.reverse(); // chronological
 }
 
+async function getSectorHistory(): Promise<Record<string, SectorStatsPoint[]>> {
+  const raw = await getJSON<Record<string, SectorStatsPoint[]>>(K_SECTOR_HISTORY);
+  if (!raw || typeof raw !== "object") return {};
+  const out: Record<string, SectorStatsPoint[]> = {};
+  for (const [id, pts] of Object.entries(raw)) {
+    if (!Array.isArray(pts)) continue;
+    out[id] = pts
+      .filter((p) => p && typeof p.ts === "number")
+      .sort((a, b) => a.ts - b.ts)
+      .slice(-SECTOR_HISTORY_MAX_POINTS);
+  }
+  return out;
+}
+
+/**
+ * Append hourly economy samples for mapped sectors.
+ * Seeds a zero-baseline at the earliest settler's createdAt when empty.
+ */
+async function recordSectorHistories(
+  sectors: Sector[],
+  players: Player[],
+  spots: ResourceSpot[]
+): Promise<Record<string, SectorStatsPoint[]>> {
+  const hist = await getSectorHistory();
+  const now = Date.now();
+  let changed = false;
+
+  for (const sector of sectors) {
+    if (isAzadHomeId(sector.id)) continue;
+    const settlers = players.filter((p) => p.homeSectorId === sector.id);
+    const spotCount = spots.filter((s) => s.sectorId === sector.id).length;
+    const live = sectorPointFromPlayers(settlers, sector.id, spotCount, now);
+    let series = [...(hist[sector.id] ?? [])].sort((a, b) => a.ts - b.ts);
+
+    if (series.length === 0 && settlers.length > 0) {
+      const firstJoin = Math.min(...settlers.map((p) => p.createdAt || now));
+      if (firstJoin < now - 60_000) {
+        series.push({
+          ts: firstJoin,
+          settlers: 1,
+          farmed: 0,
+          gold: 0,
+          villagers: 1,
+          buildings: 0,
+          rockets: 0,
+          spots: Math.max(1, spotCount),
+        });
+        changed = true;
+      }
+    }
+
+    const last = series[series.length - 1];
+    const due =
+      !last ||
+      now - last.ts >= SECTOR_HISTORY_INTERVAL_MS ||
+      (last.settlers !== live.settlers && now - last.ts >= 5 * 60_000);
+    if (due) {
+      series.push(live);
+      changed = true;
+    }
+
+    hist[sector.id] = series.slice(-SECTOR_HISTORY_MAX_POINTS);
+  }
+
+  if (changed) await setJSON(K_SECTOR_HISTORY, hist);
+  return hist;
+}
+
 export function makeInviteCode(seed: string): string {
   const base = seed.replace(/[^a-zA-Z0-9]/g, "").slice(0, 4).toUpperCase();
   const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
@@ -1131,6 +1208,12 @@ export async function getSnapshot(
     : [];
   const globalEvents = allEvents.slice(-40);
 
+  const sectorHistory = await recordSectorHistories(
+    sectors,
+    playersAll,
+    spotsWorking
+  );
+
   // Persist any accrual/seed/bootstrap writes made during this request
   await flushStore();
 
@@ -1149,6 +1232,7 @@ export async function getSnapshot(
     me,
     events,
     globalEvents,
+    sectorHistory,
     serverNow: Date.now(),
     gatherTripMs: GATHER_TRIP_MS,
     buildingCatalog: BUILDING_CATALOG,
