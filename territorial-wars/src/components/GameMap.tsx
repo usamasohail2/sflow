@@ -1461,7 +1461,7 @@ export function GameMap({
                   band.height,
                 ] as never,
                 "fill-extrusion-opacity": band.opacity,
-                "fill-extrusion-vertical-gradient": true,
+                "fill-extrusion-vertical-gradient": false,
               }}
             />
           ))}
