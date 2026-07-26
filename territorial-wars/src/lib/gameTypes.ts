@@ -592,7 +592,7 @@ export const HOUSE_MAX_HP = 5;
 /** Gold to stock one rocket in your arsenal */
 export const ROCKET_COST = 35;
 /** Arsenal reload after firing rockets (raids + ally clears) */
-export const ATTACK_COOLDOWN_MS = 90_000;
+export const ATTACK_COOLDOWN_MS = 15_000;
 /** Min time between same-sector building razes */
 export const RAZE_COOLDOWN_MS = 20_000;
 /** Upgrade multiplies building output; costs catalog price × this */
