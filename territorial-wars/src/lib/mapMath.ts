@@ -234,3 +234,58 @@ export function lerpLatLng(a: LatLng, b: LatLng, t: number): LatLng {
     lng: a.lng + (b.lng - a.lng) * t,
   };
 }
+
+/** Ease in-out for rocket flight (slow launch, fast mid, settle on impact) */
+export function easeInOutCubic(t: number): number {
+  const x = Math.max(0, Math.min(1, t));
+  return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+}
+
+/**
+ * Quadratic bezier arc from A→B. `lane` shifts the control point sideways
+ * so salvo rockets fan out instead of stacking.
+ */
+export function rocketBezierLatLng(
+  from: LatLng,
+  to: LatLng,
+  t: number,
+  lane = 0
+): LatLng {
+  const dLat = to.lat - from.lat;
+  const dLng = to.lng - from.lng;
+  const len = Math.hypot(dLat, dLng) || 1e-9;
+  const midLat = (from.lat + to.lat) / 2;
+  const midLng = (from.lng + to.lng) / 2;
+  // Arc “up” (perpendicular) — taller for short hops so the curve still reads
+  const arc = Math.max(len * 0.42, 0.00035);
+  const side = lane * Math.max(len * 0.12, 0.00012);
+  const cLat = midLat - (dLng / len) * arc + (dLat / len) * side;
+  const cLng = midLng + (dLat / len) * arc + (dLng / len) * side;
+  const u = 1 - t;
+  return {
+    lat: u * u * from.lat + 2 * u * t * cLat + t * t * to.lat,
+    lng: u * u * from.lng + 2 * u * t * cLng + t * t * to.lng,
+  };
+}
+
+/** CSS degrees — 0 = nose north (sprite default), clockwise */
+export function rocketBezierHeadingDeg(
+  from: LatLng,
+  to: LatLng,
+  t: number,
+  lane = 0
+): number {
+  const dLat = to.lat - from.lat;
+  const dLng = to.lng - from.lng;
+  const len = Math.hypot(dLat, dLng) || 1e-9;
+  const midLat = (from.lat + to.lat) / 2;
+  const midLng = (from.lng + to.lng) / 2;
+  const arc = Math.max(len * 0.42, 0.00035);
+  const side = lane * Math.max(len * 0.12, 0.00012);
+  const cLat = midLat - (dLng / len) * arc + (dLat / len) * side;
+  const cLng = midLng + (dLat / len) * arc + (dLng / len) * side;
+  // B'(t) for quadratic bezier
+  const vLat = 2 * (1 - t) * (cLat - from.lat) + 2 * t * (to.lat - cLat);
+  const vLng = 2 * (1 - t) * (cLng - from.lng) + 2 * t * (to.lng - cLng);
+  return (Math.atan2(vLng, vLat) * 180) / Math.PI;
+}

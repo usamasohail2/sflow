@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import MapboxMap, { Layer, Marker, Source } from "react-map-gl/mapbox";
 import type { MapMouseEvent, MapRef } from "react-map-gl/mapbox";
 import type { Feature, FeatureCollection, Polygon } from "geojson";
@@ -126,10 +133,13 @@ function playerRelation(
 }
 import {
   distMeters,
+  easeInOutCubic,
   farmTargetForTrip,
   lerpLatLng,
   offsetMeters,
   ringCentroid,
+  rocketBezierHeadingDeg,
+  rocketBezierLatLng,
 } from "@/lib/mapMath";
 import { setVillagerWorkLevel, stopVillagerWork } from "@/lib/sound";
 import {
@@ -165,6 +175,8 @@ export type MarchAnim = {
   to: LatLng;
   startedAt: number;
   durationMs: number;
+  /** Rockets in this salvo (staggered bezier paths) */
+  count?: number;
 };
 
 export type ImpactAnim = {
@@ -172,7 +184,9 @@ export type ImpactAnim = {
   startedAt: number;
 };
 
-const IMPACT_DURATION_MS = 1400;
+const IMPACT_DURATION_MS = 1600;
+/** Cap visible rockets so a huge salvo stays readable */
+const MAX_VISIBLE_ROCKETS = 6;
 
 function HpBar({
   hp,
@@ -1271,12 +1285,46 @@ export function GameMap({
 
   useEffect(() => () => stopVillagerWork(), []);
 
-  // March animation position
-  const marchPos = useMemo(() => {
-    if (!march) return null;
-    const t = Math.min(1, (now - march.startedAt) / march.durationMs);
-    if (t >= 1) return null;
-    return lerpLatLng(march.from, march.to, t);
+  // Smooth rAF clock while rockets / impacts are on screen
+  useEffect(() => {
+    if (!march && !impact) return;
+    let raf = 0;
+    const tick = () => {
+      setNow(Date.now());
+      raf = window.requestAnimationFrame(tick);
+    };
+    raf = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(raf);
+  }, [march, impact]);
+
+  // Staggered bezier rocket positions for the active salvo
+  const flightRockets = useMemo(() => {
+    if (!march) return [];
+    const n = Math.min(
+      MAX_VISIBLE_ROCKETS,
+      Math.max(1, march.count ?? 1)
+    );
+    const stagger = Math.min(160, march.durationMs / (n + 2));
+    const out: {
+      id: number;
+      lat: number;
+      lng: number;
+      rot: number;
+      t: number;
+    }[] = [];
+    for (let i = 0; i < n; i++) {
+      const delay = i * stagger;
+      const span = Math.max(400, march.durationMs - delay);
+      const raw = (now - march.startedAt - delay) / span;
+      if (raw < 0 || raw >= 1) continue;
+      const t = easeInOutCubic(raw);
+      // Fan lanes: … -1, 0, 1 … around center
+      const lane = i - (n - 1) / 2;
+      const pos = rocketBezierLatLng(march.from, march.to, t, lane);
+      const rot = rocketBezierHeadingDeg(march.from, march.to, t, lane);
+      out.push({ id: i, lat: pos.lat, lng: pos.lng, rot, t });
+    }
+    return out;
   }, [march, now]);
 
   const trySpawn = useCallback(
@@ -2206,21 +2254,27 @@ export function GameMap({
           </Marker>
         )}
 
-        {/* Incoming rocket salvo */}
-        {marchPos && (
+        {/* Rocket salvo — bezier arcs toward target */}
+        {flightRockets.map((r) => (
           <Marker
-            longitude={marchPos.lng}
-            latitude={marchPos.lat}
-            anchor="bottom"
+            key={`rocket-${r.id}`}
+            longitude={r.lng}
+            latitude={r.lat}
+            anchor="center"
           >
-            <div className="relative flex items-end">
-              <RocketSprite className="h-9 w-9 rocket-march" />
-              <span className="absolute -top-2 left-1/2 -translate-x-1/2 font-mono text-[9px] text-[var(--signal-bright)]">
-                ✦
-              </span>
+            <div
+              className="rocket-flight"
+              style={
+                {
+                  "--rocket-rot": `${r.rot}deg`,
+                } as CSSProperties
+              }
+            >
+              <span className="rocket-flight-trail" aria-hidden />
+              <RocketSprite className="h-9 w-9 rocket-flight-sprite" />
             </div>
           </Marker>
-        )}
+        ))}
 
         {/* Attack impact explosion */}
         {impact && now - impact.startedAt < IMPACT_DURATION_MS && (
@@ -2229,10 +2283,14 @@ export function GameMap({
             latitude={impact.at.lat}
             anchor="center"
           >
-            <div className="impact-burst">
+            <div className="impact-burst" aria-hidden>
               <span className="impact-ring" />
               <span className="impact-ring impact-ring-2" />
-              <span className="impact-flash">💥</span>
+              <span className="impact-core" />
+              <span className="impact-spark impact-spark-a" />
+              <span className="impact-spark impact-spark-b" />
+              <span className="impact-spark impact-spark-c" />
+              <span className="impact-spark impact-spark-d" />
             </div>
           </Marker>
         )}

@@ -1715,20 +1715,52 @@ button.cameo:not(:disabled):hover {
   }
 }
 
-/* ---- Rocket salvo in flight ---- */
+/* ---- Rocket salvo in flight (bezier-oriented) ---- */
 
-.rocket-march {
-  animation: rocket-march 0.45s ease-in-out infinite;
-  filter: drop-shadow(0 0 6px rgba(224, 138, 58, 0.65));
+.rocket-flight {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  transform: rotate(var(--rocket-rot, 0deg));
+  filter: drop-shadow(0 0 8px rgba(255, 140, 60, 0.75));
+  will-change: transform;
 }
 
-@keyframes rocket-march {
-  0%,
-  100% {
-    transform: translateY(0) rotate(-12deg);
+.rocket-flight-sprite {
+  position: relative;
+  z-index: 1;
+}
+
+.rocket-flight-trail {
+  position: absolute;
+  left: 50%;
+  top: 58%;
+  width: 7px;
+  height: 22px;
+  margin-left: -3.5px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 220, 120, 0.95) 0%,
+    rgba(226, 59, 47, 0.75) 45%,
+    rgba(226, 59, 47, 0) 100%
+  );
+  filter: blur(0.6px);
+  animation: rocket-trail-flicker 0.12s steps(2) infinite;
+  transform-origin: top center;
+}
+
+@keyframes rocket-trail-flicker {
+  0% {
+    opacity: 0.85;
+    transform: scaleY(1);
   }
-  50% {
-    transform: translateY(-6px) rotate(-18deg);
+  100% {
+    opacity: 1;
+    transform: scaleY(1.25);
   }
 }
 
@@ -1736,8 +1768,8 @@ button.cameo:not(:disabled):hover {
 
 .impact-burst {
   position: relative;
-  width: 72px;
-  height: 72px;
+  width: 88px;
+  height: 88px;
   display: grid;
   place-items: center;
   pointer-events: none;
@@ -1753,42 +1785,96 @@ button.cameo:not(:disabled):hover {
 
 .impact-ring-2 {
   border-color: rgba(255, 200, 90, 0.85);
-  animation-delay: 0.18s;
+  animation-delay: 0.14s;
 }
 
-.impact-flash {
-  font-size: 30px;
-  animation: impact-flash 1.2s ease-out forwards;
-  filter: drop-shadow(0 0 10px rgba(255, 140, 60, 0.9));
+.impact-core {
+  width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  background: radial-gradient(
+    circle,
+    #fff6d0 0%,
+    #ff9a3c 40%,
+    #e23b2f 70%,
+    rgba(226, 59, 47, 0) 100%
+  );
+  animation: impact-core 1.15s ease-out forwards;
+  box-shadow: 0 0 22px rgba(255, 140, 60, 0.9);
+}
+
+.impact-spark {
+  position: absolute;
+  width: 4px;
+  height: 14px;
+  border-radius: 2px;
+  background: linear-gradient(
+    180deg,
+    #ffe7a0 0%,
+    #ff6a3a 70%,
+    transparent 100%
+  );
+  transform-origin: center bottom;
+  animation: impact-spark 0.85s ease-out forwards;
+}
+
+.impact-spark-a {
+  --spark-rot: 18deg;
+}
+.impact-spark-b {
+  --spark-rot: 110deg;
+  animation-delay: 0.04s;
+}
+.impact-spark-c {
+  --spark-rot: 200deg;
+  animation-delay: 0.08s;
+}
+.impact-spark-d {
+  --spark-rot: 290deg;
+  animation-delay: 0.05s;
 }
 
 @keyframes impact-ring {
   0% {
-    transform: scale(0.15);
+    transform: scale(0.12);
     opacity: 1;
   }
   100% {
-    transform: scale(1.25);
+    transform: scale(1.45);
     opacity: 0;
   }
 }
 
-@keyframes impact-flash {
+@keyframes impact-core {
   0% {
-    transform: scale(0.4);
+    transform: scale(0.2);
     opacity: 0;
   }
-  15% {
-    transform: scale(1.35);
+  12% {
+    transform: scale(1.55);
     opacity: 1;
   }
-  60% {
+  55% {
     transform: scale(1);
     opacity: 1;
   }
   100% {
-    transform: scale(0.8);
+    transform: scale(0.35);
     opacity: 0;
+  }
+}
+
+@keyframes impact-spark {
+  0% {
+    opacity: 0;
+    transform: rotate(var(--spark-rot, 0deg)) translateY(-2px) scaleY(0.4);
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(var(--spark-rot, 0deg)) translateY(-28px) scaleY(1.2);
   }
 }
 

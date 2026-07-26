@@ -311,6 +311,94 @@ export function playAttackSound(): void {
   });
 }
 
+/** Rocket ignition — thump + rising whoosh */
+export function playRocketLaunchSound(): void {
+  if (!sfxOn) return;
+  const c = ensureCtx();
+  if (!c || !sfxGain) return;
+  const t = c.currentTime;
+
+  // Ignition thump
+  const boom = c.createOscillator();
+  boom.type = "sine";
+  boom.frequency.setValueAtTime(90, t);
+  boom.frequency.exponentialRampToValueAtTime(38, t + 0.22);
+  const bg = c.createGain();
+  bg.gain.setValueAtTime(0.55, t);
+  bg.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+  boom.connect(bg).connect(sfxGain);
+  boom.start(t);
+  boom.stop(t + 0.3);
+
+  // Whoosh / propellant
+  const src = c.createBufferSource();
+  src.buffer = noiseBuffer(c, 0.55);
+  const filt = c.createBiquadFilter();
+  filt.type = "bandpass";
+  filt.frequency.setValueAtTime(420, t);
+  filt.frequency.exponentialRampToValueAtTime(2800, t + 0.45);
+  filt.Q.value = 0.7;
+  const g = c.createGain();
+  g.gain.setValueAtTime(0.001, t);
+  g.gain.linearRampToValueAtTime(0.32, t + 0.05);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+  src.connect(filt).connect(g).connect(sfxGain);
+  src.start(t);
+  src.stop(t + 0.55);
+
+  // Thin engine tone
+  tone({
+    type: "sawtooth",
+    f0: 180,
+    f1: 420,
+    dur: 0.35,
+    vol: 0.06,
+    attack: 0.04,
+  });
+}
+
+/** Impact — bass boom + crackle */
+export function playExplosionSound(): void {
+  if (!sfxOn) return;
+  const c = ensureCtx();
+  if (!c || !sfxGain) return;
+  const t = c.currentTime;
+
+  const boom = c.createOscillator();
+  boom.type = "sine";
+  boom.frequency.setValueAtTime(70, t);
+  boom.frequency.exponentialRampToValueAtTime(28, t + 0.45);
+  const bg = c.createGain();
+  bg.gain.setValueAtTime(0.7, t);
+  bg.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+  boom.connect(bg).connect(sfxGain);
+  boom.start(t);
+  boom.stop(t + 0.58);
+
+  const crack = c.createBufferSource();
+  crack.buffer = noiseBuffer(c, 0.4);
+  const filt = c.createBiquadFilter();
+  filt.type = "lowpass";
+  filt.frequency.setValueAtTime(2200, t);
+  filt.frequency.exponentialRampToValueAtTime(180, t + 0.35);
+  const cg = c.createGain();
+  cg.gain.setValueAtTime(0.45, t);
+  cg.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+  crack.connect(filt).connect(cg).connect(sfxGain);
+  crack.start(t);
+  crack.stop(t + 0.42);
+
+  // Bright snap
+  tone({
+    type: "triangle",
+    f0: 520,
+    f1: 90,
+    dur: 0.18,
+    vol: 0.14,
+    attack: 0.002,
+  });
+}
+
 /** You are under attack — tense but not square-wave alarm */
 export function playUnderAttackSound(): void {
   if (!sfxOn) return;

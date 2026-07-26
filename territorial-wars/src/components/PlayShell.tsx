@@ -108,8 +108,10 @@ import {
   playBuildSound,
   playCoinSound,
   playErrorSound,
+  playExplosionSound,
   playGemSpawnSound,
   playRecruitSound,
+  playRocketLaunchSound,
   playUnderAttackSound,
   readMusicPref,
   startMusic,
@@ -2312,14 +2314,18 @@ export function PlayShell() {
       snap?.sectors.find((s) => s.id === enemyPlayer.homeSectorId) ?? null;
     const defenderName = enemyPlayer.name;
     const rockets = Math.max(1, Math.min(me.rockets || 0, salvo));
-    const durationMs = 3200;
+    const durationMs = 2400 + Math.min(900, (rockets - 1) * 120);
     const marchStarted = Date.now();
+    // Close the attack sheet so the bezier flight stays visible
+    setSelectedPlayerId(null);
     setMarch({
       from: me.house,
       to: target,
       startedAt: marchStarted,
       durationMs,
+      count: rockets,
     });
+    playRocketLaunchSound();
     playAttackSound();
     const data = await act("attack", {
       targetPlayerId: enemyPlayer.id,
@@ -2338,12 +2344,12 @@ export function PlayShell() {
       defenderName
     );
     // Wait until the march finishes, then impact + report.
-    // Report stays until the player closes it — never auto-dismisses.
     const remaining = Math.max(0, durationMs - (Date.now() - marchStarted));
     window.setTimeout(() => {
       setMarch(null);
       setImpact({ at: target, startedAt: Date.now() });
-      window.setTimeout(() => setImpact(null), 1600);
+      playExplosionSound();
+      window.setTimeout(() => setImpact(null), 1700);
       setBattleSummary(summary);
       setShowBattles(false);
     }, remaining);
@@ -2424,7 +2430,7 @@ export function PlayShell() {
   }, [razeTarget?.buildingId, me?.rockets, razeBuilding?.hp]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const confirmRaze = async () => {
-    if (!razeTarget || !razeBuilding || !razeOwner || !me) return;
+    if (!razeTarget || !razeBuilding || !razeOwner || !me?.house) return;
     if ((me.rockets || 0) <= 0) {
       setError("Buy rockets before clearing ground");
       window.setTimeout(() => setError(null), 3200);
@@ -2432,17 +2438,32 @@ export function PlayShell() {
     }
     const name = catalogItem(razeBuilding.type).name;
     const ownerName = razeOwner.name;
-    const data = await act(
-      "raze_building",
-      {
-        targetPlayerId: razeTarget.playerId,
-        buildingId: razeTarget.buildingId,
-        rockets: salvo,
-      },
-      "Firing rockets…"
-    );
-    if (!data) return;
+    const rockets = Math.max(1, Math.min(me.rockets || 0, salvo));
+    const target = { lat: razeBuilding.lat, lng: razeBuilding.lng };
+    const durationMs = 2000 + Math.min(800, (rockets - 1) * 100);
+    const marchStarted = Date.now();
+    const targetPlayerId = razeTarget.playerId;
+    const buildingId = razeTarget.buildingId;
+    // Clear sheet + skip the blocking “saving” modal so the flight is visible
+    setRazeTarget(null);
+    setMarch({
+      from: me.house,
+      to: target,
+      startedAt: marchStarted,
+      durationMs,
+      count: rockets,
+    });
+    playRocketLaunchSound();
     playAttackSound();
+    const data = await act("raze_building", {
+      targetPlayerId,
+      buildingId,
+      rockets,
+    });
+    if (!data) {
+      setMarch(null);
+      return;
+    }
     const raze = data.raze as
       | {
           destroyed?: boolean;
@@ -2451,20 +2472,26 @@ export function PlayShell() {
           buildingHp?: number;
         }
       | undefined;
-    setRazeTarget(null);
-    if (raze?.destroyed) {
-      showToast(
-        `Cleared ${ownerName}'s ${name} with ${raze.rocketsLost ?? salvo} rocket${
-          (raze.rocketsLost ?? salvo) === 1 ? "" : "s"
-        } — ground is free`
-      );
-    } else {
-      showToast(
-        `Hit ${ownerName}'s ${name} for ${raze?.damage ?? razeSalvoAttack} dmg — ${
-          raze?.buildingHp ?? "?"
-        } HP left`
-      );
-    }
+    const remaining = Math.max(0, durationMs - (Date.now() - marchStarted));
+    window.setTimeout(() => {
+      setMarch(null);
+      setImpact({ at: target, startedAt: Date.now() });
+      playExplosionSound();
+      window.setTimeout(() => setImpact(null), 1700);
+      if (raze?.destroyed) {
+        showToast(
+          `Cleared ${ownerName}'s ${name} with ${raze.rocketsLost ?? rockets} rocket${
+            (raze.rocketsLost ?? rockets) === 1 ? "" : "s"
+          } — ground is free`
+        );
+      } else {
+        showToast(
+          `Hit ${ownerName}'s ${name} for ${raze?.damage ?? razeSalvoAttack} dmg — ${
+            raze?.buildingHp ?? "?"
+          } HP left`
+        );
+      }
+    }, remaining);
   };
 
   const openShovel = (buildingId: string) => {
@@ -3873,8 +3900,8 @@ export function PlayShell() {
         </div>
       )}
 
-      {/* Saving settlement / build — blocks accidental taps while write is in flight */}
-      {savingLabel && (
+      {/* Saving settlement / build — never cover an active rocket flight */}
+      {savingLabel && !march && (
         <div className="absolute inset-0 z-50 flex items-end justify-center bg-black/35 px-4 pb-28 sm:items-center sm:pb-0">
           <div className="hud-panel w-full max-w-xs p-4 text-center">
             <p className="font-display text-lg text-[var(--sand)]">{savingLabel}</p>
@@ -4563,7 +4590,7 @@ export function PlayShell() {
       )}
 
       {/* ---- Clear ground: rocket a same-sector neighbor building ---- */}
-      {canRazeSelected && razeOwner && razeBuilding && !placing && (
+      {canRazeSelected && razeOwner && razeBuilding && !placing && !march && (
         <div className="absolute bottom-28 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-xs -translate-x-1/2 sm:bottom-8">
           <div className="hud-panel p-3 text-center">
             <p className="font-mono text-[8px] uppercase tracking-[0.2em] text-[var(--sand)]">
@@ -4867,7 +4894,11 @@ export function PlayShell() {
       )}
 
       {/* ---- Attack panel: after tapping any enemy building/house ---- */}
-      {enemySelected && enemyPlayer && !placing && !needsHouseRebuild && (
+      {enemySelected &&
+        enemyPlayer &&
+        !placing &&
+        !needsHouseRebuild &&
+        !march && (
         <div className="absolute bottom-28 left-1/2 z-20 w-[calc(100%-1.5rem)] max-w-xs -translate-x-1/2 sm:bottom-8">
           <div className="hud-panel p-3 text-center">
             <p className="font-display text-lg text-[var(--ink)]">
