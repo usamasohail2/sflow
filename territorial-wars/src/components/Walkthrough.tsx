@@ -9,8 +9,8 @@ import {
 } from "react";
 import { AZAD_ARENA_NAME } from "@/lib/gameTypes";
 
-/** Bumped: tips run after settle only (location setup is self-guided) */
-export const WALKTHROUGH_KEY = "itw_walkthrough_v4";
+/** Bumped: leaderboard-first tips + punchier copy */
+export const WALKTHROUGH_KEY = "itw_walkthrough_v5";
 
 export type GuidePhase =
   | "welcome"
@@ -22,7 +22,8 @@ export type GuidePhase =
   | "tips-gather"
   | "tips-build"
   | "tips-raid"
-  | "tips-invite";
+  | "tips-invite"
+  | "tips-board";
 
 export type GuideContext = {
   claimed: boolean;
@@ -41,6 +42,8 @@ export type GuideContext = {
 type TipDef = {
   title: string;
   body: string;
+  /** Optional one-line stinger under the title */
+  goal?: string;
   /** data-guide id to spotlight; null = centered modal */
   target: string | null;
   /** Blocking overlay (welcome / tips). Interactive steps leave the map clickable. */
@@ -48,110 +51,118 @@ type TipDef = {
   cta?: string;
 };
 
-function tipFor(
-  phase: GuidePhase,
-  ctx: GuideContext
-): TipDef {
+function tipFor(phase: GuidePhase, ctx: GuideContext): TipDef {
   if (phase === "gps" && ctx.offMap) {
     return {
-      title: "You’re off the map",
-      body: `Your pin isn’t inside any Islamabad sector. You can still play in ${AZAD_ARENA_NAME} — no walls, ranked separately.`,
+      title: "You’re off the grid",
+      body: `No Islamabad sector under your pin. Jump into ${AZAD_ARENA_NAME} — same grind, no walls, its own ranking.`,
       target: "guide-azad",
       blocking: false,
     };
   }
   if (phase === "settle-btn" && ctx.azadMode) {
     return {
-      title: "Start settling",
-      body: `Location locked for ${AZAD_ARENA_NAME}. Tap Settle — then plant your house near your pin.`,
+      title: "Drop the flag",
+      body: `Pin locked for ${AZAD_ARENA_NAME}. Hit Settle, then plant a house by your marker.`,
       target: "guide-settle",
       blocking: false,
     };
   }
   if (phase === "place-house" && ctx.azadMode) {
     return {
-      title: "Plant your house",
-      body: `Tap near your pin. There are no sector walls in ${AZAD_ARENA_NAME} — a green ring means clear ground.`,
+      title: "Plant the house",
+      body: `Tap near your pin. No sector walls here — green ring means the ground is yours.`,
       target: "guide-place-banner",
       blocking: false,
     };
   }
   if (phase === "live" && ctx.azadMode) {
     return {
-      title: "Village is live",
-      body: `Welcome to ${AZAD_ARENA_NAME}. Villagers gather near your house — spend gold on buildings and rockets next.`,
+      title: "Live in the wild",
+      body: `Welcome to ${AZAD_ARENA_NAME}. Villagers haul gold while you spend it on buildings and rockets. Climb that separate board.`,
+      goal: "Goal: sit #1 on the leaderboard",
       target: null,
       blocking: true,
-      cta: "What’s next?",
+      cta: "How do I climb?",
     };
   }
 
   const base: Record<GuidePhase, TipDef> = {
     welcome: {
-      title: "Let’s build your village",
-      body: "I’ll walk you through settling: confirm where you are, plant a house, then place a villager who gathers gold for you.",
+      title: "Own the board",
+      body: "Settle a village in Islamabad, farm gold, raid your neighbors. Rank is everything — if you’re not climbing, you’re losing ground.",
+      goal: "The goal: #1 on the leaderboard",
       target: null,
       blocking: true,
-      cta: "Start setup",
+      cta: "Start settling",
     },
     gps: {
-      title: "Confirm your location",
-      body: "Tap the blinking button to lock GPS in this sector. If your pin isn’t on any sector, choose Azad Umeed Wars below.",
+      title: "Lock your spot",
+      body: "Tap the blinking control to pin GPS to this sector. Off every sector? Take Azad Umeed Wars below.",
       target: "guide-gps",
       blocking: false,
     },
     "settle-btn": {
-      title: "Start settling",
-      body: "Location locked. Tap the blinking Settle button — next you’ll plant your house on the map.",
+      title: "Claim the dirt",
+      body: "GPS is locked. Hit Settle — next you plant a house that marks your home sector.",
       target: "guide-settle",
       blocking: false,
     },
     "place-house": {
-      title: "Plant your house",
-      body: "Tap inside the sector walls. A green ring means clear ground. Place it where you want your village center.",
+      title: "Plant the house",
+      body: "Tap inside the walls. Green ring = clear. That spot is your village center for the rest of the war.",
       target: "guide-place-banner",
       blocking: false,
     },
     "place-villager": {
-      title: "Place your villager",
-      body: "Tap nearby to station your villager. They walk out, dig, and bring gold home on a loop.",
+      title: "Station a gatherer",
+      body: "Tap nearby. They walk out, dig, and haul gold home on a loop — free income while you scheme.",
       target: "guide-place-banner",
       blocking: false,
     },
     live: {
-      title: "Village is live",
-      body: "Your walls glow blue. Villagers gather automatically — spend gold on buildings and rockets next.",
+      title: "You’re on the map",
+      body: "Blue walls = home. Gold ticks in while you play. Every mill, rocket, and raid is another rung toward #1.",
+      goal: "Goal: sit #1 on the leaderboard",
       target: null,
       blocking: true,
-      cta: "What’s next?",
+      cta: "How do I climb?",
     },
     "tips-gather": {
-      title: "Gold comes to you",
-      body: "Watch your villager farm. Zoom into the streets and roam to spawn rare finds you can tap to collect.",
+      title: "Gold is the ladder",
+      body: "Watch your villager farm. Zoom into the streets and roam — rare finds spawn for whoever taps them first.",
       target: null,
       blocking: true,
       cta: "Next",
     },
     "tips-build": {
-      title: "Build & arm",
-      body: "Use Build to place mills, wells, and a store. Stock rockets in Arsenal — you pick how many to fire on a raid.",
+      title: "Spend like it matters",
+      body: "Mills and wells juice gather rate. Stock rockets in Arsenal. Empty pockets don’t take sectors.",
       target: null,
       blocking: true,
       cta: "Next",
     },
     "tips-raid": {
-      title: "Raid rivals",
-      body: "Tap an enemy house or building to attack with rockets. Same-sector allies are green — you can still rocket their buildings to clear ground. Azad players each have their own arena.",
+      title: "Make them rebuild",
+      body: "Tap an enemy house or building, pick a salvo, fire. Allies glow green — you can still clear their buildings if you need the ground.",
       target: null,
       blocking: true,
       cta: "Next",
     },
     "tips-invite": {
-      title: "Invite for villagers",
-      body: "Menu → Invite friends. Every friend who joins with your link gives you +1 villager — permanent gather power.",
+      title: "Friends = free labor",
+      body: "Menu → Invite. Each friend who joins on your link permanently adds a villager. More hands, more gold, higher rank.",
       target: null,
       blocking: true,
-      cta: "Got it — play",
+      cta: "Next",
+    },
+    "tips-board": {
+      title: "Win = top the board",
+      body: "Open Charts / your sector ranking. Farm harder, raid smarter, invite denser. Stay #1 and you get to rename the sector.",
+      goal: "Everything else is just how you get there",
+      target: null,
+      blocking: true,
+      cta: "Go climb",
     },
   };
   return base[phase];
@@ -162,6 +173,7 @@ const TIP_ORDER: GuidePhase[] = [
   "tips-build",
   "tips-raid",
   "tips-invite",
+  "tips-board",
 ];
 
 type Props = {
@@ -379,6 +391,9 @@ export function Walkthrough({ open, onClose, ctx }: Props) {
     };
   })();
 
+  const tipIndex = TIP_ORDER.indexOf(phase);
+  const showHowToPlay = ctx.claimed && tipIndex >= 0;
+
   return (
     <div
       data-guide-root
@@ -417,14 +432,19 @@ export function Walkthrough({ open, onClose, ctx }: Props) {
         <div className="flex items-start justify-between gap-2">
           <div>
             <p className="font-mono text-[8px] uppercase tracking-[0.22em] text-[var(--ink-faint)]">
-              {ctx.claimed && TIP_ORDER.includes(phase)
-                ? "How to play"
-                : "Setup guide"}
+              {showHowToPlay
+                ? `How to climb · ${tipIndex + 1}/${TIP_ORDER.length}`
+                : "Setup"}
               {ctx.sectorName ? ` · ${ctx.sectorName}` : ""}
             </p>
             <h2 className="mt-1 font-display text-xl text-[var(--ink)] sm:text-2xl">
               {tip.title}
             </h2>
+            {tip.goal && (
+              <p className="mt-1.5 inline-block border border-[var(--sand)]/45 bg-[var(--wash)] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--sand)]">
+                {tip.goal}
+              </p>
+            )}
           </div>
           <button
             type="button"
@@ -491,6 +511,7 @@ export function clearWalkthroughDone(): void {
   try {
     window.localStorage.removeItem(WALKTHROUGH_KEY);
     // Clear prior keys too
+    window.localStorage.removeItem("itw_walkthrough_v4");
     window.localStorage.removeItem("itw_walkthrough_v3");
     window.localStorage.removeItem("itw_walkthrough_v2");
     window.localStorage.removeItem("itw_walkthrough_v1");

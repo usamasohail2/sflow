@@ -90,6 +90,7 @@ import {
   isGemClaimEvent,
   isRazeEvent,
   makeAzadPlacementSector,
+  playerGoalsComplete,
   sectorBaseCode,
   shovelDigYield,
 } from "@/lib/gameTypes";
@@ -1672,6 +1673,14 @@ export function PlayShell() {
         done: (me.reviewedPlaceIds?.length ?? 0) >= 1,
       },
     ];
+  }, [me, gemsFound, snap?.inviteCount]);
+
+  const goalsComplete = useMemo(() => {
+    if (!me) return false;
+    return playerGoalsComplete(me, {
+      inviteCount: snap?.inviteCount ?? 0,
+      gemsFound,
+    });
   }, [me, gemsFound, snap?.inviteCount]);
 
   const showToast = (msg: string) => {
@@ -3593,6 +3602,11 @@ export function PlayShell() {
               </li>
             ))}
           </ul>
+          <p className="mt-2.5 border-t border-[var(--line)] pt-2 font-mono text-[9px] leading-snug text-[var(--ink-faint)]">
+            {goalsComplete
+              ? "Cars unlocked — Civic, Prado & Cruiser are in Arsenal."
+              : "Clear every goal to unlock Civic, Prado & Cruiser."}
+          </p>
           {me && (
             <button
               type="button"

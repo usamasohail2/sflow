@@ -30,6 +30,9 @@ import {
   buildingUpgradeCost,
   formatGold,
   isAzadHomeId,
+  isFlexVehicle,
+  isGemClaimEvent,
+  playerGoalsComplete,
   shovelDigYield,
   type BattleReport,
   type Building,
@@ -1385,6 +1388,13 @@ export async function getSnapshot(
     ? playersAll.filter((p) => p.invitedBy === meId).length
     : 0;
 
+  const gemsFound = me
+    ? gemsFoundCount(me, spotsWorking, allEvents)
+    : 0;
+  const goalsDone = me
+    ? playerGoalsComplete(me, { inviteCount, gemsFound })
+    : false;
+
   return {
     sectors,
     spots,
@@ -1395,13 +1405,33 @@ export async function getSnapshot(
     sectorHistory,
     serverNow: Date.now(),
     gatherTripMs: GATHER_TRIP_MS,
-    buildingCatalog: BUILDING_CATALOG,
+    buildingCatalog: goalsDone
+      ? BUILDING_CATALOG
+      : BUILDING_CATALOG.filter((b) => !isFlexVehicle(b.type)),
     authDisabled: AUTH_DISABLED,
     isAdmin: isAdminEmail(opts?.email ?? me?.email),
     storageBackend: storageBackend(),
     inviteCount,
     tutorialTestActive: Boolean(tutorialFlag),
   };
+}
+
+/** Matches client Goals “roam & claim” progress */
+function gemsFoundCount(
+  me: Player,
+  spots: { claimable?: boolean; ownerId?: string | null; id: string }[],
+  events: GameEvent[]
+): number {
+  const openMine = spots.filter(
+    (s) => s.claimable && s.ownerId === me.id
+  ).length;
+  const selfClaimed = me.discoveredSpotIds.filter((id) =>
+    id.startsWith("find_")
+  ).length;
+  const stolenFromMe = events.filter(
+    (e) => isGemClaimEvent(e) && e.defenderId === me.id
+  ).length;
+  return openMine + selfClaimed + stolenFromMe;
 }
 
 async function wipePlayerSettlement(me: Player): Promise<Player> {
@@ -2178,7 +2208,12 @@ export async function buildBuilding(
   if (!cat) return { error: "Unknown building" };
 
   const azad = isAzadHomeId(me.homeSectorId);
-  const sectors = await getSectors();
+  const [sectors, everyone, spots, events] = await Promise.all([
+    getSectors(),
+    getAllPlayers(),
+    getSpots(),
+    isFlexVehicle(type) ? recentEvents() : Promise.resolve([] as GameEvent[]),
+  ]);
   const sector = azad
     ? null
     : sectors.find((s) => s.id === me.homeSectorId);
@@ -2186,6 +2221,15 @@ export async function buildBuilding(
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return { error: "Tap a spot near your village to place it" };
   }
+
+  if (isFlexVehicle(type)) {
+    const inviteCount = everyone.filter((p) => p.invitedBy === playerId).length;
+    const gemsFound = gemsFoundCount(me, spots, events);
+    if (!playerGoalsComplete(me, { inviteCount, gemsFound })) {
+      return { error: "Finish all Goals quests to unlock cars" };
+    }
+  }
+
   const pos = { lat: lat!, lng: lng! };
   if (azad) {
     if (distMeters(pos, me.house) > AZAD_PLAY_RADIUS_M) {
@@ -2195,7 +2239,6 @@ export async function buildBuilding(
     return { error: "Place it inside your own sector" };
   }
 
-  const everyone = await getAllPlayers();
   for (const p of everyone) {
     for (const b of p.buildings) {
       const otherFp = catalogItem(b.type).footprintM;
@@ -2221,7 +2264,6 @@ export async function buildBuilding(
   }
 
   // Accrue pending gold first so affordability reflects reality
-  const spots = await getSpots();
   const { player: fresh } = await accruePlayer(me, spots, true);
   if (fresh.gold < cat.cost) return { error: `Need ${formatGold(cat.cost)} gold` };
 

@@ -137,6 +137,17 @@ export type BuildingType =
   | "prado"
   | "landcruiser";
 
+/** Flex cars — hidden until every Starter Goals quest is done */
+export const FLEX_VEHICLE_TYPES: BuildingType[] = [
+  "civic",
+  "prado",
+  "landcruiser",
+];
+
+export function isFlexVehicle(type: string): boolean {
+  return (FLEX_VEHICLE_TYPES as string[]).includes(type);
+}
+
 export type Building = {
   id: string;
   type: BuildingType;
@@ -193,6 +204,30 @@ export type Player = {
   createdAt: number;
   updatedAt: number;
 };
+
+/** Starter Goals checklist — Civic / Prado / Cruiser unlock when all are true */
+export function playerGoalsComplete(
+  me: Pick<
+    Player,
+    | "homeSectorId"
+    | "gold"
+    | "buildings"
+    | "rockets"
+    | "discoveredSpotIds"
+    | "reviewedPlaceIds"
+  >,
+  opts: { inviteCount: number; gemsFound: number }
+): boolean {
+  return (
+    Boolean(me.homeSectorId) &&
+    me.gold > 0 &&
+    opts.gemsFound >= 1 &&
+    me.buildings.length >= 1 &&
+    (me.rockets || 0) >= 1 &&
+    opts.inviteCount >= 1 &&
+    (me.reviewedPlaceIds?.length ?? 0) >= 1
+  );
+}
 
 export type GameState = {
   version: 2;
@@ -572,7 +607,7 @@ export const BUILDING_CATALOG: BuildingCatalogItem[] = [
     type: "civic",
     name: "Honda Civic",
     cost: 85_000_000,
-    blurb: "Park it by your house — flex tier",
+    blurb: "Park by your house — unlocks after all Goals",
     tripBonus: 0,
     footprintM: 16,
     hp: 2,
@@ -582,7 +617,7 @@ export const BUILDING_CATALOG: BuildingCatalogItem[] = [
     type: "prado",
     name: "Toyota Prado",
     cost: 150_000_000,
-    blurb: "SUV flex — park near home",
+    blurb: "SUV flex — unlocks after all Goals",
     tripBonus: 0,
     footprintM: 20,
     hp: 3,
@@ -592,7 +627,7 @@ export const BUILDING_CATALOG: BuildingCatalogItem[] = [
     type: "landcruiser",
     name: "Land Cruiser",
     cost: 250_000_000,
-    blurb: "Top-shelf flex — everyone sees it",
+    blurb: "Top-shelf flex — unlocks after all Goals",
     tripBonus: 0,
     footprintM: 24,
     hp: 4,
