@@ -54,17 +54,17 @@ import {
   wallBandCoordinates,
 } from "@/lib/geo";
 
-/** Thin extruded wall band — lines stay on the single perimeter */
-const SECTOR_WALL_M = 22;
+/** Extruded wall band thickness (meters) — lines stay on the single perimeter */
+const SECTOR_WALL_M = 30;
 /**
- * Stacked extrusions — tall boundary walls fading upward.
+ * Stacked extrusions — boundary walls fading upward.
  * Must live in the Standard `middle` slot (not `top`) or they render flat.
  * `fill-extrusion-opacity` cannot be data-driven — keep it a constant per band.
  */
 const SECTOR_WALL_STACK = [
-  { id: "sector-wall-low", base: 0, height: 140, opacity: 0.92 },
-  { id: "sector-wall-mid", base: 140, height: 320, opacity: 0.55 },
-  { id: "sector-wall-high", base: 320, height: 520, opacity: 0.22 },
+  { id: "sector-wall-low", base: 0, height: 110, opacity: 0.92 },
+  { id: "sector-wall-mid", base: 110, height: 250, opacity: 0.55 },
+  { id: "sector-wall-high", base: 250, height: 400, opacity: 0.22 },
 ] as const;
 
 /** You = blue, same-sector ally = green, other sector = enemy red */
@@ -1457,7 +1457,7 @@ export function GameMap({
                 "fill-extrusion-height": [
                   "case",
                   ["==", ["get", "mine"], 1],
-                  band.height + 40,
+                  band.height + 30,
                   band.height,
                 ] as never,
                 "fill-extrusion-opacity": band.opacity,
