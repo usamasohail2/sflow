@@ -55,17 +55,14 @@ import {
 } from "@/lib/geo";
 
 /** Extruded wall band thickness (meters) — lines stay on the single perimeter */
-const SECTOR_WALL_M = 30;
+const SECTOR_WALL_M = 48;
 /**
- * Stacked extrusions — boundary walls fading upward.
+ * Single solid extrusion — shorter stub walls, plain color (no fade stack).
  * Must live in the Standard `middle` slot (not `top`) or they render flat.
- * `fill-extrusion-opacity` cannot be data-driven — keep it a constant per band.
  */
-const SECTOR_WALL_STACK = [
-  { id: "sector-wall-low", base: 0, height: 110, opacity: 0.92 },
-  { id: "sector-wall-mid", base: 110, height: 250, opacity: 0.55 },
-  { id: "sector-wall-high", base: 250, height: 400, opacity: 0.22 },
-] as const;
+const SECTOR_WALL_HEIGHT_M = 180;
+const SECTOR_WALL_HEIGHT_MINE_M = 200;
+const SECTOR_WALL_OPACITY = 0.88;
 
 /**
  * Street-zoom cull: only show settlers / live viewers near the camera.
@@ -1479,28 +1476,25 @@ export function GameMap({
           />
         </Source>
 
-        {/* Tall extruded wall band — middle slot so Standard keeps 3D extrusion */}
+        {/* Solid wall band — middle slot so Standard keeps 3D extrusion */}
         <Source id="sector-wall-bands" type="geojson" data={wallBandFc}>
-          {SECTOR_WALL_STACK.map((band) => (
-            <Layer
-              key={band.id}
-              id={band.id}
-              type="fill-extrusion"
-              slot="middle"
-              paint={{
-                "fill-extrusion-color": sectorWallColor,
-                "fill-extrusion-base": band.base,
-                "fill-extrusion-height": [
-                  "case",
-                  ["==", ["get", "mine"], 1],
-                  band.height + 30,
-                  band.height,
-                ] as never,
-                "fill-extrusion-opacity": band.opacity,
-                "fill-extrusion-vertical-gradient": false,
-              }}
-            />
-          ))}
+          <Layer
+            id="sector-wall-solid"
+            type="fill-extrusion"
+            slot="middle"
+            paint={{
+              "fill-extrusion-color": sectorWallColor,
+              "fill-extrusion-base": 0,
+              "fill-extrusion-height": [
+                "case",
+                ["==", ["get", "mine"], 1],
+                SECTOR_WALL_HEIGHT_MINE_M,
+                SECTOR_WALL_HEIGHT_M,
+              ] as never,
+              "fill-extrusion-opacity": SECTOR_WALL_OPACITY,
+              "fill-extrusion-vertical-gradient": false,
+            }}
+          />
         </Source>
 
         {/* Single perimeter glow + crisp stroke */}
