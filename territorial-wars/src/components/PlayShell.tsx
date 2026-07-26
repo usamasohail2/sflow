@@ -630,17 +630,20 @@ function activityLine(
   return "Activity";
 }
 
-/** Compact CS-style killfeed line */
+/** Compact CS-style killfeed line — verb first so outcome is obvious */
 function killFeedLine(
   e: GameEvent,
   myId?: string | null,
   colors?: ActivityColors
 ): ReactNode {
   if (isRazeEvent(e)) {
+    const wiped = e.destroyed !== false;
     return (
       <>
         <NameChip id={e.attackerId} name={e.attackerName} myId={myId} colors={colors} />
-        <span className="kill-feed-sep">▸</span>
+        <span className={`kill-feed-verb ${wiped ? "is-destroy" : "is-attack"}`}>
+          {wiped ? "destroyed" : "attacked"}
+        </span>
         <NameChip
           id={e.defenderId}
           name={e.defenderName}
@@ -657,7 +660,7 @@ function killFeedLine(
     return (
       <>
         <NameChip id={e.attackerId} name={e.attackerName} myId={myId} colors={colors} />
-        <span className="kill-feed-sep">◆</span>
+        <span className="kill-feed-verb is-claim">stole</span>
         <NameChip
           id={e.defenderId}
           name={e.defenderName}
@@ -670,10 +673,21 @@ function killFeedLine(
     );
   }
   if (isAttackEvent(e)) {
+    const wiped =
+      e.win &&
+      (Boolean(e.destroyed) ||
+        Boolean(e.houseDestroyed) ||
+        destroyedCountFrom(e.destroyed) > 0);
     return (
       <>
         <NameChip id={e.attackerId} name={e.attackerName} myId={myId} colors={colors} />
-        <span className="kill-feed-sep">{e.win ? "⚔" : "🛡"}</span>
+        <span
+          className={`kill-feed-verb ${
+            !e.win ? "is-hold" : wiped ? "is-destroy" : "is-attack"
+          }`}
+        >
+          {!e.win ? "failed vs" : wiped ? "destroyed" : "attacked"}
+        </span>
         <NameChip id={e.defenderId} name={e.defenderName} myId={myId} colors={colors} />
         <span className="kill-feed-sector">{e.sectorName}</span>
       </>
