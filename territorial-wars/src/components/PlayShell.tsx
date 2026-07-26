@@ -2677,14 +2677,18 @@ export function PlayShell() {
                   setShowRanks(false);
                   setShowMissions(false);
                 }}
-                className={`hud-chip hidden px-2.5 py-1.5 font-mono text-[11px] sm:inline-flex sm:px-3 ${
+                className={`hud-chip inline-flex h-[30px] items-center gap-0.5 px-1.5 font-mono text-[10px] sm:h-auto sm:gap-1 sm:px-2.5 sm:py-1.5 sm:text-[11px] ${
                   showInvite
                     ? "text-[var(--sand)]"
                     : "text-[var(--ink-muted)] hover:text-[var(--sand)]"
                 }`}
-                title="Invite friends — +1 villager each"
+                title={`Invite friends — +${INVITE_VILLAGER_BONUS} villager each`}
               >
-                Invite
+                <span className="hidden sm:inline">Invite</span>
+                <span className="sm:hidden">Inv</span>
+                <span className="font-bold text-[var(--sand)]">
+                  +{INVITE_VILLAGER_BONUS}
+                </span>
               </button>
             )}
             <button
