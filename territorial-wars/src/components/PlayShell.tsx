@@ -2648,6 +2648,7 @@ export function PlayShell() {
           spots={snap?.spots ?? []}
           me={me}
           players={snap?.players ?? []}
+          events={snap?.events ?? []}
           selectedId={selectedId}
           selectedPlayerId={selectedPlayerId}
           placing={placing}

@@ -8,6 +8,7 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import type {
   Building,
   BuildingType,
+  GameEvent,
   LatLng,
   Player,
   PublicPlayer,
@@ -41,6 +42,7 @@ import {
   AZAD_ARENA_NAME,
   AZAD_PLAY_RADIUS_M,
   catalogItem,
+  isAttackEvent,
   isAzadHomeId,
 } from "@/lib/gameTypes";
 import {
@@ -265,6 +267,8 @@ type Props = {
   guidePulse?: boolean;
   /** Optimistic buildings currently writing to the server */
   syncingBuildingIds?: string[];
+  /** Personal war log — sectors that attacked you turn red */
+  events?: GameEvent[];
   className?: string;
 };
 
@@ -373,6 +377,7 @@ export function GameMap({
   presencePeers = [],
   presenceSelf = null,
   onCameraReport,
+  events = [],
   className = "",
 }: Props) {
   const syncingSet = useMemo(
@@ -841,6 +846,41 @@ export function GameMap({
     return best > 0 ? bestId : null;
   }, [players]);
 
+  /**
+   * Sectors that have attacked you → red walls.
+   * Everyone else stays grey until they raid you.
+   */
+  const hostileSectorIds = useMemo(() => {
+    const hostile = new Set<string>();
+    if (!me?.id) return hostile;
+    const homeByPlayer = new Map<string, string>();
+    for (const p of players) {
+      if (p.homeSectorId && !isAzadHomeId(p.homeSectorId)) {
+        homeByPlayer.set(p.id, p.homeSectorId);
+      }
+    }
+    if (me.homeSectorId && !isAzadHomeId(me.homeSectorId)) {
+      homeByPlayer.set(me.id, me.homeSectorId);
+    }
+    for (const e of events) {
+      if (!isAttackEvent(e)) continue;
+      if (e.defenderId !== me.id) continue;
+      if (e.attackerId === me.id) continue;
+      const attackerHome =
+        (e.attackerSectorId && !isAzadHomeId(e.attackerSectorId)
+          ? e.attackerSectorId
+          : null) ?? homeByPlayer.get(e.attackerId);
+      if (
+        attackerHome &&
+        attackerHome !== me.homeSectorId &&
+        !isAzadHomeId(attackerHome)
+      ) {
+        hostile.add(attackerHome);
+      }
+    }
+    return hostile;
+  }, [events, players, me]);
+
   const fc = useMemo<FeatureCollection>(
     () => ({
       type: "FeatureCollection",
@@ -854,6 +894,7 @@ export function GameMap({
             id: s.id,
             name: s.name,
             mine: me?.homeSectorId === s.id ? 1 : 0,
+            hostile: hostileSectorIds.has(s.id) ? 1 : 0,
             economy: farmed,
             king: isKing ? 1 : 0,
             overviewLabel: isKing
@@ -867,7 +908,7 @@ export function GameMap({
         };
       }),
     }),
-    [sectors, me, sectorEconomy, topSectorId]
+    [sectors, me, sectorEconomy, topSectorId, hostileSectorIds]
   );
 
   /** Single perimeter line per sector (no hollow band → no double edges) */
@@ -881,6 +922,7 @@ export function GameMap({
           id: s.id,
           name: s.name,
           mine: me?.homeSectorId === s.id ? 1 : 0,
+          hostile: hostileSectorIds.has(s.id) ? 1 : 0,
         },
         geometry: {
           type: "LineString" as const,
@@ -888,7 +930,7 @@ export function GameMap({
         },
       })),
     }),
-    [sectors, me]
+    [sectors, me, hostileSectorIds]
   );
 
   /** Extruded wall band only (no line stroke on this source) */
@@ -901,6 +943,7 @@ export function GameMap({
         properties: {
           id: s.id,
           mine: me?.homeSectorId === s.id ? 1 : 0,
+          hostile: hostileSectorIds.has(s.id) ? 1 : 0,
         },
         geometry: {
           type: "Polygon" as const,
@@ -908,27 +951,29 @@ export function GameMap({
         },
       })),
     }),
-    [sectors, me]
+    [sectors, me, hostileSectorIds]
   );
 
-  /** Your sector = blue; enemy sectors = red; pre-settle select = gold */
+  /** Yours = blue; attacked you = red; everyone else = grey */
   const settled = Boolean(me?.homeSectorId);
   const sectorWallColor = [
     "case",
     ["==", ["get", "mine"], 1],
     exploring ? "#7ec8ff" : "#3b9eff",
+    ["==", ["get", "hostile"], 1],
+    exploring ? "#ff7a6e" : "#ff4d3d",
     ["==", ["get", "id"], selectedId || ""],
     settled
       ? exploring
-        ? "#ff9a7a"
-        : "#ff5e4d"
+        ? "#c8cfc6"
+        : "#a8b0a4"
       : exploring
         ? "#ffe08a"
         : "#ffd060",
     settled
       ? exploring
-        ? "#ff7a6e"
-        : "#ff4d3d"
+        ? "#9aa39a"
+        : "#6f776e"
       : exploring
         ? "#9ec8e8"
         : "#d0c4a8",
@@ -938,18 +983,22 @@ export function GameMap({
     "case",
     ["==", ["get", "mine"], 1],
     "#3b9eff",
+    ["==", ["get", "hostile"], 1],
+    "#ff4d3d",
     ["==", ["get", "id"], selectedId || ""],
-    settled ? "#ff5a45" : "#ffd060",
-    settled ? "#ff4d3d" : "#8a8578",
+    settled ? "#8a9188" : "#ffd060",
+    settled ? "#5c635c" : "#8a8578",
   ] as never;
 
   const sectorLabelColor = [
     "case",
     ["==", ["get", "mine"], 1],
     "#9fd0ff",
+    ["==", ["get", "hostile"], 1],
+    "#ffb0a4",
     ["==", ["get", "id"], selectedId || ""],
-    settled ? "#ffc4b8" : "#ffe6a0",
-    settled ? "#ffb0a4" : "#f0f2ea",
+    settled ? "#e8ebe4" : "#ffe6a0",
+    settled ? "#c8cfc6" : "#f0f2ea",
   ] as never;
 
   // Footprint circles — rel: 0 you, 1 ally, 2 enemy; emphasis while placing

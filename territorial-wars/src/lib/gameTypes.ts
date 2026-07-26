@@ -251,6 +251,8 @@ export type AttackEvent = GameEventBase & {
   damage: number;
   destroyed: string | null;
   lootedGold: number;
+  /** Attacker's home sector at raid time (for hostile wall coloring) */
+  attackerSectorId?: string;
   /** Optional — present on newer battle events */
   attackPower?: number;
   defensePower?: number;

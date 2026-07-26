@@ -2591,6 +2591,7 @@ export async function attackSector(
     sectorName: isAzadHomeId(targetSectorId)
       ? AZAD_ARENA_NAME
       : sector?.name ?? targetSectorId,
+    attackerSectorId: me.homeSectorId ?? undefined,
     win,
     damage: damageDealt,
     destroyed,
