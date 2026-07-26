@@ -17,7 +17,6 @@ import {
   type Placing,
 } from "@/components/GameMap";
 import { EntryGate } from "@/components/EntryGate";
-import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 import { HealthPanel } from "@/components/HealthPanel";
 import { PublicChat } from "@/components/PublicChat";
 import { SectorAnalyticsModal } from "@/components/SectorAnalytics";
