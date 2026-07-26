@@ -29,6 +29,7 @@ const siteDescription =
 export const metadata: Metadata = {
   title: "Islamabad Territorial Wars",
   description: siteDescription,
+  applicationName: "Islamabad Territorial Wars",
   openGraph: {
     title: "Islamabad Territorial Wars",
     description: siteDescription,

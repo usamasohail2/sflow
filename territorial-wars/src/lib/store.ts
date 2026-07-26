@@ -30,10 +30,10 @@ import {
   buildingUpgradeCost,
   formatGold,
   isAzadHomeId,
+  canUnlockFlexVehicles,
   isFlexVehicle,
-  isGemClaimEvent,
-  playerGoalsComplete,
   shovelDigYield,
+  topScorerIdForHome,
   type BattleReport,
   type Building,
   type BuildingType,
@@ -1388,11 +1388,8 @@ export async function getSnapshot(
     ? playersAll.filter((p) => p.invitedBy === meId).length
     : 0;
 
-  const gemsFound = me
-    ? gemsFoundCount(me, spotsWorking, allEvents)
-    : 0;
-  const goalsDone = me
-    ? playerGoalsComplete(me, { inviteCount, gemsFound })
+  const flexUnlocked = me
+    ? canUnlockFlexVehicles(me, playersAll)
     : false;
 
   return {
@@ -1405,7 +1402,7 @@ export async function getSnapshot(
     sectorHistory,
     serverNow: Date.now(),
     gatherTripMs: GATHER_TRIP_MS,
-    buildingCatalog: goalsDone
+    buildingCatalog: flexUnlocked
       ? BUILDING_CATALOG
       : BUILDING_CATALOG.filter((b) => !isFlexVehicle(b.type)),
     authDisabled: AUTH_DISABLED,
@@ -1414,24 +1411,6 @@ export async function getSnapshot(
     inviteCount,
     tutorialTestActive: Boolean(tutorialFlag),
   };
-}
-
-/** Matches client Goals “roam & claim” progress */
-function gemsFoundCount(
-  me: Player,
-  spots: { claimable?: boolean; ownerId?: string | null; id: string }[],
-  events: GameEvent[]
-): number {
-  const openMine = spots.filter(
-    (s) => s.claimable && s.ownerId === me.id
-  ).length;
-  const selfClaimed = me.discoveredSpotIds.filter((id) =>
-    id.startsWith("find_")
-  ).length;
-  const stolenFromMe = events.filter(
-    (e) => isGemClaimEvent(e) && e.defenderId === me.id
-  ).length;
-  return openMine + selfClaimed + stolenFromMe;
 }
 
 async function wipePlayerSettlement(me: Player): Promise<Player> {
@@ -2103,17 +2082,7 @@ export async function renameSectorTag(
 
   // Must be #1 by totalFarmed inside this sector
   const players = await getAllPlayers();
-  let topId: string | null = null;
-  let topFarmed = -1;
-  for (const p of players) {
-    if (p.homeSectorId !== sectorId) continue;
-    const farmed = p.totalFarmed || 0;
-    if (farmed > topFarmed) {
-      topFarmed = farmed;
-      topId = p.id;
-    }
-  }
-  if (topId !== playerId) {
+  if (topScorerIdForHome(players, sectorId) !== playerId) {
     return { error: "Only the top scorer in this sector can rename it" };
   }
 
@@ -2208,11 +2177,10 @@ export async function buildBuilding(
   if (!cat) return { error: "Unknown building" };
 
   const azad = isAzadHomeId(me.homeSectorId);
-  const [sectors, everyone, spots, events] = await Promise.all([
+  const [sectors, everyone, spots] = await Promise.all([
     getSectors(),
     getAllPlayers(),
     getSpots(),
-    isFlexVehicle(type) ? recentEvents() : Promise.resolve([] as GameEvent[]),
   ]);
   const sector = azad
     ? null
@@ -2222,12 +2190,8 @@ export async function buildBuilding(
     return { error: "Tap a spot near your village to place it" };
   }
 
-  if (isFlexVehicle(type)) {
-    const inviteCount = everyone.filter((p) => p.invitedBy === playerId).length;
-    const gemsFound = gemsFoundCount(me, spots, events);
-    if (!playerGoalsComplete(me, { inviteCount, gemsFound })) {
-      return { error: "Finish all Goals quests to unlock cars" };
-    }
+  if (isFlexVehicle(type) && !canUnlockFlexVehicles(me, everyone)) {
+    return { error: "Only the top scorer in your sector can buy cars" };
   }
 
   const pos = { lat: lat!, lng: lng! };

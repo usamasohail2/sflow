@@ -205,7 +205,7 @@ export type Player = {
   updatedAt: number;
 };
 
-/** Starter Goals checklist — Civic / Prado / Cruiser unlock when all are true */
+/** Starter Goals checklist (UI missions) */
 export function playerGoalsComplete(
   me: Pick<
     Player,
@@ -227,6 +227,48 @@ export function playerGoalsComplete(
     opts.inviteCount >= 1 &&
     (me.reviewedPlaceIds?.length ?? 0) >= 1
   );
+}
+
+type RankablePlayer = {
+  id: string;
+  homeSectorId: string | null;
+  totalFarmed?: number;
+};
+
+/**
+ * Top scorer for a home — mapped sectors compare within that sector;
+ * Azad players compete on the shared Azad board.
+ */
+export function topScorerIdForHome(
+  players: RankablePlayer[],
+  homeSectorId: string
+): string | null {
+  const azad = isAzadHomeId(homeSectorId);
+  let topId: string | null = null;
+  let topFarmed = -1;
+  for (const p of players) {
+    if (!p.homeSectorId) continue;
+    if (azad) {
+      if (!isAzadHomeId(p.homeSectorId)) continue;
+    } else if (p.homeSectorId !== homeSectorId) {
+      continue;
+    }
+    const farmed = p.totalFarmed || 0;
+    if (farmed > topFarmed) {
+      topFarmed = farmed;
+      topId = p.id;
+    }
+  }
+  return topId;
+}
+
+/** Civic / Prado / Cruiser — only the current #1 in your sector (or Azad board) */
+export function canUnlockFlexVehicles(
+  me: RankablePlayer,
+  players: RankablePlayer[]
+): boolean {
+  if (!me.homeSectorId) return false;
+  return topScorerIdForHome(players, me.homeSectorId) === me.id;
 }
 
 export type GameState = {
@@ -607,7 +649,7 @@ export const BUILDING_CATALOG: BuildingCatalogItem[] = [
     type: "civic",
     name: "Honda Civic",
     cost: 85_000_000,
-    blurb: "Park by your house — unlocks after all Goals",
+    blurb: "Park by your house — sector #1 only",
     tripBonus: 0,
     footprintM: 16,
     hp: 2,
@@ -617,7 +659,7 @@ export const BUILDING_CATALOG: BuildingCatalogItem[] = [
     type: "prado",
     name: "Toyota Prado",
     cost: 150_000_000,
-    blurb: "SUV flex — unlocks after all Goals",
+    blurb: "SUV flex — sector #1 only",
     tripBonus: 0,
     footprintM: 20,
     hp: 3,
@@ -627,7 +669,7 @@ export const BUILDING_CATALOG: BuildingCatalogItem[] = [
     type: "landcruiser",
     name: "Land Cruiser",
     cost: 250_000_000,
-    blurb: "Top-shelf flex — unlocks after all Goals",
+    blurb: "Top-shelf flex — sector #1 only",
     tripBonus: 0,
     footprintM: 24,
     hp: 4,

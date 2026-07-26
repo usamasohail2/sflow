@@ -90,7 +90,7 @@ import {
   isGemClaimEvent,
   isRazeEvent,
   makeAzadPlacementSector,
-  playerGoalsComplete,
+  canUnlockFlexVehicles,
   sectorBaseCode,
   shovelDigYield,
 } from "@/lib/gameTypes";
@@ -1675,13 +1675,17 @@ export function PlayShell() {
     ];
   }, [me, gemsFound, snap?.inviteCount]);
 
-  const goalsComplete = useMemo(() => {
-    if (!me) return false;
-    return playerGoalsComplete(me, {
-      inviteCount: snap?.inviteCount ?? 0,
-      gemsFound,
-    });
-  }, [me, gemsFound, snap?.inviteCount]);
+  const flexUnlocked = useMemo(() => {
+    if (!me || !snap) return false;
+    return canUnlockFlexVehicles(me, [
+      ...snap.players,
+      {
+        id: me.id,
+        homeSectorId: me.homeSectorId,
+        totalFarmed: me.totalFarmed,
+      },
+    ]);
+  }, [me, snap]);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -3415,6 +3419,11 @@ export function PlayShell() {
                 <p className="mt-0.5 font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--ink-faint)]">
                   Total resources farmed
                 </p>
+                <p className="mt-1.5 max-w-[16rem] font-mono text-[9px] leading-snug text-[var(--sand)]/85">
+                  {flexUnlocked
+                    ? "You’re #1 — Civic, Prado & Cruiser are in Arsenal."
+                    : "Be #1 in your sector to unlock Civic, Prado & Cruiser."}
+                </p>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -3602,11 +3611,6 @@ export function PlayShell() {
               </li>
             ))}
           </ul>
-          <p className="mt-2.5 border-t border-[var(--line)] pt-2 font-mono text-[9px] leading-snug text-[var(--ink-faint)]">
-            {goalsComplete
-              ? "Cars unlocked — Civic, Prado & Cruiser are in Arsenal."
-              : "Clear every goal to unlock Civic, Prado & Cruiser."}
-          </p>
           {me && (
             <button
               type="button"
