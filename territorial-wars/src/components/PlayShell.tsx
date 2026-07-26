@@ -260,19 +260,22 @@ function NameChip({
   myId,
   colors,
   possessive = false,
+  ally = false,
 }: {
   id: string;
   name: string;
   myId?: string | null;
   colors?: Map<string, string> | Record<string, string> | null;
   possessive?: boolean;
+  /** Same-sector ally marker — e.g. Usama (ally) */
+  ally?: boolean;
 }) {
   const isYou = Boolean(myId && id === myId);
   const color = playerColor(id, colors);
   if (isYou && possessive) {
     return (
       <span className="font-bold" style={{ color }}>
-        your
+        Your
       </span>
     );
   }
@@ -280,6 +283,12 @@ function NameChip({
   return (
     <span className="font-bold" style={{ color }}>
       {possessive ? `${label}'s` : label}
+      {ally && !isYou ? (
+        <span className="font-mono text-[9px] font-normal tracking-normal text-[var(--field-bright)]">
+          {" "}
+          (ally)
+        </span>
+      ) : null}
     </span>
   );
 }
@@ -439,10 +448,9 @@ function eventLogLine(
   colors?: ActivityColors
 ): ReactNode {
   if (isRazeEvent(e)) {
-    const verb =
-      e.destroyed === false
-        ? "hit"
-        : pickVariant(e.id, RAZE_VERBS);
+    const wiped = e.destroyed !== false;
+    const verb = wiped ? "destroyed" : "attacked";
+    const iAmTarget = Boolean(myId && e.defenderId === myId && e.attackerId !== myId);
     if (e.attackerId === myId) {
       return (
         <>
@@ -465,8 +473,13 @@ function eventLogLine(
     }
     return (
       <>
-        Your ally,{" "}
-        <NameChip id={e.attackerId} name={e.attackerName} myId={myId} colors={colors} />,{" "}
+        <NameChip
+          id={e.attackerId}
+          name={e.attackerName}
+          myId={myId}
+          colors={colors}
+          ally={iAmTarget}
+        />{" "}
         {verb}{" "}
         <NameChip
           id={e.defenderId}
@@ -555,27 +568,18 @@ function activityLine(
   colors?: ActivityColors
 ): ReactNode {
   if (isRazeEvent(e)) {
-    const verb = pickVariant(e.id, RAZE_VERBS);
-    if (myId && e.defenderId === myId && e.attackerId !== myId) {
-      return (
-        <>
-          Your ally,{" "}
-          <NameChip id={e.attackerId} name={e.attackerName} myId={myId} colors={colors} />,{" "}
-          {verb}{" "}
-          <NameChip
-            id={e.defenderId}
-            name={e.defenderName}
-            myId={myId}
-            colors={colors}
-            possessive
-          />{" "}
-          {e.buildingName}
-        </>
-      );
-    }
+    const wiped = e.destroyed !== false;
+    const verb = wiped ? "destroyed" : "attacked";
+    const iAmTarget = Boolean(myId && e.defenderId === myId && e.attackerId !== myId);
     return (
       <>
-        <NameChip id={e.attackerId} name={e.attackerName} myId={myId} colors={colors} />{" "}
+        <NameChip
+          id={e.attackerId}
+          name={e.attackerName}
+          myId={myId}
+          colors={colors}
+          ally={iAmTarget}
+        />{" "}
         {verb}{" "}
         <NameChip
           id={e.defenderId}
@@ -584,7 +588,8 @@ function activityLine(
           colors={colors}
           possessive
         />{" "}
-        {e.buildingName} · {e.sectorName}
+        {e.buildingName}
+        {!iAmTarget ? ` · ${e.sectorName}` : ""}
       </>
     );
   }
@@ -638,9 +643,16 @@ function killFeedLine(
 ): ReactNode {
   if (isRazeEvent(e)) {
     const wiped = e.destroyed !== false;
+    const iAmTarget = Boolean(myId && e.defenderId === myId && e.attackerId !== myId);
     return (
       <>
-        <NameChip id={e.attackerId} name={e.attackerName} myId={myId} colors={colors} />
+        <NameChip
+          id={e.attackerId}
+          name={e.attackerName}
+          myId={myId}
+          colors={colors}
+          ally={iAmTarget}
+        />
         <span className={`kill-feed-verb ${wiped ? "is-destroy" : "is-attack"}`}>
           {wiped ? "destroyed" : "attacked"}
         </span>
@@ -4791,10 +4803,14 @@ export function PlayShell() {
                 </p>
                 <p className="mt-1.5 text-[13px] leading-snug text-white/90">
                   <strong>{personName(razeAlert.attackerName)}</strong>
+                  <span className="font-mono text-[10px] text-[var(--field-bright)]">
+                    {" "}
+                    (ally)
+                  </span>
                   {razeAlert.destroyed === false
-                    ? " attacked your "
-                    : " destroyed your "}
-                  <strong>{razeAlert.buildingName}</strong>
+                    ? " attacked "
+                    : " destroyed "}
+                  <strong>Your {razeAlert.buildingName}</strong>
                   {razeAlert.destroyed === false && razeAlert.damage
                     ? ` (${razeAlert.damage} dmg)`
                     : ""}
