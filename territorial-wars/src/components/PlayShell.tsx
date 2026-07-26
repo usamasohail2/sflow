@@ -777,6 +777,7 @@ export function PlayShell() {
   const {
     visitorId,
     displayName,
+    viewers: onlineViewers,
     peers: presencePeers,
     selfCamera,
     selfBubble,
@@ -3057,6 +3058,18 @@ export function PlayShell() {
       {/* Menu dropdown — battles / goals / editor / account */}
       {showMenu && (
         <div className="absolute right-2 top-[4.75rem] z-30 w-56 hud-panel p-2 sm:right-3 sm:top-16">
+          <div className="mb-1 flex items-center justify-between rounded-sm px-2 py-1.5">
+            <span className="inline-flex items-center gap-1.5 text-[12px] text-[var(--ink-muted)]">
+              <span
+                className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--field-bright)]"
+                aria-hidden
+              />
+              Online now
+            </span>
+            <span className="font-mono text-[11px] font-semibold tabular-nums text-[var(--sand)]">
+              {onlineViewers ?? 1 + presencePeers.length}
+            </span>
+          </div>
           <button
             type="button"
             onClick={() => {
