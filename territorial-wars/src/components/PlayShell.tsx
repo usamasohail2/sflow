@@ -551,6 +551,64 @@ function activityLine(
   return "Activity";
 }
 
+/** Compact CS-style killfeed line */
+function killFeedLine(
+  e: GameEvent,
+  myId?: string | null,
+  colors?: ActivityColors
+): ReactNode {
+  if (isRazeEvent(e)) {
+    return (
+      <>
+        <NameChip id={e.attackerId} name={e.attackerName} myId={myId} colors={colors} />
+        <span className="kill-feed-sep">▸</span>
+        <NameChip
+          id={e.defenderId}
+          name={e.defenderName}
+          myId={myId}
+          colors={colors}
+          possessive
+        />{" "}
+        {e.buildingName}
+      </>
+    );
+  }
+  if (isGemClaimEvent(e)) {
+    const gemLabel = GEM_META[e.gem]?.label ?? "gem";
+    return (
+      <>
+        <NameChip id={e.attackerId} name={e.attackerName} myId={myId} colors={colors} />
+        <span className="kill-feed-sep">◆</span>
+        <NameChip
+          id={e.defenderId}
+          name={e.defenderName}
+          myId={myId}
+          colors={colors}
+          possessive
+        />{" "}
+        {gemLabel}
+      </>
+    );
+  }
+  if (isAttackEvent(e)) {
+    return (
+      <>
+        <NameChip id={e.attackerId} name={e.attackerName} myId={myId} colors={colors} />
+        <span className="kill-feed-sep">{e.win ? "⚔" : "🛡"}</span>
+        <NameChip id={e.defenderId} name={e.defenderName} myId={myId} colors={colors} />
+        <span className="kill-feed-sector">{e.sectorName}</span>
+      </>
+    );
+  }
+  return "Activity";
+}
+
+const KILL_FEED_MAX = 4;
+const KILL_FEED_TTL_MS = 8_000;
+const KILL_FEED_FADE_MS = 1_800;
+
+type KillFeedItem = { id: string; event: GameEvent; shownAt: number };
+
 export function PlayShell() {
   const [snap, setSnap] = useState<GameSnapshot | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -664,6 +722,10 @@ export function PlayShell() {
   const identityChecked = useRef(false);
   const seenEvents = useRef<Set<string>>(new Set());
   const eventsPrimed = useRef(false);
+  const killFeedSeen = useRef<Set<string>>(new Set());
+  const killFeedPrimed = useRef(false);
+  const [killFeed, setKillFeed] = useState<KillFeedItem[]>([]);
+  const [killFeedNow, setKillFeedNow] = useState(() => Date.now());
   const meIdRef = useRef<string | null>(null);
   const busyRef = useRef(false);
   const settleGuardUntil = useRef(0);
@@ -790,6 +852,9 @@ export function PlayShell() {
       meIdRef.current = nextId;
       seenEvents.current = new Set();
       eventsPrimed.current = false;
+      killFeedSeen.current = new Set();
+      killFeedPrimed.current = false;
+      setKillFeed([]);
       lastInviteCount.current = null;
     }
 
@@ -1213,6 +1278,53 @@ export function PlayShell() {
     if (me) map.set(me.id, me.color || colorForPlayerId(me.id));
     return map;
   }, [snap?.players, me]);
+
+  // CS-style corner feed: newest wars fade after a few seconds
+  useEffect(() => {
+    const source = snap?.globalEvents?.length
+      ? snap.globalEvents
+      : snap?.events ?? [];
+    if (!source.length && killFeedPrimed.current) return;
+
+    const newest = [...source].sort((a, b) => b.ts - a.ts);
+    const now = Date.now();
+
+    if (!killFeedPrimed.current) {
+      killFeedPrimed.current = true;
+      const seed = newest.slice(0, KILL_FEED_MAX);
+      for (const e of newest) killFeedSeen.current.add(e.id);
+      setKillFeed(
+        seed.map((e, i) => ({
+          id: e.id,
+          event: e,
+          // Stagger so the oldest seed lines fade first
+          shownAt: now - i * 900,
+        }))
+      );
+      return;
+    }
+
+    const additions: KillFeedItem[] = [];
+    for (const e of newest) {
+      if (killFeedSeen.current.has(e.id)) continue;
+      killFeedSeen.current.add(e.id);
+      additions.push({ id: e.id, event: e, shownAt: now });
+    }
+    if (!additions.length) return;
+    setKillFeed((prev) => [...additions, ...prev].slice(0, KILL_FEED_MAX));
+  }, [snap?.globalEvents, snap?.events]);
+
+  useEffect(() => {
+    if (killFeed.length === 0) return;
+    const id = window.setInterval(() => {
+      const now = Date.now();
+      setKillFeedNow(now);
+      setKillFeed((prev) =>
+        prev.filter((item) => now - item.shownAt < KILL_FEED_TTL_MS)
+      );
+    }, 200);
+    return () => window.clearInterval(id);
+  }, [killFeed.length > 0]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Prefer in-game settler name for chat / floating label
   useEffect(() => {
@@ -2637,25 +2749,6 @@ export function PlayShell() {
             </div>
             <button
               type="button"
-              onClick={() => {
-                setShowActivity(true);
-                setShowMenu(false);
-                setShowBattles(false);
-                setShowRanks(false);
-                setShowMissions(false);
-                setShowInvite(false);
-              }}
-              className={`hud-chip px-2 py-1.5 font-mono text-[10px] sm:px-3 sm:text-[11px] ${
-                showActivity
-                  ? "text-[var(--sand)]"
-                  : "text-[var(--ink-muted)] hover:text-[var(--sand)]"
-              }`}
-              title="Activity summary — world & your fights"
-            >
-              Log
-            </button>
-            <button
-              type="button"
               data-nohover="1"
               onClick={() => setMusicOn(toggleMusic())}
               className={`hud-chip flex h-[30px] w-[30px] items-center justify-center p-0 font-mono text-[11px] sm:h-auto sm:w-auto sm:px-3 sm:py-1.5 ${
@@ -2821,6 +2914,30 @@ export function PlayShell() {
         </div>
       </div>
 
+      {/* CS-style killfeed — newest wars, fade out */}
+      {killFeed.length > 0 && (
+        <div
+          className="kill-feed pointer-events-none absolute left-2 z-[25] flex w-[min(17rem,calc(100%-7.5rem))] flex-col items-stretch gap-1 sm:left-3 sm:w-[min(19rem,calc(100%-11rem))]"
+          style={{
+            top: "max(2.85rem, calc(env(safe-area-inset-top) + 2.35rem))",
+          }}
+          aria-live="polite"
+        >
+          {killFeed.map((item) => {
+            const age = killFeedNow - item.shownAt;
+            const fading = age >= KILL_FEED_TTL_MS - KILL_FEED_FADE_MS;
+            return (
+              <div
+                key={item.id}
+                className={`kill-feed-line ${fading ? "is-fading" : ""}`}
+              >
+                {killFeedLine(item.event, me?.id, playerColors)}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Menu dropdown — battles / goals / editor / account */}
       {showMenu && (
         <div className="absolute right-2 top-[4.75rem] z-30 w-56 hud-panel p-2 sm:right-3 sm:top-16">
@@ -2835,6 +2952,20 @@ export function PlayShell() {
             <span>⚔ Battle reports</span>
             <span className="font-mono text-[10px] text-[var(--ink-faint)]">
               {(snap?.events ?? []).length}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setShowMenu(false);
+              setShowActivity(true);
+              setActivityTab("global");
+            }}
+            className="flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-[12px] text-[var(--ink-muted)] hover:bg-[var(--wash)] hover:text-[var(--sand)]"
+          >
+            <span>▤ Activity log</span>
+            <span className="font-mono text-[10px] text-[var(--ink-faint)]">
+              {(snap?.globalEvents ?? snap?.events ?? []).length}
             </span>
           </button>
           <button
