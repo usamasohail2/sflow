@@ -53,7 +53,7 @@ import {
   closeRing,
   pointInOrNearRing,
   pointInRing,
-  wallBandCoordinates,
+  wallBandMultiPolygon,
 } from "@/lib/geo";
 
 /** Extruded wall band thickness (meters) — lines stay on the single perimeter */
@@ -933,7 +933,10 @@ export function GameMap({
     [sectors, me, hostileSectorIds]
   );
 
-  /** Extruded wall band only (no line stroke on this source) */
+  /**
+   * Extruded wall band as edge quads (MultiPolygon) — avoids hole spikes
+   * on concave sectors like H8.
+   */
   const wallBandFc = useMemo<FeatureCollection>(
     () => ({
       type: "FeatureCollection",
@@ -946,8 +949,8 @@ export function GameMap({
           hostile: hostileSectorIds.has(s.id) ? 1 : 0,
         },
         geometry: {
-          type: "Polygon" as const,
-          coordinates: wallBandCoordinates(s.ring, SECTOR_WALL_M),
+          type: "MultiPolygon" as const,
+          coordinates: wallBandMultiPolygon(s.ring, SECTOR_WALL_M),
         },
       })),
     }),
