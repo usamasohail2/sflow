@@ -4827,7 +4827,7 @@ export function PlayShell() {
                   title={`${me.villagers} villager(s) gathering`}
                 >
                   <VillagerSprite walking className="h-5 w-5" />
-                  <span>×{me.villagers}</span>
+                  <span>{me.villagers}</span>
                 </div>
                 <div
                   className={`hud-status-chip ${
@@ -4840,16 +4840,41 @@ export function PlayShell() {
                   }
                 >
                   <HouseSprite className="h-5 w-6" />
-                  <span>
-                    {me.house ? `${me.houseHp}/${HOUSE_MAX_HP}` : "✕"}
-                  </span>
+                  {me.house ? (
+                    <span
+                      className="hud-status-hp"
+                      aria-label={`House health ${me.houseHp} of ${HOUSE_MAX_HP}`}
+                    >
+                      <span
+                        className="hud-status-hp-fill"
+                        style={{
+                          width: `${Math.max(
+                            0,
+                            Math.min(
+                              100,
+                              ((me.houseHp ?? HOUSE_MAX_HP) / HOUSE_MAX_HP) * 100
+                            )
+                          )}%`,
+                          background:
+                            (me.houseHp ?? HOUSE_MAX_HP) / HOUSE_MAX_HP > 0.55
+                              ? "#5a9a63"
+                              : (me.houseHp ?? HOUSE_MAX_HP) / HOUSE_MAX_HP >
+                                  0.25
+                                ? "#e8cf8a"
+                                : "#ff5245",
+                        }}
+                      />
+                    </span>
+                  ) : (
+                    <span>✕</span>
+                  )}
                 </div>
                 <div
                   className="hud-status-chip"
                   title={`Arsenal: ${me.rockets || 0} rocket(s) · ${myAttack} attack power`}
                 >
                   <RocketSprite className="h-5 w-5" />
-                  <span>×{me.rockets || 0}</span>
+                  <span>{me.rockets || 0}</span>
                 </div>
                 {gemsFound > 0 && (
                   <div
@@ -4857,7 +4882,7 @@ export function PlayShell() {
                     title={`${gemsFound} resource site(s) found`}
                   >
                     <ResourceGem gem="diamond" size={16} pulse />
-                    <span>×{gemsFound}</span>
+                    <span>{gemsFound}</span>
                   </div>
                 )}
               </div>
