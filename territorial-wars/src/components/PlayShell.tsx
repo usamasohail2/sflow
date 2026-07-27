@@ -96,6 +96,7 @@ import {
 } from "@/lib/gameTypes";
 import { pointInOrNearRing, pointInRing } from "@/lib/geo";
 import { ringCentroid } from "@/lib/mapMath";
+import { timeAgo } from "@/lib/timeAgo";
 import {
   buildingPlacementError,
   housePlacementError,
@@ -862,6 +863,7 @@ export function PlayShell() {
   const killFeedPrimed = useRef(false);
   const [killFeed, setKillFeed] = useState<KillFeedItem[]>([]);
   const [killFeedNow, setKillFeedNow] = useState(() => Date.now());
+  const [relativeNow, setRelativeNow] = useState(() => Date.now());
   const meIdRef = useRef<string | null>(null);
   const busyRef = useRef(false);
   const settleGuardUntil = useRef(0);
@@ -892,6 +894,14 @@ export function PlayShell() {
   useEffect(() => {
     captureInviteFromUrl();
   }, []);
+
+  // Keep “3 mins ago” labels fresh while battle / activity panels are open
+  useEffect(() => {
+    if (!showBattles && !showActivity) return;
+    setRelativeNow(Date.now());
+    const id = window.setInterval(() => setRelativeNow(Date.now()), 30_000);
+    return () => window.clearInterval(id);
+  }, [showBattles, showActivity]);
 
   const applySnap = useCallback((data: GameSnapshot) => {
     // Don't resurrect gems mid-claim if a poll races the write
@@ -3368,7 +3378,7 @@ export function PlayShell() {
                     {eventLogLine(e, me?.id, playerColors)}
                   </p>
                   <p className="mt-0.5 font-mono text-[9px] text-[var(--ink-faint)]">
-                    {new Date(e.ts).toLocaleTimeString()}
+                    {timeAgo(e.ts, relativeNow)}
                     {e.destroyed ? ` · destroyed ${e.destroyed}` : ""}
                     {e.lootedGold > 0
                       ? ` · ${GOLD_COIN}${e.lootedGold} loot`
@@ -4964,7 +4974,7 @@ export function PlayShell() {
                         : isRazeEvent(e)
                           ? "Sabotage"
                           : "Attack"}{" "}
-                      · {new Date(e.ts).toLocaleString()}
+                      · {timeAgo(e.ts, relativeNow)}
                     </p>
                   </li>
                 ))

@@ -14,6 +14,7 @@ import {
   type SectorStatsPoint,
 } from "@/lib/gameTypes";
 import { mappedSectorAnalytics } from "@/lib/sectorAnalytics";
+import { timeAgo } from "@/lib/timeAgo";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -28,18 +29,6 @@ function formatWhen(ts: number): string {
     hour: "2-digit",
     minute: "2-digit",
   });
-}
-
-/** Friendly “5 minutes ago” style time */
-function timeAgo(ts: number, now: number): string {
-  const sec = Math.max(0, Math.floor((now - ts) / 1000));
-  if (sec < 60) return "just now";
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min} minute${min === 1 ? "" : "s"} ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 48) return `${hr} hour${hr === 1 ? "" : "s"} ago`;
-  const days = Math.floor(hr / 24);
-  return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
 function EasyCard({
