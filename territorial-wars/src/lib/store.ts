@@ -86,6 +86,7 @@ import { isCdaTruck, isSpySat } from "@/lib/worldNpcs";
  *   itw:v3:events         LIST of JSON GameEvent (newest first)
  *   itw:v3:owner:{sid}    sector claim lock (SET NX -> playerId)
  *   itw:v3:sector_history JSON Record<sectorId, SectorStatsPoint[]> (oldest→newest)
+ *   itw:v3:chat           JSON ChatMessage[] (public chat — see presence.ts)
  */
 
 const P = "itw:v3";

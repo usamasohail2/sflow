@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  hasSharedPresenceStore,
+  hasDurableChatStore,
   isValidChatText,
   isValidDisplayName,
   listChatMessages,
@@ -22,7 +22,7 @@ export async function GET() {
   const messages = await listChatMessages();
   return NextResponse.json({
     messages,
-    shared: hasSharedPresenceStore(),
+    shared: hasDurableChatStore(),
   });
 }
 
@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
       ok: true,
       message: result.message,
       messages: result.messages,
-      shared: hasSharedPresenceStore(),
+      shared: hasDurableChatStore(),
     });
   } catch (error) {
     console.error("Chat error:", error);

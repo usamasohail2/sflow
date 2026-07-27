@@ -6,6 +6,7 @@ import type {
   PresenceSnapshot,
   TouchPresenceInput,
 } from "@/lib/presenceTypes";
+import { supabase, supabaseConfigured } from "@/lib/supabase";
 
 export type {
   CameraPose,
@@ -17,10 +18,13 @@ export type {
 
 const STALE_MS = 45_000;
 /** Keep public chat history for a long time — don't wipe on close or short idle */
-const CHAT_KEEP_MS = 30 * 24 * 60 * 60_000;
-const CHAT_MAX = 300;
+const CHAT_KEEP_MS = 90 * 24 * 60 * 60_000;
+const CHAT_MAX = 500;
 const REDIS_KEY = "itw:presence:v1";
+/** Legacy Redis list — migrated into Supabase when available */
 const REDIS_CHAT_KEY = "itw:chat:v1";
+/** Durable chat log in Supabase `itw_kv` (same backend as game state) */
+const KV_CHAT_KEY = "itw:v3:chat";
 
 type PresenceRecord = {
   t: number;
@@ -279,7 +283,11 @@ export async function getPresenceSnapshot(): Promise<PresenceSnapshot> {
 }
 
 export function hasSharedPresenceStore(): boolean {
-  return hasRedis();
+  return supabaseConfigured() || hasRedis();
+}
+
+export function hasDurableChatStore(): boolean {
+  return supabaseConfigured() || hasRedis();
 }
 
 export function isValidCameraPose(value: unknown): value is CameraPose {
@@ -363,8 +371,72 @@ async function postChatRedis(message: ChatMessage): Promise<ChatMessage[]> {
   const redis = getRedis()!;
   await redis.lpush(REDIS_CHAT_KEY, JSON.stringify(message));
   await redis.ltrim(REDIS_CHAT_KEY, 0, CHAT_MAX - 1);
-  await redis.expire(REDIS_CHAT_KEY, Math.ceil(CHAT_KEEP_MS / 1000));
+  // No expire — chat should survive across deploys / idle periods
   return listChatRedis();
+}
+
+function pruneChatList(list: ChatMessage[], now = Date.now()): ChatMessage[] {
+  return list
+    .filter((m) => now - m.t <= CHAT_KEEP_MS)
+    .sort((a, b) => a.t - b.t)
+    .slice(-CHAT_MAX);
+}
+
+async function listChatKv(): Promise<ChatMessage[]> {
+  const sb = supabase();
+  if (!sb) return [];
+  const { data, error } = await sb
+    .from("itw_kv")
+    .select("value")
+    .eq("key", KV_CHAT_KEY)
+    .maybeSingle();
+  if (error) {
+    console.error("supabase chat list failed:", error.message);
+    return [];
+  }
+  const raw = data?.value;
+  if (!Array.isArray(raw)) return [];
+  const messages: ChatMessage[] = [];
+  for (const item of raw) {
+    const m = parseChat(item);
+    if (m) messages.push(m);
+  }
+  return pruneChatList(messages);
+}
+
+async function saveChatKv(messages: ChatMessage[]): Promise<void> {
+  const sb = supabase();
+  if (!sb) return;
+  const kept = pruneChatList(messages);
+  const { error } = await sb.from("itw_kv").upsert(
+    {
+      key: KV_CHAT_KEY,
+      value: kept,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "key" }
+  );
+  if (error) console.error("supabase chat save failed:", error.message);
+}
+
+async function postChatKv(message: ChatMessage): Promise<ChatMessage[]> {
+  const current = await listChatKv();
+  // One-time pull from Redis if KV is empty (migration)
+  if (current.length === 0 && hasRedis()) {
+    try {
+      const legacy = await listChatRedis();
+      if (legacy.length > 0) {
+        const merged = pruneChatList([...legacy, message]);
+        await saveChatKv(merged);
+        return merged;
+      }
+    } catch (error) {
+      console.error("Redis chat migrate failed:", error);
+    }
+  }
+  const next = pruneChatList([...current, message]);
+  await saveChatKv(next);
+  return next;
 }
 
 function postChatMemory(message: ChatMessage): ChatMessage[] {
@@ -375,6 +447,27 @@ function postChatMemory(message: ChatMessage): ChatMessage[] {
 }
 
 export async function listChatMessages(): Promise<ChatMessage[]> {
+  if (supabaseConfigured()) {
+    try {
+      const fromKv = await listChatKv();
+      if (fromKv.length > 0) return fromKv;
+      // Seed KV from Redis once if chat lived only there
+      if (hasRedis()) {
+        try {
+          const legacy = await listChatRedis();
+          if (legacy.length > 0) {
+            await saveChatKv(legacy);
+            return legacy;
+          }
+        } catch (error) {
+          console.error("Redis chat seed failed:", error);
+        }
+      }
+      return fromKv;
+    } catch (error) {
+      console.error("Durable chat list failed:", error);
+    }
+  }
   if (hasRedis()) {
     try {
       return await listChatRedis();
@@ -407,6 +500,23 @@ export async function postChatMessage(input: {
     lastMessage: message.text,
     lastMessageAt: message.t,
   });
+
+  if (supabaseConfigured()) {
+    try {
+      const messages = await postChatKv(message);
+      // Mirror to Redis when present so older readers stay warm
+      if (hasRedis()) {
+        try {
+          await postChatRedis(message);
+        } catch {
+          /* durable write already succeeded */
+        }
+      }
+      return { messages, message };
+    } catch (error) {
+      console.error("Durable chat post failed, falling back:", error);
+    }
+  }
 
   if (hasRedis()) {
     try {

@@ -16,4 +16,4 @@ alter table itw_kv enable row level security;
 -- No policies for anon/authenticated → only service role can read/write.
 -- (Service role bypasses RLS by design.)
 
-comment on table itw_kv is 'ITW durable game state (sectors, players, spots, events)';
+comment on table itw_kv is 'ITW durable game state (sectors, players, spots, events, public chat at itw:v3:chat)';
