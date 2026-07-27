@@ -2108,7 +2108,30 @@ export function PlayShell() {
         window.setTimeout(() => setError(null), 3200);
         return;
       }
-      // Stash the house; settle flow waits for the Villager tile next
+
+      // Rebuild after house was razed — keep existing villager post, no redeploy
+      const rebuildingHome =
+        me?.homeSectorId === placing.sector.id ||
+        (Boolean(me?.homeSectorId) &&
+          isAzadHomeId(me!.homeSectorId) &&
+          (placing.sector.id === AZAD_PENDING_ID ||
+            isAzadHomeId(placing.sector.id)));
+      if (rebuildingHome) {
+        const data = await act(
+          "place_house",
+          { lat: pos.lat, lng: pos.lng },
+          "Rebuilding your house…"
+        );
+        if (data) {
+          playBuildSound();
+          showToast("House rebuilt — villagers are gathering again");
+          setPlacing(null);
+          setPendingHouse(null);
+        }
+        return;
+      }
+
+      // First settle: stash the house; flow waits for the Villager tile next
       setPendingHouse(pos);
       if (settleSector) {
         setPlacing(null);
@@ -2123,37 +2146,6 @@ export function PlayShell() {
     if (placing.kind === "villager") {
       if (!pendingHouse) {
         setPlacing({ kind: "house", sector: placing.sector });
-        return;
-      }
-
-      // Rebuild after house was destroyed (already own the sector / Azad home)
-      const rebuildingHome =
-        me?.homeSectorId === placing.sector.id ||
-        (Boolean(me?.homeSectorId) &&
-          isAzadHomeId(me!.homeSectorId) &&
-          (placing.sector.id === AZAD_PENDING_ID ||
-            isAzadHomeId(placing.sector.id)));
-      if (rebuildingHome) {
-        const data = await act(
-          "place_house",
-          {
-            lat: pendingHouse.lat,
-            lng: pendingHouse.lng,
-            villagerLat: lat,
-            villagerLng: lng,
-          },
-          "Rebuilding your house…"
-        );
-        if (data) {
-          playBuildSound();
-          showToast("House rebuilt — villagers are gathering again");
-          setPlacing(null);
-          setPendingHouse(null);
-        } else if (isOccupiedGroundError(lastActionErrorRef.current)) {
-          // Bad house spot — unlock so they can move it
-          setPendingHouse(null);
-          setPlacing({ kind: "house", sector: placing.sector });
-        }
         return;
       }
 
