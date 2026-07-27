@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Islamabad Territorial Wars">
+  <rect width="32" height="32" rx="7" fill="#0c100e"/>
+  <g transform="translate(8,5)">
+    <!-- hair -->
+    <rect x="4" y="1" width="8" height="3" fill="#4a3428"/>
+    <rect x="3" y="3" width="2" height="2" fill="#4a3428"/>
+    <rect x="11" y="3" width="2" height="2" fill="#4a3428"/>
+    <!-- face -->
+    <rect x="4" y="3" width="8" height="7" fill="#e8b890"/>
+    <!-- eyes -->
+    <rect x="5" y="5" width="2" height="2" fill="#1a1a1a"/>
+    <rect x="9" y="5" width="2" height="2" fill="#1a1a1a"/>
+    <!-- shirt -->
+    <rect x="3" y="10" width="10" height="7" fill="#e23b2f"/>
+    <!-- arms -->
+    <rect x="1" y="11" width="2" height="5" fill="#e8b890"/>
+    <rect x="13" y="11" width="2" height="5" fill="#e8b890"/>
+    <!-- legs -->
+    <rect x="4" y="17" width="3" height="4" fill="#2a2a2a"/>
+    <rect x="9" y="17" width="3" height="4" fill="#2a2a2a"/>
+  </g>
+</svg>

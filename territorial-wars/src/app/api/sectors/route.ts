@@ -1,28 +1,37 @@
 import { NextResponse } from "next/server";
-// import { auth } from "@/auth";
+import { auth } from "@/auth";
 import type { Sector } from "@/lib/gameTypes";
 import { closeRing } from "@/lib/geo";
-import { AUTH_DISABLED } from "@/lib/devMode";
-import { getSectors, saveSectors } from "@/lib/store";
+import { AUTH_DISABLED, isAdminEmail } from "@/lib/devMode";
+import { getSectors, saveSectors, storageBackend } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export async function GET() {
   const sectors = await getSectors();
-  return NextResponse.json({ sectors });
+  return NextResponse.json(
+    {
+      sectors,
+      storageBackend: storageBackend(),
+    },
+    { headers: { "Cache-Control": "no-store" } }
+  );
 }
 
 export async function PUT(req: Request) {
-  // Google sign-in temporarily disabled for game-logic testing
-  // const session = await auth();
-  // if (!session?.user) {
-  //   return NextResponse.json({ error: "Sign in required" }, { status: 401 });
-  // }
   if (!AUTH_DISABLED) {
-    return NextResponse.json(
-      { error: "Auth required (re-enable Google sign-in)" },
-      { status: 401 }
-    );
+    const session = await auth();
+    const email = session?.user?.email;
+    if (!session?.user) {
+      return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+    }
+    if (!isAdminEmail(email)) {
+      return NextResponse.json(
+        { error: "Map editing is restricted to admins" },
+        { status: 403 }
+      );
+    }
   }
 
   const body = (await req.json()) as { sectors?: Sector[] };
@@ -48,9 +57,17 @@ export async function PUT(req: Request) {
           ? raw.id.trim()
           : `sec_${Math.random().toString(36).slice(2, 10)}`;
       const prev = byId.get(id);
+      const code =
+        typeof raw.code === "string" && raw.code.trim()
+          ? raw.code.trim().slice(0, 32)
+          : prev?.code?.trim() || name;
       return {
         id,
         name,
+        code,
+        tag: prev?.tag,
+        taggedBy: prev?.taggedBy,
+        taggedAt: prev?.taggedAt,
         ring: closeRing(ring),
         createdAt: prev?.createdAt ?? now,
         updatedAt: now,
@@ -58,6 +75,16 @@ export async function PUT(req: Request) {
     })
     .filter(Boolean) as Sector[];
 
-  await saveSectors(sectors);
-  return NextResponse.json({ sectors });
+  try {
+    await saveSectors(sectors);
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Save failed" },
+      { status: 400 }
+    );
+  }
+  return NextResponse.json(
+    { sectors, storageBackend: storageBackend() },
+    { headers: { "Cache-Control": "no-store" } }
+  );
 }
