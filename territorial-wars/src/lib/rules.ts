@@ -1,103 +1,98 @@
-import type { Player, SectorEconomy } from "@/lib/gameTypes";
-import { RESOURCE_TICK_MS } from "@/lib/gameTypes";
+import {
+  GATHER_TRIP_MS,
+  buildingBonus,
+  type Player,
+  type ResourceSpot,
+} from "@/lib/gameTypes";
 
-export function villagersInSector(
+/**
+ * Accrue gold for settled players based on completed gather trips.
+ * Easy spots always contribute; discovered hidden spots that are available
+ * also contribute once per trip window, then refill.
+ */
+export function accrueGather(
   players: Record<string, Player>,
-  sectorId: string
-): number {
-  let n = 0;
-  for (const p of Object.values(players)) {
-    if (p.activeSectorId === sectorId) n += p.villagers;
+  spots: ResourceSpot[],
+  now = Date.now()
+): {
+  players: Record<string, Player>;
+  spots: ResourceSpot[];
+  changed: boolean;
+} {
+  const nextPlayers: Record<string, Player> = { ...players };
+  let nextSpots = [...spots];
+  let changed = false;
+
+  for (const [id, p] of Object.entries(players)) {
+    // No house → gathering paused until they rebuild
+    if (!p.homeSectorId || !p.house || p.villagers <= 0) continue;
+
+    const last = p.lastGatherAt || p.createdAt;
+    const elapsed = Math.max(0, now - last);
+    const trips = Math.floor(elapsed / GATHER_TRIP_MS);
+    if (trips <= 0) continue;
+
+    const sectorSpots = nextSpots.filter((s) => s.sectorId === p.homeSectorId);
+    const easyYield = sectorSpots
+      .filter((s) => s.kind === "easy")
+      .reduce((sum, s) => sum + s.yield, 0);
+
+    const bonus = buildingBonus(p.buildings);
+    // Per trip: villagers work easy nodes + building bonus
+    const goldPerTrip = p.villagers * (Math.max(1, easyYield) + bonus);
+
+    // Hidden caches that are discovered & available: one harvest per trip batch,
+    // then mark depleted (applied once for the whole trips window for simplicity)
+    let hiddenGain = 0;
+    nextSpots = nextSpots.map((s) => {
+      if (s.sectorId !== p.homeSectorId) return s;
+      if (s.kind !== "hidden") return s;
+      // Contested one-shot finds must be clicked — never auto-harvested
+      if (s.claimable) return s;
+      if (!p.discoveredSpotIds.includes(s.id)) return s;
+      if (s.availableAt > now) return s;
+      // One harvest when available, then refill — not once per skipped trip
+      hiddenGain += s.yield;
+      return {
+        ...s,
+        availableAt: now + (s.refillMs || 45_000),
+      };
+    });
+
+    const gained = goldPerTrip * trips + hiddenGain;
+    nextPlayers[id] = {
+      ...p,
+      gold: p.gold + gained,
+      totalFarmed: (p.totalFarmed || 0) + gained,
+      lastGatherAt: last + trips * GATHER_TRIP_MS,
+      updatedAt: now,
+    };
+    changed = true;
   }
-  return n;
+
+  return { players: nextPlayers, spots: nextSpots, changed };
 }
 
-export function controllerOfSector(
-  players: Record<string, Player>,
-  sectorId: string
-): string | null {
-  let bestId: string | null = null;
-  let best = 0;
-  const tallies: Record<string, number> = {};
-  for (const p of Object.values(players)) {
-    if (p.activeSectorId !== sectorId) continue;
-    tallies[p.id] = (tallies[p.id] ?? 0) + p.villagers;
-  }
-  for (const [id, n] of Object.entries(tallies)) {
-    if (n > best) {
-      best = n;
-      bestId = id;
-    } else if (n === best) {
-      bestId = null; // contested
-    }
-  }
-  return bestId;
+/** Phase 0→1 within current gather trip (for walk animation). */
+export function gatherPhase(player: Player, now = Date.now()): number {
+  if (!player.homeSectorId) return 0;
+  const last = player.lastGatherAt || player.createdAt;
+  return ((now - last) % GATHER_TRIP_MS) / GATHER_TRIP_MS;
 }
 
 /**
- * Accrue personal gold for stationed players and update sector dig totals.
- * Controllers get +1 bonus gold per tick.
+ * Stable id for the current gather trip — advances each loop so farm
+ * destinations change even if lastGatherAt hasn't been polled yet.
  */
-export function accrueGame(
-  economies: Record<string, SectorEconomy>,
-  players: Record<string, Player>,
-  now = Date.now()
-): { economies: Record<string, SectorEconomy>; players: Record<string, Player> } {
-  const nextPlayers: Record<string, Player> = { ...players };
-  const nextEco: Record<string, SectorEconomy> = { ...economies };
-
-  // Group by sector for controller calc
-  const sectorIds = new Set<string>();
-  for (const p of Object.values(players)) {
-    if (p.activeSectorId) sectorIds.add(p.activeSectorId);
-  }
-
-  for (const sectorId of Array.from(sectorIds)) {
-    const eco =
-      nextEco[sectorId] ??
-      ({
-        sectorId,
-        dugTotal: 0,
-        lastTickAt: now,
-        controllerId: null,
-      } satisfies SectorEconomy);
-
-    const elapsed = Math.max(0, now - eco.lastTickAt);
-    const ticks = Math.floor(elapsed / RESOURCE_TICK_MS);
-    const controllerId = controllerOfSector(players, sectorId);
-
-    if (ticks > 0) {
-      let dug = 0;
-      for (const p of Object.values(players)) {
-        if (p.activeSectorId !== sectorId || p.villagers <= 0) continue;
-        const perTick =
-          p.villagers +
-          p.digBonus +
-          (controllerId === p.id ? 1 : 0);
-        const gain = ticks * perTick;
-        dug += gain;
-        const cur = nextPlayers[p.id]!;
-        nextPlayers[p.id] = {
-          ...cur,
-          gold: cur.gold + gain,
-          updatedAt: now,
-        };
-      }
-      nextEco[sectorId] = {
-        ...eco,
-        dugTotal: eco.dugTotal + dug,
-        lastTickAt: eco.lastTickAt + ticks * RESOURCE_TICK_MS,
-        controllerId,
-      };
-    } else {
-      nextEco[sectorId] = { ...eco, controllerId };
-    }
-  }
-
-  return { economies: nextEco, players: nextPlayers };
+export function gatherTripIndex(player: Player, now = Date.now()): number {
+  if (!player.homeSectorId) return 0;
+  const last = player.lastGatherAt || player.createdAt;
+  return (
+    Math.floor(last / GATHER_TRIP_MS) +
+    Math.floor(Math.max(0, now - last) / GATHER_TRIP_MS)
+  );
 }
 
-export function maxVillagersAllowed(player: Player): number {
-  // One starter can camp; each house shelters one more
-  return player.housesPlaced + 1;
-}
+/** Outbound walk → dig at site → return home (share of one trip). */
+export const GATHER_WALK_OUT_END = 0.3;
+export const GATHER_DIG_END = 0.7;
