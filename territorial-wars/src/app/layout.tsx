@@ -1,9 +1,10 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Archivo_Black, DM_Sans, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { AuthSessionProvider } from "@/components/AuthSessionProvider";
+import { SoundBootstrap } from "@/components/SoundBootstrap";
 
 const sans = DM_Sans({
   subsets: ["latin"],
@@ -28,12 +29,19 @@ const siteDescription =
 export const metadata: Metadata = {
   title: "Islamabad Territorial Wars",
   description: siteDescription,
+  applicationName: "Islamabad Territorial Wars",
   openGraph: {
     title: "Islamabad Territorial Wars",
     description: siteDescription,
     type: "website",
     locale: "en_PK",
   },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -47,6 +55,7 @@ export default function RootLayout({
         className={`${sans.variable} ${display.variable} ${mono.variable} bg-[var(--surface)] font-sans text-[var(--ink)] antialiased`}
       >
         <AuthSessionProvider>{children}</AuthSessionProvider>
+        <SoundBootstrap />
         <Analytics />
         <SpeedInsights />
       </body>
