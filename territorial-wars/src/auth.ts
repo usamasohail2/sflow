@@ -32,6 +32,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       } else if (user?.id) {
         token.uid = user.id;
       }
+      // Always keep a stable id — empty uid made /api/game treat sessions as logged out
+      if (!token.uid && token.sub) {
+        token.uid = token.sub;
+      }
       if (profile && "picture" in profile && typeof profile.picture === "string") {
         token.picture = profile.picture;
       }
@@ -41,7 +45,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (session.user) {
         session.user.image =
           (token.picture as string | undefined) ?? session.user.image;
-        (session.user as { id?: string }).id = (token.uid as string) || "";
+        (session.user as { id?: string }).id = String(
+          token.uid ?? token.sub ?? ""
+        );
       }
       return session;
     },

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { signIn } from "next-auth/react";
 
 function GoogleGlyph({ className = "" }: { className?: string }) {
   return (
@@ -28,37 +29,35 @@ function GoogleGlyph({ className = "" }: { className?: string }) {
 export function GoogleSignInButton({
   callbackUrl = "/play",
   label = "Continue with Google",
+  className = "",
 }: {
   callbackUrl?: string;
   label?: string;
+  className?: string;
 }) {
-  const [csrf, setCsrf] = useState("");
-
-  useEffect(() => {
-    let cancelled = false;
-    void fetch("/api/auth/csrf")
-      .then((r) => r.json())
-      .then((d: { csrfToken?: string }) => {
-        if (!cancelled && d.csrfToken) setCsrf(d.csrfToken);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const [busy, setBusy] = useState(false);
+  const playStyle = label.trim().toLowerCase() === "play";
 
   return (
-    <form action="/api/auth/signin/google" method="POST">
-      <input type="hidden" name="csrfToken" value={csrf} />
-      <input type="hidden" name="callbackUrl" value={callbackUrl} />
-      <button
-        type="submit"
-        disabled={!csrf}
-        className="inline-flex items-center gap-2 rounded-sm border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--ink)] disabled:opacity-50"
-      >
-        <GoogleGlyph className="h-4 w-4" />
-        {label}
-      </button>
-    </form>
+    <button
+      type="button"
+      disabled={busy}
+      onClick={() => {
+        setBusy(true);
+        // next-auth/react handles CSRF + same-host redirect cleanly
+        void signIn("google", { callbackUrl }).finally(() => {
+          setBusy(false);
+        });
+      }}
+      className={
+        className ||
+        (playStyle
+          ? "entry-play-btn"
+          : "inline-flex items-center gap-2 rounded-sm border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--ink)] disabled:opacity-50")
+      }
+    >
+      {!playStyle && <GoogleGlyph className="h-4 w-4" />}
+      {busy ? "…" : label}
+    </button>
   );
 }

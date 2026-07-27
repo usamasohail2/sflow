@@ -219,7 +219,7 @@ export function SectorEditor({ sectors, onChange, onSave, saving }: Props) {
             disabled={saving}
             className="rounded-sm border border-[var(--sand)] px-3 py-2 text-xs font-semibold text-[var(--sand)]"
           >
-            {saving ? "Saving…" : "Save to server"}
+            {saving ? "Saving…" : "Save permanently"}
           </button>
         </div>
 
