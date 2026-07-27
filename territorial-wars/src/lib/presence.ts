@@ -16,8 +16,9 @@ export type {
 } from "@/lib/presenceTypes";
 
 const STALE_MS = 45_000;
-const CHAT_KEEP_MS = 30 * 60_000;
-const CHAT_MAX = 80;
+/** Keep public chat history for a long time — don't wipe on close or short idle */
+const CHAT_KEEP_MS = 30 * 24 * 60 * 60_000;
+const CHAT_MAX = 300;
 const REDIS_KEY = "itw:presence:v1";
 const REDIS_CHAT_KEY = "itw:chat:v1";
 

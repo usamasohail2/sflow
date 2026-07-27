@@ -12,6 +12,22 @@ interface PublicChatProps {
   className?: string;
   /** Panel opens below the button (top HUD) or above it (bottom HUD) */
   placement?: "top" | "bottom";
+  /** Start open (default true). User can still collapse; preference is remembered. */
+  defaultOpen?: boolean;
+}
+
+const CHAT_OPEN_KEY = "itw_chat_open";
+
+function readChatOpenPref(fallback: boolean): boolean {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const v = window.localStorage.getItem(CHAT_OPEN_KEY);
+    if (v === "0") return false;
+    if (v === "1") return true;
+  } catch {
+    /* ignore */
+  }
+  return fallback;
 }
 
 function formatTime(t: number) {
@@ -32,8 +48,9 @@ export function PublicChat({
   onRename,
   className = "",
   placement = "bottom",
+  defaultOpen = true,
 }: PublicChatProps) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(() => readChatOpenPref(defaultOpen));
   const [draft, setDraft] = useState("");
   const [nameDraft, setNameDraft] = useState(displayName);
   const listRef = useRef<HTMLDivElement>(null);
@@ -52,11 +69,26 @@ export function PublicChat({
   }, [displayName]);
 
   useEffect(() => {
+    try {
+      window.localStorage.setItem(CHAT_OPEN_KEY, open ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }, [open]);
+
+  useEffect(() => {
     if (!open) return;
     const el = listRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
   }, [messages, open]);
+
+  const setChatOpen = (next: boolean | ((v: boolean) => boolean)) => {
+    setOpen((prev) => {
+      const value = typeof next === "function" ? next(prev) : next;
+      return value;
+    });
+  };
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -80,7 +112,7 @@ export function PublicChat({
         </div>
         <button
           type="button"
-          onClick={() => setOpen(false)}
+          onClick={() => setChatOpen(false)}
           aria-label="Collapse chat"
           className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-[var(--line)] text-sm text-[var(--ink)] transition hover:bg-[var(--wash)]"
         >
@@ -155,7 +187,7 @@ export function PublicChat({
     !open && previewMessages.length > 0 ? (
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => setChatOpen(true)}
         className="public-chat-preview max-w-[min(16rem,calc(100vw-5rem))] text-left"
         title="Open chat"
       >
@@ -177,7 +209,7 @@ export function PublicChat({
   const toggle = (
     <button
       type="button"
-      onClick={() => setOpen((v) => !v)}
+      onClick={() => setChatOpen((v) => !v)}
       aria-expanded={open}
       aria-label={open ? "Hide public chat" : "Open public chat"}
       className="hud-chip inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold sm:px-3"
