@@ -106,6 +106,7 @@ import {
   isRazeEvent,
   makeAzadPlacementSector,
   canUnlockFlexVehicles,
+  nextBuildingLevel,
   sectorBaseCode,
   shovelDigYield,
 } from "@/lib/gameTypes";
@@ -1953,8 +1954,8 @@ export function PlayShell() {
       },
       {
         id: "arsenal",
-        label: "Buy a rocket for your arsenal",
-        done: (me.rockets || 0) >= 1,
+        label: "Build a Rocket Silo, then stock a rocket",
+        done: hasRocketSilo(me) && (me.rockets || 0) >= 1,
       },
       {
         id: "invite",
@@ -3072,7 +3073,7 @@ export function PlayShell() {
     if (!managedBuilding || !me) return;
     const cost = buildingUpgradeCost(managedBuilding.type);
     if (buildingLevel(managedBuilding) >= BUILDING_MAX_LEVEL) {
-      setError("Already upgraded to ×2");
+      setError(`Already upgraded to ×${BUILDING_MAX_LEVEL}`);
       window.setTimeout(() => setError(null), 2800);
       return;
     }
@@ -3086,7 +3087,13 @@ export function PlayShell() {
     });
     if (!data) return;
     playBuildSound();
-    showToast(`${catalogItem(managedBuilding.type).name} upgraded to ×2`);
+    const next =
+      typeof (data as { level?: number }).level === "number"
+        ? (data as { level: number }).level
+        : (buildingLevel(managedBuilding) + 1);
+    showToast(
+      `${catalogItem(managedBuilding.type).name} upgraded to ×${next}`
+    );
   };
 
   const demolishManagedBuilding = async () => {
@@ -4606,7 +4613,8 @@ export function PlayShell() {
             <p className="mt-2 text-sm leading-relaxed text-[var(--ink-muted)]">
               Tap the shovel to dig.{" "}
               <strong className="text-[var(--sand)]">Each click gives gold</strong>
-              — no wait, no trip. Upgrade it to ×2 digs, or delete it from the panel.
+              — no wait, no trip. Upgrade digs up to ×{BUILDING_MAX_LEVEL}, or
+              delete it from the panel.
             </p>
             <button
               type="button"
@@ -4651,8 +4659,9 @@ export function PlayShell() {
                 ? shovelDigYield(managedBuilding)
                 : 1}{" "}
               <GoldCoinIcon size={11} className="inline-block align-[-2px]" />
-              {managedBuilding && buildingLevel(managedBuilding) >= 2
-                ? " · upgraded ×2"
+              {managedBuilding &&
+              buildingLevel(managedBuilding) >= 2
+                ? ` · upgraded ×${buildingLevel(managedBuilding)}`
                 : ""}
             </p>
             <div className="relative mx-auto mt-2 flex h-36 w-full max-w-[14rem] items-center justify-center">
@@ -4695,13 +4704,13 @@ export function PlayShell() {
                   className="rounded-sm border border-[var(--line)] px-2 py-1.5 font-mono text-[10px] text-[var(--sand)] hover:border-[var(--sand)] disabled:opacity-40"
                   title={
                     buildingLevel(managedBuilding) >= BUILDING_MAX_LEVEL
-                      ? "Already ×2"
-                      : `Upgrade dig to ×2 for ${formatGold(buildingUpgradeCost(managedBuilding.type))}`
+                      ? `Maxed at ×${BUILDING_MAX_LEVEL}`
+                      : `Upgrade dig to ×${nextBuildingLevel(managedBuilding)} for ${formatGold(buildingUpgradeCost(managedBuilding.type))}`
                   }
                 >
                   {buildingLevel(managedBuilding) >= BUILDING_MAX_LEVEL
-                    ? "Upgraded ×2"
-                    : `Upgrade ×2 · ${formatGoldCompact(buildingUpgradeCost(managedBuilding.type))}`}
+                    ? `Max ×${BUILDING_MAX_LEVEL}`
+                    : `Upgrade ×${nextBuildingLevel(managedBuilding)} · ${formatGoldCompact(buildingUpgradeCost(managedBuilding.type))}`}
                 </button>
                 <button
                   type="button"
@@ -4735,7 +4744,9 @@ export function PlayShell() {
                   </p>
                   <p className="font-display text-lg text-[var(--ink)]">
                     {catalogItem(managedBuilding.type).name}
-                    {buildingLevel(managedBuilding) >= 2 ? " · ×2" : ""}
+                    {buildingLevel(managedBuilding) >= 2
+                      ? ` · ×${buildingLevel(managedBuilding)}`
+                      : ""}
                   </p>
                   <p className="mt-0.5 text-[11px] text-[var(--ink-muted)]">
                     {catalogItem(managedBuilding.type).tripBonus > 0
@@ -4764,13 +4775,13 @@ export function PlayShell() {
                   className="rounded-sm border border-[var(--line)] bg-[var(--wash)] px-2 py-2 font-mono text-[11px] text-[var(--sand)] hover:border-[var(--sand)] disabled:opacity-40"
                   title={
                     buildingLevel(managedBuilding) >= BUILDING_MAX_LEVEL
-                      ? "Already upgraded"
-                      : `Pay 10× build price for ×2 output`
+                      ? `Maxed at ×${BUILDING_MAX_LEVEL}`
+                      : `Pay 10× build price for ×${nextBuildingLevel(managedBuilding)} output`
                   }
                 >
                   {buildingLevel(managedBuilding) >= BUILDING_MAX_LEVEL
-                    ? "Upgraded ×2"
-                    : `Upgrade ×2 · ${GOLD_COIN}${formatGoldCompact(buildingUpgradeCost(managedBuilding.type))}`}
+                    ? `Max ×${BUILDING_MAX_LEVEL}`
+                    : `Upgrade ×${nextBuildingLevel(managedBuilding)} · ${GOLD_COIN}${formatGoldCompact(buildingUpgradeCost(managedBuilding.type))}`}
                 </button>
                 <button
                   type="button"
@@ -4783,7 +4794,7 @@ export function PlayShell() {
               </div>
               {buildingLevel(managedBuilding) < BUILDING_MAX_LEVEL && (
                 <p className="mt-2 font-mono text-[9px] text-[var(--ink-faint)]">
-                  Upgrade costs 10× build price and doubles output.
+                  Each upgrade costs 10× build price · max ×{BUILDING_MAX_LEVEL}
                 </p>
               )}
             </div>

@@ -2082,9 +2082,9 @@ export function GameMap({
                         {(b.level ?? 1) >= 2 && !syncing && (
                           <span
                             className="absolute -right-1 -top-1 rounded-sm bg-[#e8cf8a] px-0.5 font-mono text-[8px] font-bold leading-tight text-black"
-                            title="Upgraded · ×2 output"
+                            title={`Upgraded · ×${b.level ?? 1} output`}
                           >
-                            ×2
+                            ×{b.level ?? 1}
                           </span>
                         )}
                         <HpBar hp={b.hp ?? maxHp} maxHp={maxHp} width={38} />

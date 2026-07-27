@@ -174,8 +174,8 @@ export type Building = {
   hp: number;
   builtAt: number;
   /**
-   * Performance tier — 1 default, 2 = upgraded (×2 output).
-   * Upgrade costs 10× the catalog build price.
+   * Performance tier — 1 default, up to BUILDING_MAX_LEVEL (×N output).
+   * Each upgrade step costs 10× the catalog build price.
    */
   level?: number;
 };
@@ -681,8 +681,8 @@ export const ATTACK_COOLDOWN_MS = 15_000;
 export const RAZE_COOLDOWN_MS = 20_000;
 /** Upgrade multiplies building output; costs catalog price × this */
 export const BUILDING_UPGRADE_COST_MULT = 10;
-/** Max building performance tier */
-export const BUILDING_MAX_LEVEL = 2;
+/** Max building performance tier (×3 output) */
+export const BUILDING_MAX_LEVEL = 3;
 
 /**
  * Building HP uses the same small scale as attack/defense points
@@ -723,7 +723,7 @@ export const BUILDING_CATALOG: BuildingCatalogItem[] = [
     type: "shovel",
     name: "Clicker shovel",
     cost: 20,
-    blurb: "Tap dig — +1 gold per click (upgrade ×2)",
+    blurb: "Tap dig — +1 gold per click (upgrade up to ×3)",
     tripBonus: 0,
     footprintM: 20,
     hp: 2,
@@ -800,7 +800,7 @@ export function buildingCost(type: BuildingType): number {
   return catalogItem(type).cost;
 }
 
-/** Gold to raise a building from level 1 → 2 (10× build price). */
+/** Gold to raise a building one level (10× build price per step). */
 export function buildingUpgradeCost(type: BuildingType | string): number {
   return catalogItem(type).cost * BUILDING_UPGRADE_COST_MULT;
 }
@@ -810,12 +810,21 @@ export function buildingLevel(b: Pick<Building, "level">): number {
   return Math.max(1, Math.min(BUILDING_MAX_LEVEL, n || 1));
 }
 
+/** Next level after an upgrade, or null if already maxed. */
+export function nextBuildingLevel(
+  b: Pick<Building, "level">
+): number | null {
+  const level = buildingLevel(b);
+  if (level >= BUILDING_MAX_LEVEL) return null;
+  return level + 1;
+}
+
 /** Trip bonus for one building, including upgrade multiplier. */
 export function buildingTripBonus(b: Building): number {
   return catalogItem(b.type).tripBonus * buildingLevel(b);
 }
 
-/** Gold per shovel dig click (1 base, 2 when upgraded). */
+/** Gold per shovel dig click (scales with upgrade level). */
 export function shovelDigYield(b: Pick<Building, "type" | "level">): number {
   if (b.type !== "shovel") return 0;
   return buildingLevel(b);

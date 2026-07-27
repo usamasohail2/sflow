@@ -2410,8 +2410,7 @@ export async function demolishBuilding(
 }
 
 /**
- * Upgrade your building to level 2 (×2 output) for 10× catalog price.
- * Already-upgraded buildings cannot be upgraded again.
+ * Upgrade a building one tier (up to ×3) for 10× catalog price per step.
  */
 export async function upgradeBuilding(
   playerId: string,
@@ -2429,7 +2428,7 @@ export async function upgradeBuilding(
 
   const level = buildingLevel(target);
   if (level >= BUILDING_MAX_LEVEL) {
-    return { error: "Already upgraded to ×2" };
+    return { error: `Already upgraded to ×${BUILDING_MAX_LEVEL}` };
   }
 
   const cost = buildingUpgradeCost(target.type);
@@ -2440,7 +2439,7 @@ export async function upgradeBuilding(
   }
 
   const now = Date.now();
-  const nextLevel = BUILDING_MAX_LEVEL;
+  const nextLevel = level + 1;
   await setPlayer({
     ...fresh,
     gold: fresh.gold - cost,
