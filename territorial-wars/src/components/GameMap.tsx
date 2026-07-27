@@ -123,6 +123,7 @@ import {
   gatherTripIndex,
 } from "@/lib/rules";
 import {
+  BarracksSprite,
   CivicSprite,
   HouseSprite,
   BaseWallRing,
@@ -134,6 +135,7 @@ import {
   PradoSprite,
   RocketSprite,
   ShovelSprite,
+  SiloSprite,
   VillagerSprite,
   WarehouseSprite,
   WellSprite,
@@ -312,6 +314,10 @@ function BuildingSprite({ type }: { type: Building["type"] }) {
     return <WarehouseSprite className="h-9 w-10 drop-shadow-md" />;
   if (type === "shovel")
     return <ShovelSprite className="h-9 w-10 drop-shadow-md" />;
+  if (type === "barracks")
+    return <BarracksSprite className="h-9 w-10 drop-shadow-md" />;
+  if (type === "silo")
+    return <SiloSprite className="h-9 w-10 drop-shadow-md" />;
   if (type === "civic")
     return <CivicSprite className="h-7 w-14 drop-shadow-md" />;
   if (type === "prado")

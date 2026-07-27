@@ -3,7 +3,7 @@
  * Kept separate from store.ts to keep the state machine readable.
  */
 import type { Player, Sector } from "@/lib/gameTypes";
-import { isAzadHomeId } from "@/lib/gameTypes";
+import { hasBarracks, isAzadHomeId } from "@/lib/gameTypes";
 import { pointInRing } from "@/lib/geo";
 import { distMeters, ringCentroid } from "@/lib/mapMath";
 import {
@@ -348,8 +348,11 @@ export function plantSpySat(opts: {
   if (!planter.homeSectorId || !planter.house) {
     return { error: "Settle your base before planting a spy sat" };
   }
+  if (!hasBarracks(planter)) {
+    return { error: "Build Barracks before sending a spy" };
+  }
   if (planter.gold < SPY_SAT_COST) {
-    return { error: `Need ◈${SPY_SAT_COST} gold for a spy satellite` };
+    return { error: `Need ◈${SPY_SAT_COST} gold for a spy` };
   }
   const pos = { lat, lng };
 

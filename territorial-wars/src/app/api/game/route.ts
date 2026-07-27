@@ -10,6 +10,7 @@ import {
   beginTutorialTest,
   buildBuilding,
   buyRocket,
+  buyTroop,
   claimAzadUmeed,
   claimBusinessReview,
   claimSector,
@@ -28,6 +29,7 @@ import {
   renameSectorTag,
   resetPlayerProgress,
   razeBuilding,
+  sendTroop,
   smashSpySatellite,
   spawnRoamFind,
   upgradeBuilding,
@@ -361,8 +363,29 @@ export async function POST(req: Request) {
     body.action === "recruit_soldier" ||
     body.action === "build_tank"
   ) {
-    // Legacy soldier/tank actions map to buying a rocket
+    // Legacy soldier/tank actions map to buying a rocket (silo-gated)
     result = await buyRocket(id);
+  } else if (body.action === "buy_troop" || body.action === "recruit_troop") {
+    result = await buyTroop(id);
+  } else if (body.action === "send_troop") {
+    const targetPlayerId =
+      typeof body.targetPlayerId === "string"
+        ? body.targetPlayerId
+        : typeof body.targetId === "string"
+          ? body.targetId
+          : "";
+    const buildingId =
+      typeof body.buildingId === "string" ? body.buildingId : "";
+    if (!targetPlayerId || !buildingId) {
+      return withGuestCookie(
+        NextResponse.json(
+          { error: "Pick an enemy building for your troop" },
+          { status: 400 }
+        ),
+        setCookie
+      );
+    }
+    result = await sendTroop(id, targetPlayerId, buildingId);
   } else if (body.action === "fortify_base") {
     result = await fortifyBase(id);
   } else if (body.action === "admin_place_cda_hq") {
@@ -532,6 +555,7 @@ export async function POST(req: Request) {
       ownerName: "ownerName" in result ? result.ownerName : undefined,
       battle: "battle" in result ? result.battle : undefined,
       raze: "raze" in result ? result.raze : undefined,
+      sabotage: "sabotage" in result ? result.sabotage : undefined,
       message: "message" in result ? result.message : undefined,
       targetName: "targetName" in result ? result.targetName : undefined,
     }),

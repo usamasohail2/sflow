@@ -133,6 +133,8 @@ export type BuildingType =
   | "warehouse"
   | "well"
   | "shovel"
+  | "barracks"
+  | "silo"
   | "civic"
   | "prado"
   | "landcruiser";
@@ -146,6 +148,22 @@ export const FLEX_VEHICLE_TYPES: BuildingType[] = [
 
 export function isFlexVehicle(type: string): boolean {
   return (FLEX_VEHICLE_TYPES as string[]).includes(type);
+}
+
+/** True if the player has a standing building of this type */
+export function hasBuilding(
+  p: Pick<Player, "buildings"> | null | undefined,
+  type: BuildingType
+): boolean {
+  return Boolean(p?.buildings?.some((b) => b.type === type && (b.hp ?? 0) > 0));
+}
+
+export function hasBarracks(p: Pick<Player, "buildings"> | null | undefined): boolean {
+  return hasBuilding(p, "barracks");
+}
+
+export function hasRocketSilo(p: Pick<Player, "buildings"> | null | undefined): boolean {
+  return hasBuilding(p, "silo");
 }
 
 export type Building = {
@@ -179,10 +197,15 @@ export type Player = {
   /** Where the villager idles / starts gather trips (player-placed) */
   villagerPost: LatLng | null;
   villagers: number;
-  /** Consumable attack munitions — expended when you raid */
+  /** Consumable attack munitions — expended when you raid (requires rocket silo) */
   rockets: number;
   /** Highest rocket count reached — arsenal bar shows current/peak */
   peakRockets: number;
+  /**
+   * Barracks troops — spend to sabotage enemy buildings.
+   * Named `troops` (not soldiers) to avoid clashing with legacy army→rocket migration.
+   */
+  troops: number;
   gold: number;
   /** Lifetime resources farmed — global ranking metric */
   totalFarmed: number;
@@ -201,6 +224,8 @@ export type Player = {
   lastAttackAt: number;
   /** Same-sector raze cooldown anchor */
   lastRazeAt: number;
+  /** Barracks troop sabotage cooldown */
+  lastTroopAt?: number;
   /** Soft pace limit for clicker-shovel taps (server-only) */
   lastShovelClickAt?: number;
   createdAt: number;
@@ -298,6 +323,7 @@ export type PublicPlayer = {
   villagers: number;
   rockets: number;
   peakRockets: number;
+  troops: number;
   gold: number;
   totalFarmed: number;
   buildings: Building[];
@@ -634,6 +660,21 @@ export function houseMaxHp(p: {
 
 /** Gold to stock one rocket in your arsenal */
 export const ROCKET_COST = 35;
+/** Gold to recruit one barracks troop */
+export const TROOP_COST = 28;
+/** HP damage a single troop deals to an enemy building */
+export const TROOP_DAMAGE = 2;
+/** Cooldown between troop sabotage orders */
+export const TROOP_COOLDOWN_MS = 12_000;
+/**
+ * When rockets destroy an enemy base, defender loses this fraction of gold
+ * (floored), at least BASE_DESTROY_GOLD_MIN, at most BASE_DESTROY_GOLD_MAX.
+ */
+export const BASE_DESTROY_GOLD_FRACTION = 0.2;
+export const BASE_DESTROY_GOLD_MIN = 40;
+export const BASE_DESTROY_GOLD_MAX = 250;
+/** Flat loot when a raid wipes buildings but the base still stands */
+export const RAID_WIPE_LOOT_GOLD = 25;
 /** Arsenal reload after firing rockets (raids + ally clears) */
 export const ATTACK_COOLDOWN_MS = 15_000;
 /** Min time between same-sector building razes */
@@ -652,7 +693,7 @@ export const BUILDING_CATALOG: BuildingCatalogItem[] = [
     type: "mill",
     name: "Grain mill",
     cost: 35,
-    blurb: "+2 gold each trip",
+    blurb: "Economy — +2 gold each villager trip",
     tripBonus: 2,
     footprintM: 34,
     hp: 3,
@@ -662,7 +703,7 @@ export const BUILDING_CATALOG: BuildingCatalogItem[] = [
     type: "warehouse",
     name: "Village store",
     cost: 55,
-    blurb: "+3 gold each trip",
+    blurb: "Economy — +3 gold each villager trip",
     tripBonus: 3,
     footprintM: 42,
     hp: 4,
@@ -672,7 +713,7 @@ export const BUILDING_CATALOG: BuildingCatalogItem[] = [
     type: "well",
     name: "Village well",
     cost: 45,
-    blurb: "+2 gold each trip",
+    blurb: "Economy — +2 gold each villager trip",
     tripBonus: 2,
     footprintM: 26,
     hp: 2,
@@ -682,10 +723,30 @@ export const BUILDING_CATALOG: BuildingCatalogItem[] = [
     type: "shovel",
     name: "Clicker shovel",
     cost: 20,
-    blurb: "Tap for +1 gold each click",
+    blurb: "Tap dig — +1 gold per click (upgrade ×2)",
     tripBonus: 0,
     footprintM: 20,
     hp: 2,
+    defense: 0,
+  },
+  {
+    type: "barracks",
+    name: "Barracks",
+    cost: 70,
+    blurb: "Unlock spies + troops to sabotage enemies",
+    tripBonus: 0,
+    footprintM: 40,
+    hp: 5,
+    defense: 1,
+  },
+  {
+    type: "silo",
+    name: "Rocket silo",
+    cost: 90,
+    blurb: "Unlocks rocket arsenal for cross-sector raids",
+    tripBonus: 0,
+    footprintM: 36,
+    hp: 5,
     defense: 0,
   },
   {
@@ -719,6 +780,15 @@ export const BUILDING_CATALOG: BuildingCatalogItem[] = [
     defense: 0,
   },
 ];
+
+/** Gold looted when rockets destroy a standing base */
+export function baseDestroyLoot(defenderGold: number): number {
+  const pct = Math.floor(defenderGold * BASE_DESTROY_GOLD_FRACTION);
+  return Math.min(
+    defenderGold,
+    Math.max(BASE_DESTROY_GOLD_MIN, Math.min(BASE_DESTROY_GOLD_MAX, pct))
+  );
+}
 
 export function catalogItem(type: BuildingType | string): BuildingCatalogItem {
   return (
@@ -773,7 +843,13 @@ export function defensePower(p: {
   fortified?: boolean;
 }): number {
   if (!p.house || (p.houseHp ?? 0) <= 0) return 0;
-  return p.fortified ? BASE_FORTIFIED_DEFENSE : BASE_DEFENSE;
+  const base = p.fortified ? BASE_FORTIFIED_DEFENSE : BASE_DEFENSE;
+  let fromBuildings = 0;
+  for (const b of p.buildings || []) {
+    if ((b.hp ?? 0) <= 0) continue;
+    fromBuildings += catalogItem(b.type).defense || 0;
+  }
+  return base + fromBuildings;
 }
 
 /** Human-readable breakdown for HUD / battle reports */
@@ -789,5 +865,10 @@ export function defenseBreakdown(p: {
   fortified?: boolean;
 }): string {
   if (!p.house || (p.houseHp ?? 0) <= 0) return "no defense";
-  return p.fortified ? "fortified base" : "base";
+  const parts: string[] = [p.fortified ? "fortified base" : "base"];
+  const barracks = (p.buildings || []).some(
+    (b) => b.type === "barracks" && (b.hp ?? 0) > 0
+  );
+  if (barracks) parts.push("barracks");
+  return parts.join(" + ");
 }

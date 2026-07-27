@@ -772,3 +772,83 @@ export function SpySatSprite({
     </span>
   );
 }
+
+/** Barracks — stone block with banner. */
+export function BarracksSprite({
+  className = "",
+  title = "Barracks",
+}: SpriteProps) {
+  return (
+    <svg
+      className={`house-sprite ${className}`}
+      viewBox="0 0 36 32"
+      width="52"
+      height="46"
+      role="img"
+      aria-label={title}
+    >
+      <title>{title}</title>
+      <ellipse cx="18" cy="30" rx="10" ry="1.8" fill="rgba(0,0,0,0.35)" />
+      <path d="M6 28 V14 H30 V28 Z" fill="#8a8f84" />
+      <path d="M6 28 V14 H18 V28 Z" fill="#7a7f74" />
+      <path d="M5 14 L18 7 L31 14 Z" fill="#5c4030" />
+      <path d="M5 14 L18 7 L18 14 Z" fill="#4a3224" />
+      <rect x="15" y="19" width="6" height="9" rx="0.6" fill="#3d2a1c" />
+      <rect x="9" y="17" width="4" height="3.5" rx="0.4" fill="#ffe08a" />
+      <rect x="23" y="17" width="4" height="3.5" rx="0.4" fill="#ffe08a" />
+      <rect x="16.5" y="4" width="3" height="7" fill="#e23b2f" />
+      <path d="M19.5 5 L26 7.5 L19.5 10 Z" fill="#e23b2f" />
+    </svg>
+  );
+}
+
+/** Rocket silo — bunker + nose cone. */
+export function SiloSprite({
+  className = "",
+  title = "Rocket silo",
+}: SpriteProps) {
+  return (
+    <svg
+      className={`house-sprite ${className}`}
+      viewBox="0 0 36 32"
+      width="52"
+      height="46"
+      role="img"
+      aria-label={title}
+    >
+      <title>{title}</title>
+      <ellipse cx="18" cy="30" rx="10" ry="1.8" fill="rgba(0,0,0,0.35)" />
+      <rect x="8" y="20" width="20" height="8" rx="1" fill="#5a6358" />
+      <rect x="10" y="18" width="16" height="3" fill="#6a7368" />
+      <rect x="15" y="8" width="6" height="14" rx="1" fill="#c4c8bc" />
+      <path d="M15 8 L18 3 L21 8 Z" fill="#e23b2f" />
+      <rect x="16.2" y="11" width="3.6" height="2" rx="0.4" fill="#8fd48a" />
+      <rect x="11" y="22" width="4" height="4" rx="0.4" fill="#3d2a1c" />
+    </svg>
+  );
+}
+
+/** Barracks troop — helmeted fighter. */
+export function TroopSprite({
+  className = "",
+  title = "Troop",
+}: SpriteProps) {
+  return (
+    <svg
+      className={`house-sprite ${className}`}
+      viewBox="0 0 28 32"
+      width="40"
+      height="46"
+      role="img"
+      aria-label={title}
+    >
+      <title>{title}</title>
+      <ellipse cx="14" cy="30" rx="7" ry="1.5" fill="rgba(0,0,0,0.3)" />
+      <path d="M9 28 L10 16 H18 L19 28 Z" fill="#3d5a3a" />
+      <circle cx="14" cy="11" r="4.2" fill="#e8c4a0" />
+      <path d="M9.5 9 H18.5 L17 6 H11 Z" fill="#4a5a3a" />
+      <rect x="19" y="17" width="2" height="8" rx="0.4" fill="#6a7264" />
+      <path d="M21 17 L25 15 L21 19 Z" fill="#c4b089" />
+    </svg>
+  );
+}

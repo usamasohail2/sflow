@@ -17,16 +17,23 @@ import {
   ROAM_METERS_TO_SPAWN,
   ROAM_MIN_EXPLORE_MS,
   ROCKET_COST,
+  TROOP_COST,
+  TROOP_DAMAGE,
+  TROOP_COOLDOWN_MS,
+  RAID_WIPE_LOOT_GOLD,
   SPAWN_COOLDOWN_MS,
   AZAD_ARENA_NAME,
   AZAD_PLAY_RADIUS_M,
   STARTING,
   attackPower,
   azadHomeIdFor,
+  baseDestroyLoot,
   buildingBonus,
   catalogItem,
   colorForPlayerId,
   defensePower,
+  hasBarracks,
+  hasRocketSilo,
   houseMaxHp,
   BUILDING_MAX_LEVEL,
   buildingLevel,
@@ -779,6 +786,10 @@ function normalizePlayer(raw: Player): Player {
   }
   p.rockets = Math.max(0, p.rockets || 0);
   p.peakRockets = Math.max(p.peakRockets || 0, p.rockets);
+  // Barracks troops (separate from legacy soldiers→rockets migration)
+  if ((p as Player).troops == null) (p as Player).troops = 0;
+  (p as Player).troops = Math.max(0, Math.floor((p as Player).troops || 0));
+  if (p.lastTroopAt == null) p.lastTroopAt = 0;
   delete p.soldiers;
   delete p.tanks;
   delete p.peakSoldiers;
@@ -1208,6 +1219,7 @@ function publicPlayer(p: Player): PublicPlayer {
     villagers: p.villagers,
     rockets: p.rockets || 0,
     peakRockets: Math.max(p.peakRockets || 0, p.rockets || 0),
+    troops: p.troops || 0,
     gold: p.gold,
     totalFarmed: p.totalFarmed || 0,
     buildings: p.buildings,
@@ -1270,6 +1282,7 @@ export async function ensurePlayer(
       villagers: 0,
       rockets: 0,
       peakRockets: 0,
+      troops: 0,
       gold: STARTING.gold,
       totalFarmed: 0,
       buildings: [],
@@ -1541,6 +1554,7 @@ async function wipePlayerSettlement(me: Player): Promise<Player> {
     villagers: 0,
     rockets: 0,
     peakRockets: 0,
+    troops: 0,
     gold: STARTING.gold,
     totalFarmed: 0,
     buildings: [],
@@ -1728,6 +1742,7 @@ export async function claimSector(
     villagers: Math.max(STARTING.villagers, me.villagers || 0),
     rockets: 0,
     peakRockets: 0,
+    troops: 0,
     gold: STARTING.gold,
     totalFarmed: 0,
     buildings: [],
@@ -1808,6 +1823,7 @@ export async function claimAzadUmeed(
     villagers: Math.max(STARTING.villagers, me.villagers || 0),
     rockets: 0,
     peakRockets: 0,
+    troops: 0,
     gold: STARTING.gold,
     totalFarmed: 0,
     buildings: [],
@@ -2492,6 +2508,9 @@ export async function buyRocket(
   const me = await getPlayer(playerId);
   if (!me?.homeSectorId) return { error: "Settle in a sector first" };
   if (!me.house) return { error: "Rebuild your base before stocking rockets" };
+  if (!hasRocketSilo(me)) {
+    return { error: "Build a Rocket Silo before stocking rockets" };
+  }
   const spots = await getSpots();
   const { player: fresh } = await accruePlayer(me, spots, true);
   if (fresh.gold < ROCKET_COST) {
@@ -2506,6 +2525,146 @@ export async function buyRocket(
     updatedAt: Date.now(),
   });
   return { ok: true };
+}
+
+/** Recruit a barracks troop — spend later to sabotage enemy buildings. */
+export async function buyTroop(
+  playerId: string
+): Promise<{ ok: true } | { error: string }> {
+  await bootstrap();
+  const me = await getPlayer(playerId);
+  if (!me?.homeSectorId) return { error: "Settle in a sector first" };
+  if (!me.house) return { error: "Rebuild your base first" };
+  if (!hasBarracks(me)) {
+    return { error: "Build Barracks before recruiting troops" };
+  }
+  const spots = await getSpots();
+  const { player: fresh } = await accruePlayer(me, spots, true);
+  if (fresh.gold < TROOP_COST) {
+    return { error: `Need ◈${TROOP_COST} gold to recruit a troop` };
+  }
+  await setPlayer({
+    ...fresh,
+    gold: fresh.gold - TROOP_COST,
+    troops: (fresh.troops || 0) + 1,
+    updatedAt: Date.now(),
+  });
+  return { ok: true };
+}
+
+/**
+ * Barracks troop sabotage — spend 1 troop to chip an enemy building
+ * (same sector or cross-sector). Cannot target a base.
+ */
+export async function sendTroop(
+  playerId: string,
+  targetPlayerId: string,
+  buildingId: string
+): Promise<
+  | {
+      ok: true;
+      sabotage: {
+        buildingType: BuildingType;
+        buildingName: string;
+        defenderName: string;
+        damage: number;
+        destroyed: boolean;
+        buildingHp: number;
+        sectorName: string;
+      };
+    }
+  | { error: string }
+> {
+  await bootstrap();
+  const me = await getPlayer(playerId);
+  if (!me?.homeSectorId || !me.house) {
+    return { error: "Settle and place your base first" };
+  }
+  if (!hasBarracks(me)) {
+    return { error: "Build Barracks before sending troops" };
+  }
+  if ((me.troops || 0) <= 0) {
+    return { error: "Recruit a troop at the Barracks first" };
+  }
+  if (!targetPlayerId || targetPlayerId === playerId) {
+    return { error: "Pick someone else's building" };
+  }
+  if (!buildingId) return { error: "Pick a building to attack" };
+
+  const now = Date.now();
+  if (me.lastTroopAt && now - me.lastTroopAt < TROOP_COOLDOWN_MS) {
+    const wait = Math.ceil(
+      (TROOP_COOLDOWN_MS - (now - me.lastTroopAt)) / 1000
+    );
+    return { error: `Troops reorganizing — ${wait}s` };
+  }
+
+  const owner = await getPlayer(targetPlayerId);
+  if (!owner?.homeSectorId) {
+    return { error: "That settler has no village" };
+  }
+  const building = owner.buildings.find((b) => b.id === buildingId);
+  if (!building) return { error: "That building is already gone" };
+
+  const damage = TROOP_DAMAGE;
+  const nextHp = Math.max(0, (building.hp || 0) - damage);
+  const destroyed = nextHp <= 0;
+  const buildingName = catalogItem(building.type).name;
+  const nextBuildings = destroyed
+    ? owner.buildings.filter((b) => b.id !== buildingId)
+    : owner.buildings.map((b) =>
+        b.id === buildingId ? { ...b, hp: nextHp } : b
+      );
+
+  const sectors = await getSectors();
+  const sector = sectors.find((s) => s.id === owner.homeSectorId);
+  const sectorName = isAzadHomeId(owner.homeSectorId)
+    ? AZAD_ARENA_NAME
+    : sector?.name ?? owner.homeSectorId ?? "Sector";
+
+  await setPlayer({
+    ...owner,
+    buildings: nextBuildings,
+    updatedAt: now,
+  });
+  await setPlayer({
+    ...me,
+    troops: Math.max(0, (me.troops || 0) - 1),
+    lastTroopAt: now,
+    updatedAt: now,
+  });
+
+  await pushEvent({
+    id: `tp_${now.toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+    ts: now,
+    type: "raze",
+    attackerId: playerId,
+    attackerName: me.name,
+    defenderId: owner.id,
+    defenderName: owner.name,
+    sectorId: owner.homeSectorId,
+    sectorName,
+    buildingId: building.id,
+    buildingType: building.type,
+    buildingName,
+    rocketsLost: 0,
+    damage,
+    destroyed,
+  });
+
+  await flushStore();
+  return {
+    ok: true,
+    sabotage: {
+      buildingType: building.type,
+      buildingName,
+      defenderName: owner.name,
+      damage,
+      destroyed,
+      buildingHp: nextHp,
+      sectorName,
+    },
+  };
 }
 
 /** Raise circular stone walls around the base — more HP + defense. */
@@ -2594,6 +2753,9 @@ export async function plantSpySatellite(
   await bootstrap();
   const me = await getPlayer(playerId);
   if (!me) return { error: "Sign in first" };
+  if (!hasBarracks(me)) {
+    return { error: "Build Barracks before sending a spy" };
+  }
   const spots = await getSpots();
   const { player: fresh } = await accruePlayer(me, spots, true);
   const sectors = await getSectors();
@@ -2900,8 +3062,11 @@ export async function attackSector(
       defender.rockets || 0,
       Math.floor(fired / 2) || 1
     );
-    if (survivingBuildings.length === 0 || houseDestroyed) {
-      lootedGold = Math.min(defender.gold, 25);
+    if (houseDestroyed) {
+      // Razing the base drains a real share of their treasury
+      lootedGold = baseDestroyLoot(defender.gold);
+    } else if (survivingBuildings.length === 0) {
+      lootedGold = Math.min(defender.gold, RAID_WIPE_LOOT_GOLD);
     }
   } else {
     defenderRocketsLost = Math.min(

@@ -44,6 +44,7 @@ import {
   type MapBusiness,
 } from "@/lib/businesses";
 import {
+  BarracksSprite,
   CivicSprite,
   GoldCoinIcon,
   HouseSprite,
@@ -52,6 +53,8 @@ import {
   PradoSprite,
   RocketSprite,
   ShovelSprite,
+  SiloSprite,
+  TroopSprite,
   VillagerSprite,
   WallsSprite,
   WarehouseSprite,
@@ -78,6 +81,8 @@ import {
   GEM_META,
   GOLD_COIN,
   ROCKET_COST,
+  TROOP_COST,
+  TROOP_DAMAGE,
   BASE_WALL_COST,
   FORTIFIED_HOUSE_MAX_HP,
   BASE_FORTIFIED_DEFENSE,
@@ -92,6 +97,8 @@ import {
   defensePower,
   formatGold,
   formatGoldCompact,
+  hasBarracks,
+  hasRocketSilo,
   isAttackEvent,
   isAzadHomeId,
   isCdaRaidEvent,
@@ -216,6 +223,8 @@ function BuildingThumb({
   if (type === "mill") return <MillSprite className={className} />;
   if (type === "warehouse") return <WarehouseSprite className={className} />;
   if (type === "shovel") return <ShovelSprite className={className} />;
+  if (type === "barracks") return <BarracksSprite className={className} />;
+  if (type === "silo") return <SiloSprite className={className} />;
   if (type === "civic") return <CivicSprite className={className} />;
   if (type === "prado") return <PradoSprite className={className} />;
   if (type === "landcruiser") return <LandCruiserSprite className={className} />;
@@ -923,6 +932,8 @@ export function PlayShell() {
   syncingBuildIdsRef.current = syncingBuildIds;
   /** Rocket stock purchase in flight — dock tile shows a loader */
   const [buyingRocket, setBuyingRocket] = useState(false);
+  /** Barracks troop recruit in flight */
+  const [buyingTroop, setBuyingTroop] = useState(false);
   /** Fortress walls purchase in flight */
   const [buyingWalls, setBuyingWalls] = useState(false);
   /** free-place mode: admin CDA HQ or spy sat plant */
@@ -2903,6 +2914,39 @@ export function PlayShell() {
         );
       }
     }, remaining);
+  };
+
+  const confirmTroop = async () => {
+    if (!razeTarget || !razeBuilding || !razeOwner || !me) return;
+    if (!hasBarracks(me) || (me.troops || 0) <= 0) {
+      setError("Recruit a troop at the Barracks first");
+      window.setTimeout(() => setError(null), 3200);
+      return;
+    }
+    const name = catalogItem(razeBuilding.type).name;
+    const ownerName = razeOwner.name;
+    const targetPlayerId = razeTarget.playerId;
+    const buildingId = razeTarget.buildingId;
+    setRazeTarget(null);
+    const data = await act("send_troop", { targetPlayerId, buildingId });
+    if (!data) return;
+    const sabotage = data.sabotage as
+      | {
+          destroyed?: boolean;
+          damage?: number;
+          buildingHp?: number;
+        }
+      | undefined;
+    playAttackSound();
+    if (sabotage?.destroyed) {
+      showToast(`Troop destroyed ${ownerName}'s ${name}`);
+    } else {
+      showToast(
+        `Troop hit ${ownerName}'s ${name} — ${sabotage?.damage ?? TROOP_DAMAGE} dmg, ${
+          sabotage?.buildingHp ?? "?"
+        } HP left`
+      );
+    }
   };
 
   const openShovel = (buildingId: string) => {
@@ -5258,9 +5302,23 @@ export function PlayShell() {
               className="mt-3 w-full rounded-sm bg-[var(--signal)] px-3 py-2.5 text-sm font-bold text-white disabled:opacity-40"
             >
               {(me?.rockets || 0) <= 0
-                ? "Need rockets"
+                ? hasRocketSilo(me)
+                  ? "Need rockets"
+                  : "Need rocket silo"
                 : `Fire ${salvo} rocket${salvo === 1 ? "" : "s"}`}
             </button>
+            {hasBarracks(me) && (
+              <button
+                type="button"
+                disabled={busy || !me || (me.troops || 0) <= 0 || !me.house}
+                onClick={() => void confirmTroop()}
+                className="mt-1.5 w-full rounded-sm border border-[var(--line-strong)] bg-[var(--wash)] px-3 py-2 text-xs font-semibold text-[var(--sand)] disabled:opacity-40"
+              >
+                {(me?.troops || 0) <= 0
+                  ? "Recruit a troop"
+                  : `Send troop · ${TROOP_DAMAGE} dmg (stock ${me?.troops || 0})`}
+              </button>
+            )}
             <button
               type="button"
               className="mt-1.5 font-mono text-[10px] text-[var(--ink-faint)] hover:text-[var(--sand)]"
@@ -5575,6 +5633,7 @@ export function PlayShell() {
                 busy ||
                 !me ||
                 !me.house ||
+                !hasRocketSilo(me) ||
                 (me.rockets || 0) <= 0 ||
                 Boolean(march)
               }
@@ -5583,6 +5642,49 @@ export function PlayShell() {
             >
               ✦ Fire {salvo} rocket{salvo === 1 ? "" : "s"}
             </button>
+            {hasBarracks(me) && enemyPlayer.buildings.length > 0 && (
+              <button
+                type="button"
+                disabled={
+                  busy || !me || !me.house || (me.troops || 0) <= 0 || Boolean(march)
+                }
+                onClick={() => {
+                  const target = [...enemyPlayer.buildings].sort(
+                    (a, b) => b.builtAt - a.builtAt
+                  )[0];
+                  if (!target) return;
+                  void act("send_troop", {
+                    targetPlayerId: enemyPlayer.id,
+                    buildingId: target.id,
+                  }).then((d) => {
+                    if (!d) return;
+                    const sabotage = d.sabotage as
+                      | {
+                          destroyed?: boolean;
+                          damage?: number;
+                          buildingName?: string;
+                          buildingHp?: number;
+                        }
+                      | undefined;
+                    playAttackSound();
+                    showToast(
+                      sabotage?.destroyed
+                        ? `Troop destroyed ${enemyPlayer.name}'s ${
+                            sabotage.buildingName || "building"
+                          }`
+                        : `Troop hit ${enemyPlayer.name}'s ${
+                            sabotage?.buildingName || "building"
+                          } — ${sabotage?.damage ?? TROOP_DAMAGE} dmg`
+                    );
+                  });
+                }}
+                className="mt-1.5 w-full rounded-sm border border-[var(--line-strong)] bg-[var(--wash)] px-3 py-2 text-xs font-semibold text-[var(--sand)] disabled:opacity-40"
+              >
+                {(me?.troops || 0) <= 0
+                  ? "Recruit a troop"
+                  : `Send troop at building · ${TROOP_DAMAGE} dmg`}
+              </button>
+            )}
             <button
               type="button"
               className="mt-1.5 text-[9px] font-mono text-[var(--ink-faint)] underline decoration-dotted"
@@ -5590,7 +5692,12 @@ export function PlayShell() {
             >
               Cancel target
             </button>
-            {me && (me.rockets || 0) <= 0 && (
+            {me && !hasRocketSilo(me) && (
+              <p className="mt-1 text-[9px] text-[var(--ink-faint)]">
+                Build a Rocket Silo to unlock rocket raids
+              </p>
+            )}
+            {me && hasRocketSilo(me) && (me.rockets || 0) <= 0 && (
               <p className="mt-1 text-[9px] text-[var(--ink-faint)]">
                 Stock rockets in Arsenal first
               </p>
@@ -5755,6 +5862,7 @@ export function PlayShell() {
                         buyingRocket ? "cameo-building" : ""
                       } ${
                         !buyingRocket &&
+                        hasRocketSilo(me) &&
                         displayGold >= ROCKET_COST &&
                         me.house
                           ? "cameo-blink"
@@ -5763,16 +5871,23 @@ export function PlayShell() {
                       disabled={
                         busy ||
                         buyingRocket ||
+                        !hasRocketSilo(me) ||
                         displayGold < ROCKET_COST ||
                         !me.house
                       }
                       title={
-                        buyingRocket
-                          ? "Building rocket…"
-                          : `Buy rocket — ${GOLD_COIN}${ROCKET_COST} · +1 attack (expended when you fire)`
+                        !hasRocketSilo(me)
+                          ? "Build a Rocket Silo to unlock rockets"
+                          : buyingRocket
+                            ? "Building rocket…"
+                            : `Buy rocket — ${GOLD_COIN}${ROCKET_COST} · +1 attack (expended when you fire)`
                       }
                       onClick={() => {
                         if (buyingRocket || busyRef.current) return;
+                        if (!hasRocketSilo(me)) {
+                          showToast("Build a Rocket Silo first");
+                          return;
+                        }
                         setBuyingRocket(true);
                         void act("buy_rocket", {}, undefined, { silent: true })
                           .then((d) => {
@@ -5786,13 +5901,89 @@ export function PlayShell() {
                     >
                       <RocketSprite className="h-8 w-8 sm:h-9 sm:w-9" />
                       <span className="cameo-cost">
-                        <GoldCoinIcon size={10} />
-                        {ROCKET_COST}
+                        {hasRocketSilo(me) ? (
+                          <>
+                            <GoldCoinIcon size={10} />
+                            {ROCKET_COST}
+                          </>
+                        ) : (
+                          "Silo"
+                        )}
                       </span>
                       <span className="cameo-label">
-                        {buyingRocket ? "Building…" : "Rocket"}
+                        {buyingRocket
+                          ? "Building…"
+                          : hasRocketSilo(me)
+                            ? "Rocket"
+                            : "Locked"}
                       </span>
                       {buyingRocket && <CameoBuildLoader />}
+                    </button>
+
+                    <button
+                      type="button"
+                      className={`cameo cameo-dock ${
+                        buyingTroop ? "cameo-building" : ""
+                      } ${
+                        !buyingTroop &&
+                        hasBarracks(me) &&
+                        displayGold >= TROOP_COST &&
+                        me.house
+                          ? "cameo-blink"
+                          : ""
+                      }`}
+                      disabled={
+                        busy ||
+                        buyingTroop ||
+                        !hasBarracks(me) ||
+                        displayGold < TROOP_COST ||
+                        !me.house
+                      }
+                      title={
+                        !hasBarracks(me)
+                          ? "Build Barracks to recruit troops"
+                          : buyingTroop
+                            ? "Recruiting…"
+                            : `Recruit troop — ${GOLD_COIN}${TROOP_COST} · deals ${TROOP_DAMAGE} dmg to enemy buildings (stock ${me.troops || 0})`
+                      }
+                      onClick={() => {
+                        if (buyingTroop || busyRef.current) return;
+                        if (!hasBarracks(me)) {
+                          showToast("Build Barracks first");
+                          return;
+                        }
+                        setBuyingTroop(true);
+                        void act("buy_troop", {}, undefined, { silent: true })
+                          .then((d) => {
+                            if (d) {
+                              playRecruitSound();
+                              showToast(
+                                `Troop ready · stock ${(me.troops || 0) + 1}`
+                              );
+                            }
+                          })
+                          .finally(() => setBuyingTroop(false));
+                      }}
+                    >
+                      <TroopSprite className="h-8 w-8 sm:h-9 sm:w-9" />
+                      <span className="cameo-cost">
+                        {hasBarracks(me) ? (
+                          <>
+                            <GoldCoinIcon size={10} />
+                            {TROOP_COST}
+                          </>
+                        ) : (
+                          "Barracks"
+                        )}
+                      </span>
+                      <span className="cameo-label">
+                        {buyingTroop
+                          ? "Hiring…"
+                          : hasBarracks(me)
+                            ? `Troop${(me.troops || 0) > 0 ? ` · ${me.troops}` : ""}`
+                            : "Locked"}
+                      </span>
+                      {buyingTroop && <CameoBuildLoader />}
                     </button>
 
                     <button
@@ -5869,6 +6060,7 @@ export function PlayShell() {
                       } ${
                         !plantingSat &&
                         npcPlacing !== "spy_sat" &&
+                        hasBarracks(me) &&
                         displayGold >= SPY_SAT_COST &&
                         me.house
                           ? "cameo-blink"
@@ -5877,26 +6069,45 @@ export function PlayShell() {
                       disabled={
                         busy ||
                         plantingSat ||
+                        !hasBarracks(me) ||
                         displayGold < SPY_SAT_COST ||
                         !me.house
                       }
-                      title={`Plant spy sat in an enemy sector — ${GOLD_COIN}${SPY_SAT_COST} · drains their gold. Zoom to spot.`}
+                      title={
+                        !hasBarracks(me)
+                          ? "Build Barracks to send spies"
+                          : `Send spy into an enemy sector — ${GOLD_COIN}${SPY_SAT_COST} · drains their gold`
+                      }
                       onClick={() => {
                         if (plantingSat || busyRef.current) return;
+                        if (!hasBarracks(me)) {
+                          showToast("Build Barracks to unlock spies");
+                          return;
+                        }
                         setPlacing(null);
                         setNpcPlacing("spy_sat");
                         showToast(
-                          "Tap inside an enemy sector to plant a spy sat"
+                          "Tap inside an enemy sector to plant a spy"
                         );
                       }}
                     >
                       <SpySatSprite className="h-8 w-8 sm:h-9 sm:w-9" />
                       <span className="cameo-cost">
-                        <GoldCoinIcon size={10} />
-                        {SPY_SAT_COST}
+                        {hasBarracks(me) ? (
+                          <>
+                            <GoldCoinIcon size={10} />
+                            {SPY_SAT_COST}
+                          </>
+                        ) : (
+                          "Barracks"
+                        )}
                       </span>
                       <span className="cameo-label">
-                        {npcPlacing === "spy_sat" ? "Planting…" : "Spy sat"}
+                        {npcPlacing === "spy_sat"
+                          ? "Planting…"
+                          : hasBarracks(me)
+                            ? "Spy"
+                            : "Locked"}
                       </span>
                       {plantingSat && <CameoBuildLoader />}
                     </button>
@@ -5919,13 +6130,17 @@ export function PlayShell() {
                               ? "Well"
                               : b.type === "shovel"
                                 ? "Shovel"
-                                : b.type === "civic"
-                                  ? "Civic"
-                                  : b.type === "prado"
-                                    ? "Prado"
-                                    : b.type === "landcruiser"
-                                      ? "Cruiser"
-                                      : b.name;
+                                : b.type === "barracks"
+                                  ? "Barracks"
+                                  : b.type === "silo"
+                                    ? "Silo"
+                                    : b.type === "civic"
+                                      ? "Civic"
+                                      : b.type === "prado"
+                                        ? "Prado"
+                                        : b.type === "landcruiser"
+                                          ? "Cruiser"
+                                          : b.name;
                       return (
                         <button
                           key={b.type}
