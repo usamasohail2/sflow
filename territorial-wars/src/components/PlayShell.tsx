@@ -56,6 +56,9 @@ import {
   WallsSprite,
   WarehouseSprite,
   WellSprite,
+  SpySatSprite,
+  CdaHqSprite,
+  CdaTruckSprite,
 } from "@/components/sprites";
 import { ResourceGem } from "@/components/ResourceGem";
 import type {
@@ -101,6 +104,7 @@ import {
 import { pointInOrNearRing, pointInRing } from "@/lib/geo";
 import { ringCentroid } from "@/lib/mapMath";
 import { timeAgo } from "@/lib/timeAgo";
+import { SPY_SAT_COST, type WorldNpc } from "@/lib/worldNpcs";
 import {
   buildingPlacementError,
   housePlacementError,
@@ -809,6 +813,11 @@ export function PlayShell() {
   const [buyingRocket, setBuyingRocket] = useState(false);
   /** Fortress walls purchase in flight */
   const [buyingWalls, setBuyingWalls] = useState(false);
+  /** free-place mode: admin CDA HQ or spy sat plant */
+  const [npcPlacing, setNpcPlacing] = useState<null | "cda_hq" | "spy_sat">(
+    null
+  );
+  const [plantingSat, setPlantingSat] = useState(false);
   /** Gem/resource spot ids currently claiming on the server */
   const [claimingSpotIds, setClaimingSpotIds] = useState<string[]>([]);
   const claimingSpotIdsRef = useRef<string[]>([]);
@@ -2088,6 +2097,91 @@ export function PlayShell() {
     return () => window.removeEventListener("pointerdown", unlock);
   }, []);
 
+  const handleNpcPlace = async (lat: number, lng: number) => {
+    if (!npcPlacing) return;
+    if (npcPlacing === "cda_hq") {
+      const data = await act(
+        "admin_place_cda_hq",
+        { lat, lng },
+        "Placing CDA Head Office…"
+      );
+      if (data) {
+        playBuildSound();
+        showToast("CDA Head Office set — raid trucks will dispatch from here");
+        setNpcPlacing(null);
+      }
+      return;
+    }
+    if (npcPlacing === "spy_sat") {
+      if (plantingSat || busyRef.current) return;
+      setPlantingSat(true);
+      try {
+        const data = await act(
+          "plant_spy_sat",
+          { lat, lng },
+          undefined,
+          { silent: true }
+        );
+        if (data) {
+          playBuildSound();
+          showToast("Spy satellite planted — draining their gold quietly");
+          setNpcPlacing(null);
+        }
+      } finally {
+        setPlantingSat(false);
+      }
+    }
+  };
+
+  const handleSelectNpc = async (npc: WorldNpc) => {
+    if (npc.kind === "spy_sat" && npc.phase === "active") {
+      const canSmash =
+        npc.targetPlayerId === me?.id || npc.ownerPlayerId === me?.id;
+      if (!canSmash) {
+        showToast("Zoom in — someone's spying here");
+        return;
+      }
+      const data = await act(
+        "destroy_spy_sat",
+        { npcId: npc.id },
+        "Destroying spy sat…"
+      );
+      if (data) {
+        playBuildSound();
+        showToast(
+          npc.ownerPlayerId === me?.id
+            ? "Spy sat recalled"
+            : `Destroyed ${npc.ownerName || "someone"}'s spy sat`
+        );
+      }
+      return;
+    }
+    if (npc.kind === "cda_truck") {
+      if (npc.phase !== "parked" && npc.phase !== "traveling") {
+        showToast("That truck already left");
+        return;
+      }
+      const origin = liveLocation ?? me?.house ?? me?.villagerPost;
+      const data = await act(
+        "chase_cda_truck",
+        {
+          npcId: npc.id,
+          lat: origin?.lat,
+          lng: origin?.lng,
+        },
+        "Chasing off raid truck…"
+      );
+      if (data) {
+        playRecruitSound();
+        showToast(
+          typeof (data as { message?: string }).message === "string"
+            ? (data as { message: string }).message
+            : "Raid truck chased off!"
+        );
+      }
+    }
+  };
+
   const handlePlace = async (lat: number, lng: number) => {
     if (!placing) return;
     // Block settle/rebuild while a full-screen save is in flight;
@@ -2859,6 +2953,7 @@ export function PlayShell() {
           me={me}
           players={snap?.players ?? []}
           events={snap?.events ?? []}
+          worldNpcs={snap?.worldNpcs ?? []}
           selectedId={selectedId}
           selectedPlayerId={selectedPlayerId}
           placing={placing}
@@ -2918,6 +3013,14 @@ export function PlayShell() {
           }}
           pinDropActive={(pickingPin || manualMode) && !claimed && !placing}
           pinDraggable={manualMode && !claimed && !placing && Boolean(liveLocation)}
+          freePlaceActive={Boolean(npcPlacing) && !placing}
+          onFreePlace={(lat, lng) => {
+            if (!npcPlacing) return;
+            void handleNpcPlace(lat, lng);
+          }}
+          onSelectNpc={(npc) => {
+            void handleSelectNpc(npc);
+          }}
           onDropPin={(lat, lng) => {
             const forceAzad = pinDropAzad.current;
             pinDropAzad.current = false;
@@ -3270,6 +3373,49 @@ export function PlayShell() {
                 admin
               </span>
             </Link>
+          )}
+          {(snap?.isAdmin || snap?.authDisabled) && (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMenu(false);
+                  setPlacing(null);
+                  setNpcPlacing("cda_hq");
+                  showToast("Tap the map to place CDA Head Office");
+                }}
+                className="flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-[12px] text-[var(--ink-muted)] hover:bg-[var(--wash)] hover:text-[var(--sand)]"
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <CdaHqSprite className="h-5 w-6" />
+                  Place CDA HQ
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMenu(false);
+                  void act("admin_dispatch_cda_truck", {}, "Dispatching raid truck…").then(
+                    (d) => {
+                      if (d) {
+                        const name =
+                          typeof (d as { targetName?: string }).targetName ===
+                          "string"
+                            ? (d as { targetName: string }).targetName
+                            : "a settler";
+                        showToast(`CDA Raid Truck en route to ${name}`);
+                      }
+                    }
+                  );
+                }}
+                className="flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-[12px] text-[var(--ink-muted)] hover:bg-[var(--wash)] hover:text-[var(--sand)]"
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <CdaTruckSprite className="h-5 w-7" />
+                  Dispatch raid truck
+                </span>
+              </button>
+            </>
           )}
           <button
             type="button"
@@ -4334,6 +4480,80 @@ export function PlayShell() {
           </div>
         )}
 
+      {/* Persistent NPC threat banners */}
+      {(snap?.activeSpyThreats?.length || snap?.activeRaidTruck) && (
+        <div className="pointer-events-none absolute inset-x-0 top-[4.5rem] z-[55] flex flex-col items-center gap-1.5 px-2 sm:top-[4.25rem]">
+          {(snap?.activeSpyThreats ?? []).map((sat) => (
+            <div
+              key={sat.id}
+              className="npc-threat-banner pointer-events-auto flex w-[min(22rem,calc(100%-1rem))] items-center gap-2 rounded-sm px-2.5 py-2"
+            >
+              <SpySatSprite className="h-9 w-9 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-semibold text-[var(--signal-bright)]">
+                  Spy satellite active
+                </p>
+                <p className="truncate text-[10px] text-[var(--ink-muted)]">
+                  Planted by {sat.ownerName || "someone"} — draining your gold.
+                  Zoom in to find &amp; smash it.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="shrink-0 rounded-sm bg-[var(--signal)] px-2 py-1 text-[10px] font-bold text-white"
+                onClick={() => void handleSelectNpc(sat)}
+              >
+                Smash
+              </button>
+            </div>
+          ))}
+          {snap?.activeRaidTruck && (
+            <div className="npc-threat-banner pointer-events-auto flex w-[min(22rem,calc(100%-1rem))] items-center gap-2 rounded-sm px-2.5 py-2">
+              <CdaTruckSprite className="h-8 w-10 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-semibold text-[var(--signal-bright)]">
+                  CDA Raid Truck{" "}
+                  {snap.activeRaidTruck.phase === "parked"
+                    ? "parked"
+                    : "incoming"}
+                </p>
+                <p className="truncate text-[10px] text-[var(--ink-muted)]">
+                  {snap.activeRaidTruck.phase === "parked"
+                    ? `Bribing a villager — stolen ◈${
+                        snap.activeRaidTruck.drainedTotal || 0
+                      }. Chase it off!`
+                    : "En route from CDA Head Office"}
+                </p>
+              </div>
+              {snap.activeRaidTruck.phase === "parked" && (
+                <button
+                  type="button"
+                  className="shrink-0 rounded-sm bg-[var(--signal)] px-2 py-1 text-[10px] font-bold text-white"
+                  onClick={() =>
+                    void handleSelectNpc(snap.activeRaidTruck!)
+                  }
+                >
+                  Chase off
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {npcPlacing && (
+        <div className="absolute bottom-36 left-1/2 z-30 -translate-x-1/2 sm:bottom-8">
+          <button
+            type="button"
+            onClick={() => setNpcPlacing(null)}
+            className="hud-chip px-4 py-2 text-xs font-semibold text-[var(--signal-bright)]"
+          >
+            ✕ Cancel{" "}
+            {npcPlacing === "cda_hq" ? "CDA HQ place" : "spy sat plant"}
+          </button>
+        </div>
+      )}
+
       {/* Toast / error */}
       {(toast || error) && !battleSummary && !savingLabel && (
         <div className="pointer-events-none absolute left-1/2 top-14 z-40 -translate-x-1/2">
@@ -5354,6 +5574,47 @@ export function PlayShell() {
                             : "Walls"}
                       </span>
                       {buyingWalls && <CameoBuildLoader />}
+                    </button>
+
+                    <button
+                      type="button"
+                      className={`cameo cameo-dock ${
+                        plantingSat || npcPlacing === "spy_sat"
+                          ? "cameo-building"
+                          : ""
+                      } ${
+                        !plantingSat &&
+                        npcPlacing !== "spy_sat" &&
+                        displayGold >= SPY_SAT_COST &&
+                        me.house
+                          ? "cameo-blink"
+                          : ""
+                      }`}
+                      disabled={
+                        busy ||
+                        plantingSat ||
+                        displayGold < SPY_SAT_COST ||
+                        !me.house
+                      }
+                      title={`Plant spy sat in an enemy sector — ${GOLD_COIN}${SPY_SAT_COST} · drains their gold. Zoom to spot.`}
+                      onClick={() => {
+                        if (plantingSat || busyRef.current) return;
+                        setPlacing(null);
+                        setNpcPlacing("spy_sat");
+                        showToast(
+                          "Tap inside an enemy sector to plant a spy sat"
+                        );
+                      }}
+                    >
+                      <SpySatSprite className="h-8 w-8 sm:h-9 sm:w-9" />
+                      <span className="cameo-cost">
+                        <GoldCoinIcon size={10} />
+                        {SPY_SAT_COST}
+                      </span>
+                      <span className="cameo-label">
+                        {npcPlacing === "spy_sat" ? "Planting…" : "Spy sat"}
+                      </span>
+                      {plantingSat && <CameoBuildLoader />}
                     </button>
 
                     <div className="w-px shrink-0 self-stretch bg-[var(--line)]" />

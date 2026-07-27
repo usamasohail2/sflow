@@ -5,6 +5,8 @@ import type { BuildingType } from "@/lib/gameTypes";
 import { AUTH_DISABLED, isAdminEmail } from "@/lib/devMode";
 import {
   attackSector,
+  adminPlaceCdaHq,
+  adminDispatchCdaTruck,
   beginTutorialTest,
   buildBuilding,
   buyRocket,
@@ -13,6 +15,7 @@ import {
   claimSector,
   clickShovel,
   collectHidden,
+  chaseCdaRaidTruck,
   demolishBuilding,
   discoverSpot,
   endTutorialTest,
@@ -20,10 +23,12 @@ import {
   fortifyBase,
   getSnapshot,
   placeHouse,
+  plantSpySatellite,
   renamePlayer,
   renameSectorTag,
   resetPlayerProgress,
   razeBuilding,
+  smashSpySatellite,
   spawnRoamFind,
   upgradeBuilding,
 } from "@/lib/store";
@@ -156,6 +161,8 @@ export async function POST(req: Request) {
     rockets?: number;
     /** Same-sector building to raze */
     buildingId?: string;
+    /** World NPC id (spy sat / CDA truck) */
+    npcId?: string;
     /** Google Maps business review reward */
     placeKey?: string;
     placeName?: string;
@@ -358,6 +365,59 @@ export async function POST(req: Request) {
     result = await buyRocket(id);
   } else if (body.action === "fortify_base") {
     result = await fortifyBase(id);
+  } else if (body.action === "admin_place_cda_hq") {
+    if (!AUTH_DISABLED && !isAdminEmail(identity.email)) {
+      return withGuestCookie(
+        NextResponse.json({ error: "Admin only" }, { status: 403 }),
+        setCookie
+      );
+    }
+    if (!Number.isFinite(body.lat) || !Number.isFinite(body.lng)) {
+      return withGuestCookie(
+        NextResponse.json({ error: "Pick a map spot" }, { status: 400 }),
+        setCookie
+      );
+    }
+    result = await adminPlaceCdaHq(id, {
+      lat: Number(body.lat),
+      lng: Number(body.lng),
+    });
+  } else if (body.action === "admin_dispatch_cda_truck") {
+    if (!AUTH_DISABLED && !isAdminEmail(identity.email)) {
+      return withGuestCookie(
+        NextResponse.json({ error: "Admin only" }, { status: 403 }),
+        setCookie
+      );
+    }
+    result = await adminDispatchCdaTruck(id);
+  } else if (body.action === "plant_spy_sat") {
+    if (!Number.isFinite(body.lat) || !Number.isFinite(body.lng)) {
+      return withGuestCookie(
+        NextResponse.json({ error: "Pick a spot in an enemy sector" }, { status: 400 }),
+        setCookie
+      );
+    }
+    result = await plantSpySatellite(id, Number(body.lat), Number(body.lng));
+  } else if (body.action === "destroy_spy_sat") {
+    if (!body.npcId) {
+      return withGuestCookie(
+        NextResponse.json({ error: "Missing spy sat" }, { status: 400 }),
+        setCookie
+      );
+    }
+    result = await smashSpySatellite(id, String(body.npcId));
+  } else if (body.action === "chase_cda_truck") {
+    if (!body.npcId) {
+      return withGuestCookie(
+        NextResponse.json({ error: "Missing truck" }, { status: 400 }),
+        setCookie
+      );
+    }
+    const actorPos =
+      Number.isFinite(body.lat) && Number.isFinite(body.lng)
+        ? { lat: Number(body.lat), lng: Number(body.lng) }
+        : null;
+    result = await chaseCdaRaidTruck(id, String(body.npcId), actorPos);
   } else if (body.action === "attack") {
     const targetPlayerId =
       typeof body.targetPlayerId === "string"
@@ -472,6 +532,8 @@ export async function POST(req: Request) {
       ownerName: "ownerName" in result ? result.ownerName : undefined,
       battle: "battle" in result ? result.battle : undefined,
       raze: "raze" in result ? result.raze : undefined,
+      message: "message" in result ? result.message : undefined,
+      targetName: "targetName" in result ? result.targetName : undefined,
     }),
     setCookie
   );

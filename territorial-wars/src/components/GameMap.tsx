@@ -126,6 +126,9 @@ import {
   CivicSprite,
   HouseSprite,
   BaseWallRing,
+  CdaHqSprite,
+  CdaTruckSprite,
+  SpySatSprite,
   LandCruiserSprite,
   MillSprite,
   PradoSprite,
@@ -142,6 +145,8 @@ import {
   resolveTappedPlaceLabel,
 } from "@/lib/businesses";
 import type { PresencePeer } from "@/lib/presenceTypes";
+import type { WorldNpc } from "@/lib/worldNpcs";
+import { worldNpcTravelPos } from "@/lib/worldNpcs";
 
 const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
 
@@ -264,6 +269,9 @@ type Props = {
   /** Pre-settle: tap map to drop a location pin when GPS is unavailable */
   pinDropActive?: boolean;
   onDropPin?: (lat: number, lng: number) => void;
+  /** Admin / spy sat: free map tap without a sector-bound placing mode */
+  freePlaceActive?: boolean;
+  onFreePlace?: (lat: number, lng: number) => void;
   onSpawnFind?: (payload: {
     lat: number;
     lng: number;
@@ -291,6 +299,10 @@ type Props = {
   syncingBuildingIds?: string[];
   /** Personal war log — sectors that attacked you turn red */
   events?: GameEvent[];
+  /** CDA HQ, trucks, spy sats, roam NPCs */
+  worldNpcs?: WorldNpc[];
+  /** Tap a world NPC (spy sat / parked truck) */
+  onSelectNpc?: (npc: WorldNpc) => void;
   className?: string;
 };
 
@@ -389,6 +401,8 @@ export function GameMap({
   onPlaceBlocked,
   pinDropActive = false,
   onDropPin,
+  freePlaceActive = false,
+  onFreePlace,
   onSpawnFind,
   onCollectHidden,
   claimingSpotIds = [],
@@ -400,6 +414,8 @@ export function GameMap({
   presenceSelf = null,
   onCameraReport,
   events = [],
+  worldNpcs = [],
+  onSelectNpc,
   className = "",
 }: Props) {
   const syncingSet = useMemo(
@@ -1534,6 +1550,10 @@ export function GameMap({
             onDropPin(e.lngLat.lat, e.lngLat.lng);
             return;
           }
+          if (freePlaceActive && onFreePlace) {
+            onFreePlace(e.lngLat.lat, e.lngLat.lng);
+            return;
+          }
 
           // Prefer POI / place labels over sector-fill so shops stay tappable
           // under our top-slot washes. Pad the hit box for fat-finger taps.
@@ -2260,6 +2280,116 @@ export function GameMap({
             </div>
           </Marker>
         )}
+
+        {/* World NPCs — CDA HQ, raid trucks, spy sats */}
+        {worldNpcs.map((npc) => {
+          if (npc.kind === "spy_sat" && npc.phase === "active") {
+            // Hidden until street-explore zoom (owner can see a bit earlier)
+            const isOwner = me?.id && npc.ownerPlayerId === me.id;
+            const visible =
+              zoom >= EXPLORE_ZOOM || (isOwner && zoom >= DETAIL_ZOOM);
+            if (!visible) return null;
+            const pos = { lat: npc.lat, lng: npc.lng };
+            return (
+              <Marker
+                key={npc.id}
+                longitude={pos.lng}
+                latitude={pos.lat}
+                anchor="center"
+              >
+                <button
+                  type="button"
+                  className="flex flex-col items-center bg-transparent p-0"
+                  title={`${npc.label || "Spy Satellite"} · planted by ${
+                    npc.ownerName || "someone"
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectNpc?.(npc);
+                  }}
+                >
+                  <span className="npc-map-tag">
+                    {isOwner ? "Your spy sat" : "Spy sat"}
+                  </span>
+                  <SpySatSprite />
+                </button>
+              </Marker>
+            );
+          }
+          if (npc.kind === "cda_hq") {
+            return (
+              <Marker
+                key={npc.id}
+                longitude={npc.lng}
+                latitude={npc.lat}
+                anchor="bottom"
+              >
+                <div className="flex flex-col items-center">
+                  <span className="npc-map-tag">CDA Head Office</span>
+                  <CdaHqSprite className="drop-shadow-md" />
+                </div>
+              </Marker>
+            );
+          }
+          if (npc.kind === "cda_truck" && npc.phase !== "gone") {
+            const pos = worldNpcTravelPos(npc, now);
+            return (
+              <Marker
+                key={npc.id}
+                longitude={pos.lng}
+                latitude={pos.lat}
+                anchor="center"
+              >
+                <button
+                  type="button"
+                  className="flex flex-col items-center bg-transparent p-0"
+                  title={
+                    npc.phase === "parked"
+                      ? "CDA Raid Truck — tap to chase off"
+                      : "CDA Raid Truck"
+                  }
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectNpc?.(npc);
+                  }}
+                >
+                  <span className="npc-map-tag">
+                    {npc.phase === "parked"
+                      ? "Raid truck"
+                      : npc.phase === "fleeing"
+                        ? "Fleeing"
+                        : "En route"}
+                  </span>
+                  <CdaTruckSprite className="drop-shadow-md" />
+                </button>
+              </Marker>
+            );
+          }
+          // Future roam NPCs — still render a simple pin when traveling/parked
+          if (
+            npc.phase === "traveling" ||
+            npc.phase === "parked" ||
+            npc.phase === "active"
+          ) {
+            const pos = worldNpcTravelPos(npc, now);
+            return (
+              <Marker
+                key={npc.id}
+                longitude={pos.lng}
+                latitude={pos.lat}
+                anchor="center"
+              >
+                <div className="flex flex-col items-center">
+                  <span className="npc-map-tag">{npc.label || npc.kind}</span>
+                  <span className="rounded-sm bg-[var(--wash)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--sand)]">
+                    NPC
+                  </span>
+                </div>
+              </Marker>
+            );
+          }
+          return null;
+        })}
 
         {/* Rocket salvo — bezier arcs toward target */}
         {flightRockets.map((r) => (

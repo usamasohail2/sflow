@@ -673,3 +673,102 @@ export function WallsSprite({
     </svg>
   );
 }
+
+/** CDA Head Office — municipal block. */
+export function CdaHqSprite({
+  className = "",
+  title = "CDA Head Office",
+}: SpriteProps) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 40 36"
+      width="48"
+      height="44"
+      role="img"
+      aria-label={title}
+    >
+      <title>{title}</title>
+      <ellipse cx="20" cy="33" rx="12" ry="2" fill="rgba(0,0,0,0.35)" />
+      <rect x="6" y="12" width="28" height="18" rx="1.5" fill="#c4b89a" />
+      <rect x="6" y="12" width="28" height="4" fill="#3d6b45" />
+      <rect x="10" y="18" width="5" height="5" fill="#ffe08a" />
+      <rect x="18" y="18" width="5" height="5" fill="#ffe08a" />
+      <rect x="26" y="18" width="5" height="5" fill="#ffe08a" />
+      <rect x="17" y="24" width="6" height="6" fill="#5c4030" />
+      <text
+        x="20"
+        y="10"
+        textAnchor="middle"
+        fontSize="5"
+        fontWeight="700"
+        fill="#e8ebe4"
+      >
+        CDA
+      </text>
+    </svg>
+  );
+}
+
+/** Green municipal raid truck. */
+export function CdaTruckSprite({
+  className = "",
+  title = "CDA Raid Truck",
+}: SpriteProps) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 44 28"
+      width="52"
+      height="34"
+      role="img"
+      aria-label={title}
+    >
+      <title>{title}</title>
+      <ellipse cx="22" cy="25" rx="16" ry="2.2" fill="rgba(0,0,0,0.35)" />
+      <rect x="4" y="10" width="28" height="11" rx="1.5" fill="#3d6b45" />
+      <rect x="30" y="12" width="10" height="9" rx="1.2" fill="#2a4a32" />
+      <rect x="32" y="14" width="6" height="4" rx="0.6" fill="#8fd48a" />
+      <circle cx="12" cy="22" r="3.2" fill="#1a1a1a" />
+      <circle cx="12" cy="22" r="1.4" fill="#6a7264" />
+      <circle cx="34" cy="22" r="3.2" fill="#1a1a1a" />
+      <circle cx="34" cy="22" r="1.4" fill="#6a7264" />
+      <rect x="8" y="7" width="10" height="3" rx="0.5" fill="#e23b2f" />
+    </svg>
+  );
+}
+
+/** Spy satellite with animated halo (CSS class spy-sat-halo). */
+export function SpySatSprite({
+  className = "",
+  title = "Spy Satellite",
+}: SpriteProps) {
+  return (
+    <span className={`spy-sat-wrap ${className}`}>
+      <span className="spy-sat-halo" aria-hidden />
+      <span className="spy-sat-halo spy-sat-halo--delay" aria-hidden />
+      <svg
+        className="spy-sat-icon"
+        viewBox="0 0 36 36"
+        width="40"
+        height="40"
+        role="img"
+        aria-label={title}
+      >
+        <title>{title}</title>
+        <ellipse cx="18" cy="30" rx="8" ry="1.6" fill="rgba(0,0,0,0.3)" />
+        <ellipse cx="18" cy="16" rx="10" ry="5" fill="#8a9aa8" />
+        <ellipse cx="18" cy="15" rx="7" ry="3.2" fill="#b8c8d4" />
+        <circle cx="18" cy="15" r="2.2" fill="#e23b2f" />
+        <rect x="2" y="13" width="8" height="5" rx="0.6" fill="#3d6b9a" />
+        <rect x="26" y="13" width="8" height="5" rx="0.6" fill="#3d6b9a" />
+        <path
+          d="M10 15.5 H2 M26 15.5 H34"
+          stroke="#c4b089"
+          strokeWidth="0.8"
+        />
+        <rect x="17.2" y="20" width="1.6" height="8" rx="0.5" fill="#6a7264" />
+      </svg>
+    </span>
+  );
+}

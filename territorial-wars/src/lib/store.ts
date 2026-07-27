@@ -63,6 +63,15 @@ import {
 import { accrueGather } from "@/lib/rules";
 import { sendAttackEmail } from "@/lib/email";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
+import {
+  chaseRaidTruck,
+  destroySpySat,
+  placeCdaHqAt,
+  plantSpySat,
+  tickWorldNpcs,
+} from "@/lib/npcLogic";
+import type { WorldNpc } from "@/lib/worldNpcs";
+import { CDA_TRUCK_MAX_GAP_MS, isCdaTruck, isSpySat } from "@/lib/worldNpcs";
 
 /**
  * Storage layout (v3) — granular keys so concurrent requests can't clobber
@@ -88,6 +97,8 @@ const K_SECTOR_HISTORY = `${P}:sector_history`;
 const K_MIGRATED = `${P}:migrated`;
 /** HASH playerId -> JSON Player backup while testing new-account tutorial */
 const K_TUTORIAL_BACKUP = `${P}:tutorial_backup`;
+/** JSON WorldNpc[] — CDA HQ, trucks, spy sats, roam NPCs */
+const K_WORLD_NPCS = `${P}:world_npcs`;
 const kPlayer = (id: string) => `${P}:p:${id}`;
 const kOwner = (sid: string) => `${P}:owner:${sid}`;
 
@@ -874,6 +885,15 @@ async function setSpots(spots: ResourceSpot[]): Promise<void> {
   await setJSON(K_SPOTS, spots);
 }
 
+async function getWorldNpcs(): Promise<WorldNpc[]> {
+  const raw = (await getJSON<WorldNpc[]>(K_WORLD_NPCS)) ?? [];
+  return Array.isArray(raw) ? raw : [];
+}
+
+async function setWorldNpcs(npcs: WorldNpc[]): Promise<void> {
+  await setJSON(K_WORLD_NPCS, npcs);
+}
+
 async function getPlayer(id: string): Promise<Player | null> {
   const raw = await getJSON<Player>(kPlayer(id));
   return raw ? normalizePlayer(raw) : null;
@@ -1324,13 +1344,14 @@ export async function getSnapshot(
   await removeDummyEnemySector();
 
   // One parallel storage wave instead of chained getSectors→bootstrap→reads
-  const [sectors, spotsAll, playersAll, allEvents, tutorialFlag] =
+  const [sectors, spotsAll, playersAll, allEvents, tutorialFlag, worldNpcsRaw] =
     await Promise.all([
       getJSON<Sector[]>(K_SECTORS).then((v) => v ?? []),
       getSpots(),
       getAllPlayers(),
       recentEvents(),
       meId ? hGet(K_TUTORIAL_BACKUP, meId) : Promise.resolve(null),
+      getWorldNpcs(),
     ]);
 
   let me = meId ? playersAll.find((p) => p.id === meId) ?? null : null;
@@ -1341,12 +1362,39 @@ export async function getSnapshot(
     if (accrued.spotsChanged) spotsWorking = accrued.spots;
   }
 
-  const players = playersAll.map((p) =>
-    p.id === me?.id ? publicPlayer(me) : publicPlayer(projectPlayer(p, spotsWorking))
+  // Advance CDA trucks / spy sat drains before projecting players
+  let playersWorking = playersAll.map((p) =>
+    p.id === me?.id && me ? me : p
+  );
+  const ticked = tickWorldNpcs({
+    npcs: worldNpcsRaw,
+    players: playersWorking,
+  });
+  let worldNpcs = ticked.npcs;
+  if (ticked.dirtyPlayers.length > 0 || worldNpcsRaw !== worldNpcs) {
+    const dirtyIds = new Set(ticked.dirtyPlayers.map((p) => p.id));
+    for (const dp of ticked.dirtyPlayers) {
+      await setPlayer(dp);
+      playersWorking = playersWorking.map((p) => (p.id === dp.id ? dp : p));
+      if (me && me.id === dp.id) me = dp;
+    }
+    // Always persist if npc list changed length/phases
+    const npcChanged =
+      JSON.stringify(worldNpcsRaw.map((n) => n.id + n.phase + n.lat)) !==
+      JSON.stringify(worldNpcs.map((n) => n.id + n.phase + n.lat));
+    if (npcChanged || dirtyIds.size > 0) {
+      await setWorldNpcs(worldNpcs);
+    }
+  }
+
+  const players = playersWorking.map((p) =>
+    p.id === me?.id && me
+      ? publicPlayer(me)
+      : publicPlayer(projectPlayer(p, spotsWorking))
   );
 
   // Ensure every settled home has easy nodes so rival walk loops have a target
-  const settled = playersAll.filter((p) => p.homeSectorId && p.house);
+  const settled = playersWorking.filter((p) => p.homeSectorId && p.house);
   let seeded = false;
   for (const p of settled) {
     if (!p.house || !p.homeSectorId) continue;
@@ -1386,19 +1434,34 @@ export async function getSnapshot(
 
   // History is for analytics — don't block every poll on a storage read
   const sectorHistory = includeHistory
-    ? await recordSectorHistories(sectors, playersAll, spotsWorking)
+    ? await recordSectorHistories(sectors, playersWorking, spotsWorking)
     : g.__itwSectorHistCache ?? {};
 
   // Persist any accrual/seed/bootstrap writes made during this request
   await flushStore();
 
   const inviteCount = meId
-    ? playersAll.filter((p) => p.invitedBy === meId).length
+    ? playersWorking.filter((p) => p.invitedBy === meId).length
     : 0;
 
   const flexUnlocked = me
-    ? canUnlockFlexVehicles(me, playersAll)
+    ? canUnlockFlexVehicles(me, playersWorking)
     : false;
+
+  const activeSpyThreats = me
+    ? worldNpcs.filter(
+        (n) => isSpySat(n) && n.targetPlayerId === me!.id
+      )
+    : [];
+  const activeRaidTruck =
+    me
+      ? worldNpcs.find(
+          (n) =>
+            isCdaTruck(n) &&
+            n.targetPlayerId === me!.id &&
+            (n.phase === "parked" || n.phase === "traveling")
+        ) ?? null
+      : null;
 
   return {
     sectors,
@@ -1408,6 +1471,9 @@ export async function getSnapshot(
     events,
     globalEvents,
     sectorHistory,
+    worldNpcs,
+    activeSpyThreats,
+    activeRaidTruck,
     serverNow: Date.now(),
     gatherTripMs: GATHER_TRIP_MS,
     buildingCatalog: flexUnlocked
@@ -2422,6 +2488,114 @@ export async function fortifyBase(
     updatedAt: now,
   });
   return { ok: true };
+}
+
+/** Admin: place / move the CDA Head Office on the map. */
+export async function adminPlaceCdaHq(
+  adminId: string,
+  pos: { lat: number; lng: number }
+): Promise<{ ok: true } | { error: string }> {
+  await bootstrap();
+  if (!Number.isFinite(pos.lat) || !Number.isFinite(pos.lng)) {
+    return { error: "Pick a map spot for CDA Head Office" };
+  }
+  const npcs = await getWorldNpcs();
+  const next = placeCdaHqAt(npcs, pos, adminId);
+  await setWorldNpcs(next);
+  await flushStore();
+  return { ok: true };
+}
+
+/** Force-dispatch a CDA raid truck (admin / testing). */
+export async function adminDispatchCdaTruck(
+  _adminId: string
+): Promise<{ ok: true; targetName?: string } | { error: string }> {
+  await bootstrap();
+  const npcs = await getWorldNpcs();
+  const players = await getAllPlayers();
+  const hq = npcs.find((n) => n.kind === "cda_hq");
+  if (!hq) return { error: "Place CDA Head Office on the map first" };
+  // Clear active trucks, rewind HQ timer, tick far in the future to force spawn
+  const cleaned = npcs
+    .filter((n) => n.kind !== "cda_truck")
+    .map((n) =>
+      n.kind === "cda_hq" ? { ...n, lastDrainAt: 0, updatedAt: Date.now() } : n
+    );
+  const ticked = tickWorldNpcs({
+    npcs: cleaned,
+    players,
+    now: Date.now() + CDA_TRUCK_MAX_GAP_MS + 1000,
+  });
+  for (const dp of ticked.dirtyPlayers) await setPlayer(dp);
+  await setWorldNpcs(ticked.npcs);
+  await flushStore();
+  const truck = ticked.npcs.find((n) => n.kind === "cda_truck");
+  if (!truck) return { error: "No settled victims for the raid truck" };
+  return { ok: true, targetName: truck.targetName ?? undefined };
+}
+
+export async function plantSpySatellite(
+  playerId: string,
+  lat: number,
+  lng: number
+): Promise<{ ok: true } | { error: string }> {
+  await bootstrap();
+  const me = await getPlayer(playerId);
+  if (!me) return { error: "Sign in first" };
+  const spots = await getSpots();
+  const { player: fresh } = await accruePlayer(me, spots, true);
+  const sectors = await getSectors();
+  const players = await getAllPlayers();
+  const npcs = await getWorldNpcs();
+  const result = plantSpySat({
+    npcs,
+    planter: fresh,
+    sectors,
+    players,
+    lat,
+    lng,
+  });
+  if ("error" in result) return result;
+  await setPlayer(result.planter);
+  await setWorldNpcs(result.npcs);
+  await flushStore();
+  return { ok: true };
+}
+
+export async function smashSpySatellite(
+  playerId: string,
+  npcId: string
+): Promise<{ ok: true } | { error: string }> {
+  await bootstrap();
+  const me = await getPlayer(playerId);
+  if (!me) return { error: "Sign in first" };
+  const npcs = await getWorldNpcs();
+  const result = destroySpySat({ npcs, actor: me, npcId });
+  if ("error" in result) return result;
+  await setWorldNpcs(result.npcs.filter((n) => n.phase !== "gone"));
+  await flushStore();
+  return { ok: true };
+}
+
+export async function chaseCdaRaidTruck(
+  playerId: string,
+  npcId: string,
+  actorPos?: { lat: number; lng: number } | null
+): Promise<{ ok: true; message?: string } | { error: string }> {
+  await bootstrap();
+  const me = await getPlayer(playerId);
+  if (!me) return { error: "Sign in first" };
+  const npcs = await getWorldNpcs();
+  const result = chaseRaidTruck({
+    npcs,
+    actor: me,
+    npcId,
+    actorPos,
+  });
+  if ("error" in result) return result;
+  await setWorldNpcs(result.npcs.filter((n) => n.phase !== "gone"));
+  await flushStore();
+  return { ok: true, message: result.message };
 }
 
 /**

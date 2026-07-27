@@ -2195,3 +2195,72 @@ button.cameo:not(:disabled):hover {
   }
 }
 
+
+/* Spy satellite — pulsing halo so it reads when zoomed in */
+.spy-sat-wrap {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+.spy-sat-icon {
+  position: relative;
+  z-index: 2;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.55));
+}
+
+.spy-sat-halo {
+  position: absolute;
+  left: 50%;
+  top: 45%;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 999px;
+  border: 2px solid rgba(94, 184, 255, 0.85);
+  box-shadow: 0 0 10px rgba(94, 184, 255, 0.55);
+  transform: translate(-50%, -50%);
+  animation: spy-halo-pulse 2.2s ease-out infinite;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.spy-sat-halo--delay {
+  animation-delay: 1.1s;
+  border-color: rgba(226, 59, 47, 0.65);
+  box-shadow: 0 0 10px rgba(226, 59, 47, 0.4);
+}
+
+@keyframes spy-halo-pulse {
+  0% {
+    opacity: 0.95;
+    transform: translate(-50%, -50%) scale(0.55);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(2.4);
+  }
+}
+
+.npc-threat-banner {
+  border: 1px solid rgba(226, 59, 47, 0.55);
+  background: rgba(40, 12, 10, 0.88);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.npc-map-tag {
+  margin-bottom: 2px;
+  max-width: 7.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 2px;
+  background: rgba(8, 12, 10, 0.75);
+  padding: 1px 5px;
+  font-size: 9px;
+  font-weight: 700;
+  color: #e8ebe4;
+  pointer-events: none;
+}

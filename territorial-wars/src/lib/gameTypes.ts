@@ -470,6 +470,12 @@ export type GameSnapshot = {
   globalEvents: GameEvent[];
   /** Growth timelines keyed by sector id (oldest → newest) */
   sectorHistory: Record<string, SectorStatsPoint[]>;
+  /** CDA HQ, raid trucks, spy sats, and other roam NPCs */
+  worldNpcs: import("@/lib/worldNpcs").WorldNpc[];
+  /** Spy sats currently draining me — drives persistent banner */
+  activeSpyThreats: import("@/lib/worldNpcs").WorldNpc[];
+  /** Parked CDA truck on my base (if any) */
+  activeRaidTruck: import("@/lib/worldNpcs").WorldNpc | null;
   serverNow: number;
   gatherTripMs: number;
   buildingCatalog: BuildingCatalogItem[];
