@@ -489,6 +489,88 @@ export function playCoinSound(): void {
   tone({ type: "sine", f0: 1174.66, dur: 0.32, vol: 0.14, attack: 0.01 });
 }
 
+/** Soft toast / info notification pop */
+export function playNotifySound(): void {
+  if (!sfxOn) return;
+  tone({ type: "sine", f0: 660, f1: 880, dur: 0.12, vol: 0.11, attack: 0.008 });
+  tone({ type: "sine", f0: 990, dur: 0.16, vol: 0.06, attack: 0.01 });
+}
+
+/** Modal / sheet opens (battle report, review, ranks, etc.) */
+export function playModalOpenSound(): void {
+  if (!sfxOn) return;
+  tone({ type: "triangle", f0: 392, f1: 523, dur: 0.14, vol: 0.14, attack: 0.01 });
+  tone({ type: "sine", f0: 784, dur: 0.18, vol: 0.07, attack: 0.012 });
+}
+
+/** Modal / sheet closes */
+export function playModalCloseSound(): void {
+  if (!sfxOn) return;
+  tone({ type: "sine", f0: 520, f1: 360, dur: 0.1, vol: 0.08, attack: 0.006 });
+}
+
+/**
+ * Play open/close SFX when a named panel flag flips.
+ * Mutates `bag[key]` to the new open state.
+ */
+export function syncPanelOpenSfx(
+  bag: Record<string, boolean>,
+  key: string,
+  open: boolean
+): void {
+  const was = Boolean(bag[key]);
+  if (open === was) return;
+  if (open) playModalOpenSound();
+  else playModalCloseSound();
+  bag[key] = open;
+}
+
+/** NPC threat arrives — CDA truck parked / spy sat detected */
+export function playNpcThreatSound(): void {
+  if (!sfxOn) return;
+  const c = ensureCtx();
+  if (!c || !sfxGain) return;
+  const t = c.currentTime;
+
+  tone({ type: "triangle", f0: 185, f1: 140, dur: 0.22, vol: 0.2, attack: 0.01 });
+  tone({ type: "sine", f0: 415, f1: 311, dur: 0.28, vol: 0.12, attack: 0.012 });
+
+  const src = c.createBufferSource();
+  src.buffer = noiseBuffer(c, 0.35);
+  const filt = c.createBiquadFilter();
+  filt.type = "bandpass";
+  filt.frequency.value = 420;
+  const g = c.createGain();
+  g.gain.setValueAtTime(0.28, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+  src.connect(filt).connect(g).connect(sfxGain);
+  src.start(t);
+}
+
+/** NPC engagement — chase truck, smash sat, plant sat, dispatch */
+export function playNpcEngageSound(): void {
+  if (!sfxOn) return;
+  const c = ensureCtx();
+  if (!c || !sfxGain) return;
+  const t = c.currentTime;
+
+  // Quick engine/action blip
+  tone({ type: "sawtooth", f0: 160, f1: 90, dur: 0.12, vol: 0.08, attack: 0.005 });
+  tone({ type: "triangle", f0: 440, f1: 660, dur: 0.16, vol: 0.16, attack: 0.008 });
+  tone({ type: "sine", f0: 880, dur: 0.12, vol: 0.08, attack: 0.01 });
+
+  const src = c.createBufferSource();
+  src.buffer = noiseBuffer(c, 0.1);
+  const filt = c.createBiquadFilter();
+  filt.type = "highpass";
+  filt.frequency.value = 1200;
+  const g = c.createGain();
+  g.gain.setValueAtTime(0.18, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+  src.connect(filt).connect(g).connect(sfxGain);
+  src.start(t);
+}
+
 /** Error toast / failed action — short descending buzz */
 export function playErrorSound(): void {
   if (!sfxOn) return;

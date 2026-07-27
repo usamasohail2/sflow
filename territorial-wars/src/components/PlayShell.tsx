@@ -119,11 +119,17 @@ import {
   playErrorSound,
   playExplosionSound,
   playGemSpawnSound,
+  playModalCloseSound,
+  playModalOpenSound,
+  playNotifySound,
+  playNpcEngageSound,
+  playNpcThreatSound,
   playRecruitSound,
   playRocketLaunchSound,
   playUnderAttackSound,
   readMusicPref,
   startMusic,
+  syncPanelOpenSfx,
   toggleMusic,
   unlockAudio,
 } from "@/lib/sound";
@@ -876,6 +882,29 @@ export function PlayShell() {
   const eventsPrimed = useRef(false);
   const killFeedSeen = useRef<Set<string>>(new Set());
   const killFeedPrimed = useRef(false);
+  /** Dedup NPC threat SFX across snapshot polls */
+  const seenNpcThreats = useRef<Set<string>>(new Set());
+  /** Last open state per HUD panel — drives open/close SFX */
+  const panelSfx = useRef({
+    menu: false,
+    ranks: false,
+    battles: false,
+    missions: false,
+    invite: false,
+    analytics: false,
+    health: false,
+    walkthrough: false,
+    activity: false,
+    sectorRename: false,
+    shovelIntro: false,
+    shovel: false,
+    manage: false,
+    attack: false,
+    raze: false,
+    review: false,
+    saving: false,
+    npcPlace: false,
+  });
   const [killFeed, setKillFeed] = useState<KillFeedItem[]>([]);
   const [killFeedNow, setKillFeedNow] = useState(() => Date.now());
   const [relativeNow, setRelativeNow] = useState(() => Date.now());
@@ -1473,6 +1502,7 @@ export function PlayShell() {
       additions.push({ id: e.id, event: e, shownAt: now });
     }
     if (!additions.length) return;
+    playNotifySound();
     setKillFeed((prev) => [...additions, ...prev].slice(0, KILL_FEED_MAX));
   }, [snap?.globalEvents, snap?.events]);
 
@@ -1817,6 +1847,7 @@ export function PlayShell() {
 
   const showToast = (msg: string) => {
     setToast(msg);
+    playNotifySound();
     window.setTimeout(() => setToast(null), 3400);
   };
 
@@ -2123,7 +2154,7 @@ export function PlayShell() {
           { silent: true }
         );
         if (data) {
-          playBuildSound();
+          playNpcEngageSound();
           showToast("Spy satellite planted — draining their gold quietly");
           setNpcPlacing(null);
         }
@@ -2141,13 +2172,13 @@ export function PlayShell() {
         showToast("Zoom in — someone's spying here");
         return;
       }
+      playNpcEngageSound();
       const data = await act(
         "destroy_spy_sat",
         { npcId: npc.id },
         "Destroying spy sat…"
       );
       if (data) {
-        playBuildSound();
         showToast(
           npc.ownerPlayerId === me?.id
             ? "Spy sat recalled"
@@ -2161,6 +2192,7 @@ export function PlayShell() {
         showToast("That truck already left");
         return;
       }
+      playNpcEngageSound();
       const origin = liveLocation ?? me?.house ?? me?.villagerPost;
       const data = await act(
         "chase_cda_truck",
@@ -2172,7 +2204,6 @@ export function PlayShell() {
         "Chasing off raid truck…"
       );
       if (data) {
-        playRecruitSound();
         showToast(
           typeof (data as { message?: string }).message === "string"
             ? (data as { message: string }).message
@@ -2450,6 +2481,7 @@ export function PlayShell() {
   const dismissBattle = useCallback(() => {
     writeBattleAck(Date.now());
     setBattleSummary(null);
+    playModalCloseSound();
   }, []);
 
   const dismissRazeAlert = useCallback(() => {
@@ -2457,6 +2489,7 @@ export function PlayShell() {
       writeBattleAck(Math.max(readBattleAck(), razeAlert.ts));
     }
     setRazeAlert(null);
+    playModalCloseSound();
   }, [razeAlert]);
 
   const dismissGemClaimAlert = useCallback(() => {
@@ -2464,12 +2497,62 @@ export function PlayShell() {
       writeBattleAck(Math.max(readBattleAck(), gemClaimAlert.ts));
     }
     setGemClaimAlert(null);
+    playModalCloseSound();
   }, [gemClaimAlert]);
 
   // Error toast SFX
   useEffect(() => {
     if (error) playErrorSound();
   }, [error]);
+
+  // Alert / modal open SFX (id-keyed so a new report while one is up still chirps)
+  useEffect(() => {
+    if (battleSummary) playModalOpenSound();
+  }, [battleSummary?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (razeAlert) playModalOpenSound();
+  }, [razeAlert?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (gemClaimAlert) playModalOpenSound();
+  }, [gemClaimAlert?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // NPC threat banners — play when a new sat/truck threat appears
+  const spyThreatKey = (snap?.activeSpyThreats ?? [])
+    .map((s) => s.id)
+    .sort()
+    .join(",");
+  const raidTruckKey = snap?.activeRaidTruck
+    ? `${snap.activeRaidTruck.id}:${snap.activeRaidTruck.phase}`
+    : "";
+  useEffect(() => {
+    const keys: string[] = [];
+    for (const sat of snap?.activeSpyThreats ?? []) {
+      keys.push(`sat:${sat.id}`);
+    }
+    if (snap?.activeRaidTruck?.phase === "parked") {
+      keys.push(`truck:${snap.activeRaidTruck.id}:parked`);
+    } else if (snap?.activeRaidTruck?.phase === "traveling") {
+      keys.push(`truck:${snap.activeRaidTruck.id}:traveling`);
+    }
+    let played = false;
+    for (const k of keys) {
+      if (seenNpcThreats.current.has(k)) continue;
+      seenNpcThreats.current.add(k);
+      played = true;
+    }
+    // Drop stale ids so a future re-visit can alert again
+    for (const k of Array.from(seenNpcThreats.current)) {
+      if (!keys.includes(k)) {
+        const id = k.split(":")[1];
+        if (!keys.some((x) => x.includes(`:${id}`))) {
+          seenNpcThreats.current.delete(k);
+        }
+      }
+    }
+    if (played) playNpcThreatSound();
+  }, [spyThreatKey, raidTruckKey, snap?.activeSpyThreats, snap?.activeRaidTruck]);
 
   // Corner toasts auto-dismiss after 7s
   useEffect(() => {
@@ -2759,6 +2842,62 @@ export function PlayShell() {
     if (!manageBuildingId || !me) return null;
     return me.buildings.find((b) => b.id === manageBuildingId) ?? null;
   }, [manageBuildingId, me]);
+
+  // HUD panels / sheets — open + close SFX
+  const attackPanelOpen = Boolean(
+    enemySelected && !placing && !needsHouseRebuild && !march
+  );
+  const razePanelOpen = Boolean(
+    canRazeSelected && razeOwner && razeBuilding && !placing && !march
+  );
+  const managePanelOpen = Boolean(
+    managedBuilding &&
+      managedBuilding.type !== "shovel" &&
+      !shovelId &&
+      !placing
+  );
+  const shovelPanelOpen = Boolean(shovelId && !showShovelIntro);
+
+  useEffect(() => {
+    const bag = panelSfx.current;
+    syncPanelOpenSfx(bag, "menu", showMenu);
+    syncPanelOpenSfx(bag, "ranks", showRanks);
+    syncPanelOpenSfx(bag, "battles", showBattles);
+    syncPanelOpenSfx(bag, "missions", showMissions);
+    syncPanelOpenSfx(bag, "invite", showInvite);
+    syncPanelOpenSfx(bag, "analytics", showAnalytics);
+    syncPanelOpenSfx(bag, "health", showHealth);
+    syncPanelOpenSfx(bag, "walkthrough", showWalkthrough);
+    syncPanelOpenSfx(bag, "activity", showActivity);
+    syncPanelOpenSfx(bag, "sectorRename", showSectorRename);
+    syncPanelOpenSfx(bag, "shovelIntro", showShovelIntro);
+    syncPanelOpenSfx(bag, "shovel", shovelPanelOpen);
+    syncPanelOpenSfx(bag, "manage", managePanelOpen);
+    syncPanelOpenSfx(bag, "attack", attackPanelOpen);
+    syncPanelOpenSfx(bag, "raze", razePanelOpen);
+    syncPanelOpenSfx(bag, "review", Boolean(reviewBiz));
+    syncPanelOpenSfx(bag, "saving", Boolean(savingLabel));
+    syncPanelOpenSfx(bag, "npcPlace", Boolean(npcPlacing));
+  }, [
+    showMenu,
+    showRanks,
+    showBattles,
+    showMissions,
+    showInvite,
+    showAnalytics,
+    showHealth,
+    showWalkthrough,
+    showActivity,
+    showSectorRename,
+    showShovelIntro,
+    shovelPanelOpen,
+    managePanelOpen,
+    attackPanelOpen,
+    razePanelOpen,
+    reviewBiz,
+    savingLabel,
+    npcPlacing,
+  ]);
 
   const upgradeManagedBuilding = async () => {
     if (!managedBuilding || !me) return;
@@ -3395,6 +3534,7 @@ export function PlayShell() {
                 type="button"
                 onClick={() => {
                   setShowMenu(false);
+                  playNpcEngageSound();
                   void act(
                     "admin_dispatch_cda_truck",
                     {},
