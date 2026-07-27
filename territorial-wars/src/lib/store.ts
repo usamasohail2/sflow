@@ -66,12 +66,13 @@ import { supabase, supabaseConfigured } from "@/lib/supabase";
 import {
   chaseRaidTruck,
   destroySpySat,
+  forceDispatchCdaTruck,
   placeCdaHqAt,
   plantSpySat,
   tickWorldNpcs,
 } from "@/lib/npcLogic";
 import type { WorldNpc } from "@/lib/worldNpcs";
-import { CDA_TRUCK_MAX_GAP_MS, isCdaTruck, isSpySat } from "@/lib/worldNpcs";
+import { isCdaTruck, isSpySat } from "@/lib/worldNpcs";
 
 /**
  * Storage layout (v3) — granular keys so concurrent requests can't clobber
@@ -2513,25 +2514,11 @@ export async function adminDispatchCdaTruck(): Promise<
   await bootstrap();
   const npcs = await getWorldNpcs();
   const players = await getAllPlayers();
-  const hq = npcs.find((n) => n.kind === "cda_hq");
-  if (!hq) return { error: "Place CDA Head Office on the map first" };
-  // Clear active trucks, rewind HQ timer, tick far in the future to force spawn
-  const cleaned = npcs
-    .filter((n) => n.kind !== "cda_truck")
-    .map((n) =>
-      n.kind === "cda_hq" ? { ...n, lastDrainAt: 0, updatedAt: Date.now() } : n
-    );
-  const ticked = tickWorldNpcs({
-    npcs: cleaned,
-    players,
-    now: Date.now() + CDA_TRUCK_MAX_GAP_MS + 1000,
-  });
-  for (const dp of ticked.dirtyPlayers) await setPlayer(dp);
-  await setWorldNpcs(ticked.npcs);
+  const result = forceDispatchCdaTruck(npcs, players, Date.now());
+  if ("error" in result) return result;
+  await setWorldNpcs(result.npcs);
   await flushStore();
-  const truck = ticked.npcs.find((n) => n.kind === "cda_truck");
-  if (!truck) return { error: "No settled victims for the raid truck" };
-  return { ok: true, targetName: truck.targetName ?? undefined };
+  return { ok: true, targetName: result.truck.targetName ?? undefined };
 }
 
 export async function plantSpySatellite(

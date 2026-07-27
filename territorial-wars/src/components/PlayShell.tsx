@@ -3395,18 +3395,19 @@ export function PlayShell() {
                 type="button"
                 onClick={() => {
                   setShowMenu(false);
-                  void act("admin_dispatch_cda_truck", {}, "Dispatching raid truck…").then(
-                    (d) => {
-                      if (d) {
-                        const name =
-                          typeof (d as { targetName?: string }).targetName ===
-                          "string"
-                            ? (d as { targetName: string }).targetName
-                            : "a settler";
-                        showToast(`CDA Raid Truck en route to ${name}`);
-                      }
-                    }
-                  );
+                  void act(
+                    "admin_dispatch_cda_truck",
+                    {},
+                    "Dispatching raid truck…"
+                  ).then((d) => {
+                    if (!d) return; // act already surfaced the error
+                    const name =
+                      typeof (d as { targetName?: string }).targetName ===
+                      "string"
+                        ? (d as { targetName: string }).targetName
+                        : "a settler";
+                    showToast(`CDA Raid Truck en route to ${name}`);
+                  });
                 }}
                 className="flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-[12px] text-[var(--ink-muted)] hover:bg-[var(--wash)] hover:text-[var(--sand)]"
               >

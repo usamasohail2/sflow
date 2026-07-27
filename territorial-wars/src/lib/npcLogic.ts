@@ -68,14 +68,12 @@ export function placeCdaHqAt(
 }
 
 function pickTruckVictim(players: Player[]): Player | null {
-  const candidates = players.filter(
-    (p) => p.homeSectorId && p.house && (p.gold > 0 || p.villagers > 0)
-  );
+  const candidates = players.filter((p) => p.homeSectorId && p.house);
   if (candidates.length === 0) return null;
   return candidates[Math.floor(Math.random() * candidates.length)]!;
 }
 
-function spawnTruck(
+export function spawnTruck(
   hq: WorldNpc,
   victim: Player,
   now: number
@@ -101,6 +99,36 @@ function spawnTruck(
     drainedTotal: 0,
     createdAt: now,
     updatedAt: now,
+  };
+}
+
+/** Admin/test: spawn a truck immediately with real clocks (no fake future now). */
+export function forceDispatchCdaTruck(
+  npcs: WorldNpc[],
+  players: Player[],
+  now = Date.now()
+):
+  | { npcs: WorldNpc[]; truck: WorldNpc }
+  | { error: string } {
+  const hq = findCdaHq(npcs);
+  if (!hq) return { error: "Place CDA Head Office on the map first" };
+  const victim = pickTruckVictim(players);
+  if (!victim) {
+    return { error: "No settled base to raid — someone must have a house down" };
+  }
+  const rest = npcs.filter((n) => n.kind !== "cda_truck" && n.phase !== "gone");
+  const truck = spawnTruck(hq, victim, now);
+  const nextHq = {
+    ...hq,
+    lastDrainAt: now,
+    updatedAt: now,
+  };
+  return {
+    npcs: [
+      ...rest.map((n) => (n.kind === "cda_hq" ? nextHq : n)),
+      truck,
+    ],
+    truck,
   };
 }
 
