@@ -53,6 +53,7 @@ import {
   RocketSprite,
   ShovelSprite,
   VillagerSprite,
+  WallsSprite,
   WarehouseSprite,
   WellSprite,
 } from "@/components/sprites";
@@ -73,8 +74,11 @@ import {
   BUILDING_MAX_LEVEL,
   GEM_META,
   GOLD_COIN,
-  HOUSE_MAX_HP,
   ROCKET_COST,
+  BASE_WALL_COST,
+  FORTIFIED_HOUSE_MAX_HP,
+  BASE_FORTIFIED_DEFENSE,
+  houseMaxHp,
   attackPower,
   buildingBonus,
   buildingLevel,
@@ -304,7 +308,7 @@ function attackerOutcomeCopy(battle: BattleReport, defenderName: string): {
   const wiped = destroyedCountFrom(battle.destroyed);
   const parts: string[] = [];
   if (battle.destroyed) parts.push(battle.destroyed);
-  if (battle.houseDestroyed) parts.push("House");
+  if (battle.houseDestroyed) parts.push("Base");
   const destroyedList = parts.join(", ");
 
   if (!battle.win) {
@@ -324,7 +328,7 @@ function attackerOutcomeCopy(battle: BattleReport, defenderName: string): {
       battle.damagedBuildings.length > 0
         ? battle.damagedBuildings.join(", ")
         : battle.houseDamaged
-          ? "their house"
+          ? "their base"
           : "their village";
     return {
       headline: "Attacked",
@@ -344,7 +348,7 @@ function defenderOutcomeCopy(battle: BattleReport, attackerName: string): {
   const name = personName(attackerName);
   const parts: string[] = [];
   if (battle.destroyed) parts.push(battle.destroyed);
-  if (battle.houseDestroyed) parts.push("House");
+  if (battle.houseDestroyed) parts.push("Base");
   const destroyedList = parts.join(", ");
 
   if (!battle.win) {
@@ -803,6 +807,8 @@ export function PlayShell() {
   syncingBuildIdsRef.current = syncingBuildIds;
   /** Rocket stock purchase in flight — dock tile shows a loader */
   const [buyingRocket, setBuyingRocket] = useState(false);
+  /** Fortress walls purchase in flight */
+  const [buyingWalls, setBuyingWalls] = useState(false);
   /** Gem/resource spot ids currently claiming on the server */
   const [claimingSpotIds, setClaimingSpotIds] = useState<string[]>([]);
   const claimingSpotIdsRef = useRef<string[]>([]);
@@ -1519,6 +1525,7 @@ export function PlayShell() {
         buildings: enemyPlayer.buildings,
         house: enemyPlayer.house,
         houseHp: enemyPlayer.houseHp,
+        fortified: enemyPlayer.fortified,
       })
     : 0;
 
@@ -2094,7 +2101,7 @@ export function PlayShell() {
       const unbound =
         isAzadHomeId(placing.sector.id) || placing.sector.ring.length < 4;
       if (!unbound && !pointInRing(pos, placing.sector.ring)) {
-        setError("Place your house inside the sector");
+        setError("Place your base inside the sector");
         window.setTimeout(() => setError(null), 3200);
         return;
       }
@@ -2120,11 +2127,11 @@ export function PlayShell() {
         const data = await act(
           "place_house",
           { lat: pos.lat, lng: pos.lng },
-          "Rebuilding your house…"
+          "Rebuilding your base…"
         );
         if (data) {
           playBuildSound();
-          showToast("House rebuilt — villagers are gathering again");
+          showToast("Base rebuilt — villagers are gathering again");
           setPlacing(null);
           setPendingHouse(null);
         }
@@ -2135,10 +2142,10 @@ export function PlayShell() {
       setPendingHouse(pos);
       if (settleSector) {
         setPlacing(null);
-        showToast("House set — tap Villager, then place them on the map");
+        showToast("Base set — tap Villager, then place them on the map");
       } else {
         setPlacing({ kind: "villager", sector: placing.sector });
-        showToast("House set — now place your villager nearby");
+        showToast("Base set — now place your villager nearby");
       }
       return;
     }
@@ -3948,11 +3955,11 @@ export function PlayShell() {
               <p className="mt-2.5 text-center font-mono text-[10px] text-white/85">
                 {battleSummary.houseDestroyed
                   ? battleSummary.role === "attacker"
-                    ? "Their house was razed — they must rebuild"
-                    : "Your house was razed — rebuild to gather"
+                    ? "Their base was razed — they must rebuild"
+                    : "Your base was razed — rebuild to gather"
                   : battleSummary.role === "attacker"
                     ? "Their house was damaged"
-                    : "Your house was damaged"}
+                    : "Your base was damaged"}
               </p>
             )}
           </div>
@@ -4361,14 +4368,14 @@ export function PlayShell() {
             <div className="hud-panel p-2.5">
               <p className="text-center font-mono text-[9px] uppercase tracking-[0.18em] text-[var(--ink-faint)]">
                 {!pendingHouse
-                  ? "Step 1 — place your house"
+                  ? "Step 1 — place your base"
                   : "Step 2 — place your villager"}
               </p>
               <p className="mt-0.5 text-center text-[11px] text-[var(--ink-muted)]">
                 {!pendingHouse
                   ? placing?.kind === "house"
-                    ? "Now tap the map to plant your house"
-                    : "Tap the blinking House tile, then tap the map"
+                    ? "Now tap the map to plant your base"
+                    : "Tap the blinking Base tile, then tap the map"
                   : placing?.kind === "villager"
                     ? "Now tap the map to station your villager"
                     : "Tap the blinking Villager tile, then tap the map"}
@@ -4383,11 +4390,11 @@ export function PlayShell() {
                     if (pendingHouse) {
                       setPendingHouse(null);
                       setPlacing({ kind: "house", sector: settleSector });
-                      showToast("Tap a clear spot to move your house");
+                      showToast("Tap a clear spot to move your base");
                       return;
                     }
                     setPlacing({ kind: "house", sector: settleSector });
-                    showToast("Tap the map to plant your house");
+                    showToast("Tap the map to plant your base");
                   }}
                   className={`cameo cameo-dock min-w-[5.5rem] flex-1 ${
                     !pendingHouse || placing?.kind === "house"
@@ -4396,13 +4403,13 @@ export function PlayShell() {
                   }`}
                   title={
                     pendingHouse
-                      ? "Tap to move your house"
-                      : "Select house, then tap the map"
+                      ? "Tap to move your base"
+                      : "Select base, then tap the map"
                   }
                 >
                   <HouseSprite className="h-9 w-10 sm:h-10 sm:w-11" />
                   <span className="cameo-label">
-                    {pendingHouse ? "Move" : "House"}
+                    {pendingHouse ? "Move" : "Base"}
                   </span>
                 </button>
                 <button
@@ -4412,7 +4419,7 @@ export function PlayShell() {
                   onClick={() => {
                     if (!settleSector) return;
                     if (!pendingHouse) {
-                      showToast("Place your house first");
+                      showToast("Place your base first");
                       return;
                     }
                     setPlacing({ kind: "villager", sector: settleSector });
@@ -4424,7 +4431,7 @@ export function PlayShell() {
                   title={
                     pendingHouse
                       ? "Select villager, then tap the map"
-                      : "Place your house first"
+                      : "Place your base first"
                   }
                 >
                   <VillagerSprite walking className="h-9 w-9 sm:h-10 sm:w-10" />
@@ -4440,7 +4447,7 @@ export function PlayShell() {
                 disabled={busy}
                 className="mt-2 w-full text-center font-mono text-[10px] text-[var(--signal-bright)] hover:underline disabled:opacity-40"
               >
-                {pendingHouse ? "Clear house & retry" : "Cancel placement"}
+                {pendingHouse ? "Clear base & retry" : "Cancel placement"}
               </button>
               <button
                 type="button"
@@ -4481,7 +4488,7 @@ export function PlayShell() {
                   ? "Pin set outside the mapped sectors. Settle here, or pick a sector instead."
                   : settlersHere.length > 0
                     ? `${settlersHere.length} settler${settlersHere.length === 1 ? "" : "s"} here — sectors are shared.`
-                    : "Location ready. Settle, then plant your house on the map."
+                    : "Location ready. Settle, then plant your base on the map."
                 : manualMode
                   ? pickingPin
                     ? "Tap the map to place your pin, or choose a sector below."
@@ -5120,15 +5127,17 @@ export function PlayShell() {
                   }`}
                   title={
                     me.house
-                      ? `House health ${me.houseHp}/${HOUSE_MAX_HP}`
-                      : "House destroyed — rebuild to gather"
+                      ? `Base health ${me.houseHp}/${houseMaxHp(me)}${
+                          me.fortified ? " · walls" : ""
+                        }`
+                      : "Base destroyed — rebuild to gather"
                   }
                 >
                   <HouseSprite className="h-5 w-6" />
                   {me.house ? (
                     <span
                       className="hud-status-hp"
-                      aria-label={`House health ${me.houseHp} of ${HOUSE_MAX_HP}`}
+                      aria-label={`Base health ${me.houseHp} of ${houseMaxHp(me)}`}
                     >
                       <span
                         className="hud-status-hp-fill"
@@ -5137,13 +5146,17 @@ export function PlayShell() {
                             0,
                             Math.min(
                               100,
-                              ((me.houseHp ?? HOUSE_MAX_HP) / HOUSE_MAX_HP) * 100
+                              ((me.houseHp ?? houseMaxHp(me)) /
+                                houseMaxHp(me)) *
+                                100
                             )
                           )}%`,
                           background:
-                            (me.houseHp ?? HOUSE_MAX_HP) / HOUSE_MAX_HP > 0.55
+                            (me.houseHp ?? houseMaxHp(me)) / houseMaxHp(me) >
+                            0.55
                               ? "#5a9a63"
-                              : (me.houseHp ?? HOUSE_MAX_HP) / HOUSE_MAX_HP >
+                              : (me.houseHp ?? houseMaxHp(me)) /
+                                    houseMaxHp(me) >
                                   0.25
                                 ? "#e8cf8a"
                                 : "#ff5245",
@@ -5188,7 +5201,7 @@ export function PlayShell() {
                 {needsHouseRebuild ? (
                   <>
                     <p className="mb-1.5 text-center font-mono text-[9px] uppercase tracking-[0.16em] text-[var(--signal-bright)]">
-                      House destroyed — rebuild to gather &amp; build again
+                      Base destroyed — rebuild to gather &amp; build again
                     </p>
                     <div className="flex justify-center">
                       <button
@@ -5199,7 +5212,7 @@ export function PlayShell() {
                             : "cameo-blink"
                         }`}
                         disabled={busy}
-                        title="Rebuild your house — rockets and buildings stay locked until then"
+                        title="Rebuild your base — rockets and buildings stay locked until then"
                         onClick={() => {
                           if (!me.homeSectorId) return;
                           if (isAzadHomeId(me.homeSectorId)) {
@@ -5210,7 +5223,7 @@ export function PlayShell() {
                                 liveLocation ?? me.villagerPost
                               ),
                             });
-                            showToast("Tap near your pin to rebuild your house");
+                            showToast("Tap near your pin to rebuild your base");
                             return;
                           }
                           const sector = snap?.sectors.find(
@@ -5220,12 +5233,12 @@ export function PlayShell() {
                           setSelectedId(sector.id);
                           setPendingHouse(null);
                           setPlacing({ kind: "house", sector });
-                          showToast("Tap the map to rebuild your house");
+                          showToast("Tap the map to rebuild your base");
                         }}
                       >
                         <HouseSprite className="h-9 w-10 sm:h-10 sm:w-11" />
                         <span className="cameo-label">
-                          {placing?.kind === "house" ? "Placing…" : "House"}
+                          {placing?.kind === "house" ? "Placing…" : "Base"}
                         </span>
                       </button>
                     </div>
@@ -5276,6 +5289,71 @@ export function PlayShell() {
                         {buyingRocket ? "Building…" : "Rocket"}
                       </span>
                       {buyingRocket && <CameoBuildLoader />}
+                    </button>
+
+                    <button
+                      type="button"
+                      className={`cameo cameo-dock ${
+                        buyingWalls ? "cameo-building" : ""
+                      } ${
+                        !buyingWalls &&
+                        !me.fortified &&
+                        displayGold >= BASE_WALL_COST &&
+                        me.house
+                          ? "cameo-blink"
+                          : ""
+                      }`}
+                      disabled={
+                        busy ||
+                        buyingWalls ||
+                        Boolean(me.fortified) ||
+                        displayGold < BASE_WALL_COST ||
+                        !me.house
+                      }
+                      title={
+                        me.fortified
+                          ? "Fortress walls already raised"
+                          : buyingWalls
+                            ? "Raising walls…"
+                            : `Stone walls around your base — ${GOLD_COIN}${BASE_WALL_COST} · +${BASE_FORTIFIED_DEFENSE - 1} defense · ${FORTIFIED_HOUSE_MAX_HP} HP`
+                      }
+                      onClick={() => {
+                        if (buyingWalls || busyRef.current || me.fortified)
+                          return;
+                        setBuyingWalls(true);
+                        void act("fortify_base", {}, undefined, {
+                          silent: true,
+                        })
+                          .then((d) => {
+                            if (d) {
+                              playBuildSound();
+                              showToast(
+                                `Fortress walls raised · DEF ${BASE_FORTIFIED_DEFENSE} · ${FORTIFIED_HOUSE_MAX_HP} HP`
+                              );
+                            }
+                          })
+                          .finally(() => setBuyingWalls(false));
+                      }}
+                    >
+                      <WallsSprite className="h-8 w-8 sm:h-9 sm:w-9" />
+                      <span className="cameo-cost">
+                        {me.fortified ? (
+                          "Done"
+                        ) : (
+                          <>
+                            <GoldCoinIcon size={10} />
+                            {BASE_WALL_COST}
+                          </>
+                        )}
+                      </span>
+                      <span className="cameo-label">
+                        {buyingWalls
+                          ? "Raising…"
+                          : me.fortified
+                            ? "Walled"
+                            : "Walls"}
+                      </span>
+                      {buyingWalls && <CameoBuildLoader />}
                     </button>
 
                     <div className="w-px shrink-0 self-stretch bg-[var(--line)]" />

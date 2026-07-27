@@ -512,10 +512,10 @@ export function LandCruiserSprite({
   );
 }
 
-/** Cozy little cottage with warm window glow. */
+/** Cozy little cottage with warm window glow — the player base. */
 export function HouseSprite({
   className = "",
-  title = "House",
+  title = "Base",
 }: SpriteProps) {
   return (
     <svg
@@ -552,6 +552,124 @@ export function HouseSprite({
       <rect x="22.3" y="18.5" width="4.2" height="4.2" rx="0.6" fill="#ffe08a" />
       <path d="M11.6 18.5v4.2M9.5 20.6h4.2" stroke="#c4a86a" strokeWidth="0.45" />
       <path d="M24.4 18.5v4.2M22.3 20.6h4.2" stroke="#c4a86a" strokeWidth="0.45" />
+    </svg>
+  );
+}
+
+/** Thick circular stone fortress ring — sits under the base sprite. */
+export function BaseWallRing({
+  className = "",
+  title = "Fortress walls",
+}: SpriteProps) {
+  return (
+    <svg
+      className={`base-wall-ring ${className}`}
+      viewBox="0 0 72 72"
+      width="72"
+      height="72"
+      role="img"
+      aria-label={title}
+    >
+      <title>{title}</title>
+      {/* Outer shadow */}
+      <ellipse cx="36" cy="54" rx="26" ry="6" fill="rgba(0,0,0,0.28)" />
+      {/* Stone ring — thick annulus */}
+      <circle
+        cx="36"
+        cy="36"
+        r="27"
+        fill="none"
+        stroke="#5c5348"
+        strokeWidth="9"
+      />
+      <circle
+        cx="36"
+        cy="36"
+        r="27"
+        fill="none"
+        stroke="#8a8174"
+        strokeWidth="6.5"
+      />
+      <circle
+        cx="36"
+        cy="36"
+        r="27"
+        fill="none"
+        stroke="#6e6558"
+        strokeWidth="2.2"
+        strokeDasharray="4 3.5"
+        opacity="0.85"
+      />
+      {/* Battlement nubs */}
+      {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => {
+        const rad = (deg * Math.PI) / 180;
+        const x = 36 + Math.cos(rad) * 27;
+        const y = 36 + Math.sin(rad) * 27;
+        return (
+          <rect
+            key={deg}
+            x={x - 2.4}
+            y={y - 2.4}
+            width="4.8"
+            height="4.8"
+            rx="0.6"
+            fill="#9a9080"
+            stroke="#4a433a"
+            strokeWidth="0.5"
+            transform={`rotate(${deg + 45} ${x} ${y})`}
+          />
+        );
+      })}
+      {/* Inner rim highlight */}
+      <circle
+        cx="36"
+        cy="36"
+        r="22.2"
+        fill="none"
+        stroke="#b0a898"
+        strokeWidth="1.4"
+        opacity="0.55"
+      />
+    </svg>
+  );
+}
+
+/** Compact cameo icon for the Walls arsenal tile. */
+export function WallsSprite({
+  className = "",
+  title = "Walls",
+}: SpriteProps) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 32 32"
+      width="40"
+      height="40"
+      role="img"
+      aria-label={title}
+    >
+      <title>{title}</title>
+      <circle cx="16" cy="17" r="11" fill="none" stroke="#5c5348" strokeWidth="5" />
+      <circle cx="16" cy="17" r="11" fill="none" stroke="#8a8174" strokeWidth="3.2" />
+      {[0, 60, 120, 180, 240, 300].map((deg) => {
+        const rad = (deg * Math.PI) / 180;
+        const x = 16 + Math.cos(rad) * 11;
+        const y = 17 + Math.sin(rad) * 11;
+        return (
+          <rect
+            key={deg}
+            x={x - 1.6}
+            y={y - 1.6}
+            width="3.2"
+            height="3.2"
+            rx="0.4"
+            fill="#9a9080"
+            transform={`rotate(${deg + 45} ${x} ${y})`}
+          />
+        );
+      })}
+      <rect x="12" y="14" width="8" height="7" rx="0.8" fill="#e8d5b5" />
+      <path d="M10.5 14.5 L16 10 L21.5 14.5 Z" fill="#e23b2f" />
     </svg>
   );
 }

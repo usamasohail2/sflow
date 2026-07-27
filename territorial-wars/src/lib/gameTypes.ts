@@ -172,8 +172,10 @@ export type Player = {
   /** Home sector — set once; many players may share a sector */
   homeSectorId: string | null;
   house: LatLng | null;
-  /** House hit points — 0 / missing house means rebuild required */
+  /** Base hit points — 0 / missing base means rebuild required */
   houseHp: number;
+  /** Circular stone walls around the base — extra armor + defense */
+  fortified?: boolean;
   /** Where the villager idles / starts gather trips (player-placed) */
   villagerPost: LatLng | null;
   villagers: number;
@@ -289,6 +291,8 @@ export type PublicPlayer = {
   homeSectorId: string | null;
   house: LatLng | null;
   houseHp: number;
+  /** Circular stone walls around the base */
+  fortified?: boolean;
   /** Visible so others can see your villager on the map */
   villagerPost: LatLng | null;
   villagers: number;
@@ -583,11 +587,28 @@ export function colorForPlayerId(id: string): string {
   return PLAYER_COLOR_PALETTE[h % PLAYER_COLOR_PALETTE.length]!;
 }
 
-/** House ground radius (m) for overlap checks */
+/** Base ground radius (m) for overlap checks */
 export const HOUSE_FOOTPRINT_M = 30;
 
-/** Simple house HP — each attack point chips 1 HP */
+/** Unfortified base HP — each attack point chips 1 HP */
 export const HOUSE_MAX_HP = 5;
+/** Base HP after stone fortress walls are built */
+export const FORTIFIED_HOUSE_MAX_HP = 12;
+/** Defense when a standing base has no walls */
+export const BASE_DEFENSE = 1;
+/** Defense when stone fortress walls are up */
+export const BASE_FORTIFIED_DEFENSE = 3;
+/** Gold to raise circular stone walls around your base */
+export const BASE_WALL_COST = 80;
+
+/** Max HP for the player's standing base (walls raise the cap). */
+export function houseMaxHp(p: {
+  fortified?: boolean;
+  house?: LatLng | null;
+}): number {
+  if (!p.house) return HOUSE_MAX_HP;
+  return p.fortified ? FORTIFIED_HOUSE_MAX_HP : HOUSE_MAX_HP;
+}
 
 /** Gold to stock one rocket in your arsenal */
 export const ROCKET_COST = 35;
@@ -717,7 +738,7 @@ export function buildingBonus(buildings: Building[]): number {
 /**
  * Simple combat:
  *  Attack = rockets×1 (munitions you fire — expended after the raid)
- *  Defense = house(1 if standing)
+ *  Defense = base (1) or fortified walls (3) when standing
  */
 export function attackPower(rockets: number): number {
   return Math.max(0, rockets);
@@ -727,9 +748,10 @@ export function defensePower(p: {
   buildings: Building[];
   house?: LatLng | null;
   houseHp?: number;
+  fortified?: boolean;
 }): number {
-  const houseUp = Boolean(p.house) && (p.houseHp ?? 0) > 0;
-  return houseUp ? 1 : 0;
+  if (!p.house || (p.houseHp ?? 0) <= 0) return 0;
+  return p.fortified ? BASE_FORTIFIED_DEFENSE : BASE_DEFENSE;
 }
 
 /** Human-readable breakdown for HUD / battle reports */
@@ -742,7 +764,8 @@ export function defenseBreakdown(p: {
   buildings: Building[];
   house?: LatLng | null;
   houseHp?: number;
+  fortified?: boolean;
 }): string {
-  const houseUp = Boolean(p.house) && (p.houseHp ?? 0) > 0;
-  return houseUp ? "house" : "no defense";
+  if (!p.house || (p.houseHp ?? 0) <= 0) return "no defense";
+  return p.fortified ? "fortified base" : "base";
 }

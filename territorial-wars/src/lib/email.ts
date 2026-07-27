@@ -49,7 +49,7 @@ export async function sendAttackEmail(params: {
   if (destroyed) lines.push(`Destroyed: ${destroyed}`);
   if (houseDestroyed)
     lines.push(
-      `Your house was razed — gathering is paused until you rebuild it.`
+      `Your base was razed — gathering is paused until you rebuild it.`
     );
   if (lootedGold > 0) lines.push(`Gold looted: ${lootedGold}`);
   lines.push(``, `Return to the battlefield: ${SITE}/play`);
@@ -61,7 +61,7 @@ export async function sendAttackEmail(params: {
     <h2 style="margin:0 0 12px;color:${win ? "#ff8a7a" : "#8fe098"}">${headline}</h2>
     <p style="margin:0 0 6px">Damage taken: <strong>${damage} hp</strong></p>
     ${destroyed ? `<p style="margin:0 0 6px">Destroyed: <strong>${destroyed}</strong></p>` : ""}
-    ${houseDestroyed ? `<p style="margin:0 0 6px;color:#ff8a7a"><strong>Your house was razed</strong> — gathering is paused until you rebuild it.</p>` : ""}
+    ${houseDestroyed ? `<p style="margin:0 0 6px;color:#ff8a7a"><strong>Your base was razed</strong> — gathering is paused until you rebuild it.</p>` : ""}
     ${lootedGold > 0 ? `<p style="margin:0 0 6px">Gold looted: <strong>${lootedGold}</strong></p>` : ""}
     <a href="${SITE}/play" style="display:inline-block;margin-top:14px;background:#e23b2f;color:#fff;text-decoration:none;padding:10px 18px;border-radius:4px;font-weight:bold">Defend your sector</a>
   </div>`;

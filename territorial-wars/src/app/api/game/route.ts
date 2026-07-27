@@ -17,6 +17,7 @@ import {
   discoverSpot,
   endTutorialTest,
   ensurePlayer,
+  fortifyBase,
   getSnapshot,
   placeHouse,
   renamePlayer,
@@ -355,6 +356,8 @@ export async function POST(req: Request) {
   ) {
     // Legacy soldier/tank actions map to buying a rocket
     result = await buyRocket(id);
+  } else if (body.action === "fortify_base") {
+    result = await fortifyBase(id);
   } else if (body.action === "attack") {
     const targetPlayerId =
       typeof body.targetPlayerId === "string"

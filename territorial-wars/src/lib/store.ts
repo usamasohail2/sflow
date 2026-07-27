@@ -9,6 +9,8 @@ import {
   GEM_META,
   HOUSE_FOOTPRINT_M,
   HOUSE_MAX_HP,
+  FORTIFIED_HOUSE_MAX_HP,
+  BASE_WALL_COST,
   INVITE_VILLAGER_BONUS,
   REVIEW_VILLAGER_BONUS,
   MAX_ROAM_FINDS,
@@ -25,6 +27,7 @@ import {
   catalogItem,
   colorForPlayerId,
   defensePower,
+  houseMaxHp,
   BUILDING_MAX_LEVEL,
   buildingLevel,
   buildingUpgradeCost,
@@ -782,14 +785,18 @@ function normalizePlayer(raw: Player): Player {
     };
   });
   if (p.house) {
-    const hp = p.houseHp == null ? HOUSE_MAX_HP : p.houseHp;
-    p.houseHp = Math.max(0, Math.min(HOUSE_MAX_HP, hp));
+    if (p.fortified == null) p.fortified = false;
+    const max = houseMaxHp(p);
+    const hp = p.houseHp == null ? max : p.houseHp;
+    p.houseHp = Math.max(0, Math.min(max, hp));
     if (p.houseHp <= 0) {
       p.house = null;
       p.houseHp = 0;
+      p.fortified = false;
     }
   } else {
     p.houseHp = 0;
+    p.fortified = false;
   }
   return p;
 }
@@ -1174,6 +1181,7 @@ function publicPlayer(p: Player): PublicPlayer {
     homeSectorId: p.homeSectorId,
     house: p.house,
     houseHp: p.houseHp ?? 0,
+    fortified: Boolean(p.fortified && p.house),
     villagerPost,
     villagers: p.villagers,
     rockets: p.rockets || 0,
@@ -1568,7 +1576,7 @@ export async function claimSector(
       ? housePos
       : ringCentroid(sector.ring);
   if (!pointInRing(house, sector.ring)) {
-    return { error: "Place your house inside the sector" };
+    return { error: "Place your base inside the sector" };
   }
 
   const blocked = await assertClearGround(playerId, house);
@@ -1584,7 +1592,7 @@ export async function claimSector(
       return { error: "Place your villager inside the sector" };
     }
     if (distMeters(villagerPos, house) > 400) {
-      return { error: "Villager must stay near the house (within 400m)" };
+      return { error: "Villager must stay near the base (within 400m)" };
     }
     villagerPost = villagerPos;
   }
@@ -1605,6 +1613,7 @@ export async function claimSector(
     homeSectorId: sectorId,
     house,
     houseHp: HOUSE_MAX_HP,
+    fortified: false,
     villagerPost,
     // Keep referral villagers earned before settling
     villagers: Math.max(STARTING.villagers, me.villagers || 0),
@@ -1667,7 +1676,7 @@ export async function claimAzadUmeed(
     Number.isFinite(villagerPos.lng)
   ) {
     if (distMeters(villagerPos, housePos) > 400) {
-      return { error: "Villager must stay near the house (within 400m)" };
+      return { error: "Villager must stay near the base (within 400m)" };
     }
     villagerPost = villagerPos;
   }
@@ -1685,6 +1694,7 @@ export async function claimAzadUmeed(
     homeSectorId: homeId,
     house: housePos,
     houseHp: HOUSE_MAX_HP,
+    fortified: false,
     villagerPost: villagerPost ?? housePos,
     villagers: Math.max(STARTING.villagers, me.villagers || 0),
     rockets: 0,
@@ -1712,7 +1722,7 @@ export async function placeHouse(
   await bootstrap();
   const me = await getPlayer(playerId);
   if (!me?.homeSectorId) return { error: "Settle in a sector first" };
-  if (me.house) return { error: "You already have a house" };
+  if (me.house) return { error: "You already have a base" };
 
   const azad = isAzadHomeId(me.homeSectorId);
   const sectors = await getSectors();
@@ -1722,12 +1732,12 @@ export async function placeHouse(
   if (!azad && !sector) return { error: "Sector missing" };
 
   if (!Number.isFinite(housePos.lat) || !Number.isFinite(housePos.lng)) {
-    return { error: "Pick a spot for your house" };
+    return { error: "Pick a spot for your base" };
   }
   if (azad) {
     // Rebuild near previous villager post or freely nearby
   } else if (sector && !pointInRing(housePos, sector.ring)) {
-    return { error: "Place your house inside your sector" };
+    return { error: "Place your base inside your sector" };
   }
 
   const blocked = await assertClearGround(playerId, housePos);
@@ -1743,7 +1753,7 @@ export async function placeHouse(
       return { error: "Place your villager inside the sector" };
     }
     if (distMeters(villagerPos, housePos) > 400) {
-      return { error: "Villager must stay near the house (within 400m)" };
+      return { error: "Villager must stay near the base (within 400m)" };
     }
     villagerPost = villagerPos;
   } else if (
@@ -1758,6 +1768,7 @@ export async function placeHouse(
     ...me,
     house: housePos,
     houseHp: HOUSE_MAX_HP,
+    fortified: false,
     villagerPost: villagerPost ?? housePos,
     lastGatherAt: now,
     updatedAt: now,
@@ -2284,7 +2295,7 @@ export async function upgradeBuilding(
   await bootstrap();
   const me = await getPlayer(playerId);
   if (!me?.homeSectorId) return { error: "Settle first" };
-  if (!me.house) return { error: "Rebuild your house first" };
+  if (!me.house) return { error: "Rebuild your base first" };
   if (!buildingId) return { error: "Missing building" };
 
   const target = me.buildings.find((b) => b.id === buildingId);
@@ -2327,13 +2338,13 @@ export async function clickShovel(
   await bootstrap();
   const me = await getPlayer(playerId);
   if (!me?.homeSectorId) return { error: "Settle first" };
-  if (!me.house) return { error: "Rebuild your house first" };
+  if (!me.house) return { error: "Rebuild your base first" };
   if (!buildingId) return { error: "Missing shovel" };
 
   const shovel = me.buildings.find(
     (b) => b.id === buildingId && b.type === "shovel"
   );
-  if (!shovel) return { error: "Shovel missing — place one near your house" };
+  if (!shovel) return { error: "Shovel missing — place one near your base" };
   if ((shovel.hp ?? 0) <= 0) return { error: "That shovel is destroyed" };
 
   const gained = shovelDigYield(shovel);
@@ -2371,7 +2382,7 @@ export async function buyRocket(
   await bootstrap();
   const me = await getPlayer(playerId);
   if (!me?.homeSectorId) return { error: "Settle in a sector first" };
-  if (!me.house) return { error: "Rebuild your house before stocking rockets" };
+  if (!me.house) return { error: "Rebuild your base before stocking rockets" };
   const spots = await getSpots();
   const { player: fresh } = await accruePlayer(me, spots, true);
   if (fresh.gold < ROCKET_COST) {
@@ -2384,6 +2395,31 @@ export async function buyRocket(
     rockets,
     peakRockets: Math.max(fresh.peakRockets || 0, rockets),
     updatedAt: Date.now(),
+  });
+  return { ok: true };
+}
+
+/** Raise circular stone walls around the base — more HP + defense. */
+export async function fortifyBase(
+  playerId: string
+): Promise<{ ok: true } | { error: string }> {
+  await bootstrap();
+  const me = await getPlayer(playerId);
+  if (!me?.homeSectorId) return { error: "Settle in a sector first" };
+  if (!me.house) return { error: "Rebuild your base before raising walls" };
+  if (me.fortified) return { error: "Your base already has walls" };
+  const spots = await getSpots();
+  const { player: fresh } = await accruePlayer(me, spots, true);
+  if (fresh.gold < BASE_WALL_COST) {
+    return { error: `Need ◈${BASE_WALL_COST} gold for fortress walls` };
+  }
+  const now = Date.now();
+  await setPlayer({
+    ...fresh,
+    gold: fresh.gold - BASE_WALL_COST,
+    fortified: true,
+    houseHp: FORTIFIED_HOUSE_MAX_HP,
+    updatedAt: now,
   });
   return { ok: true };
 }
@@ -2528,7 +2564,7 @@ export async function attackSector(
   const me = await getPlayer(playerId);
   if (!me?.homeSectorId) return { error: "Settle in a sector first" };
   if (!me.house) {
-    return { error: "Rebuild your house before attacking" };
+    return { error: "Rebuild your base before attacking" };
   }
   const stock = me.rockets || 0;
   if (stock <= 0) {
@@ -2600,7 +2636,7 @@ export async function attackSector(
       houseDamaged = false;
       nextHouse = null;
       nextHouseHp = 0;
-      destroyedNames.push("House");
+      destroyedNames.push("Base");
     }
   }
 
@@ -2629,6 +2665,7 @@ export async function attackSector(
     ...defender,
     house: nextHouse,
     houseHp: nextHouseHp,
+    fortified: houseDestroyed ? false : defender.fortified,
     // Gathering pauses without a house — reset anchor so rebuild isn't back-paid
     lastGatherAt: houseDestroyed ? now : defender.lastGatherAt,
     buildings: survivingBuildings,

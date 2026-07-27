@@ -28,7 +28,7 @@ import {
   GATHER_TRIP_MS,
   GEM_META,
   HOUSE_FOOTPRINT_M,
-  HOUSE_MAX_HP,
+  houseMaxHp,
   GOLD_COIN,
   INTRO_CITY_CENTER,
   INTRO_CLOSE_ZOOM,
@@ -125,6 +125,7 @@ import {
 import {
   CivicSprite,
   HouseSprite,
+  BaseWallRing,
   LandCruiserSprite,
   MillSprite,
   PradoSprite,
@@ -1873,10 +1874,16 @@ export function GameMap({
                   relation === "self" ? "You" : p.name;
                 const houseSub =
                   relation === "self"
-                    ? "Your house"
+                    ? p.fortified
+                      ? "Your fortified base"
+                      : "Your base"
                     : relation === "ally"
-                      ? "Ally house"
-                      : "Enemy house";
+                      ? p.fortified
+                        ? "Ally fortified base"
+                        : "Ally base"
+                      : p.fortified
+                        ? "Enemy fortified base"
+                        : "Enemy base";
                 return (
                   <Marker
                     key={`house-${p.id}`}
@@ -1886,7 +1893,9 @@ export function GameMap({
                   >
                     <button
                       type="button"
-                      className={`house-marker house-marker--${relation} relative flex flex-col items-center bg-transparent p-0 ${
+                      className={`house-marker house-marker--${relation} ${
+                        p.fortified ? "house-marker--fortified" : ""
+                      } relative flex flex-col items-center bg-transparent p-0 ${
                         selectedPlayerId === p.id ? "is-selected" : ""
                       }`}
                       onClick={(e) => {
@@ -1895,7 +1904,7 @@ export function GameMap({
                         if (placing && placing.kind !== "villager") {
                           onPlaceBlockedRef.current?.(
                             placing.kind === "house"
-                              ? "Too close to another house"
+                              ? "Too close to another base"
                               : "That ground is occupied — pick a clear spot"
                           );
                           return;
@@ -1929,12 +1938,18 @@ export function GameMap({
                         <span className="map-unit-tag-sub">{houseSub}</span>
                       </span>
                       <span className="house-marker-pad" aria-hidden>
-                        <HouseSprite className="house-marker-sprite drop-shadow-md" />
+                        {p.fortified && (
+                          <BaseWallRing className="house-marker-walls" />
+                        )}
+                        <HouseSprite
+                          className="house-marker-sprite drop-shadow-md"
+                          title="Base"
+                        />
                       </span>
                       <HpBar
-                        hp={p.houseHp ?? HOUSE_MAX_HP}
-                        maxHp={HOUSE_MAX_HP}
-                        width={48}
+                        hp={p.houseHp ?? houseMaxHp(p)}
+                        maxHp={houseMaxHp(p)}
+                        width={p.fortified ? 56 : 48}
                       />
                     </button>
                   </Marker>

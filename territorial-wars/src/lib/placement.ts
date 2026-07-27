@@ -39,10 +39,10 @@ export function housePlacementError(
     }
 
     if (p.house && Number.isFinite(p.house.lat) && Number.isFinite(p.house.lng)) {
-      // Skip only your own standing house (rebuild); everyone else's house blocks
+      // Skip only your own standing house (rebuild); everyone else's base blocks
       if (skipPlayerId && p.id === skipPlayerId) continue;
       if (distMeters(pos, p.house) < HOUSE_FOOTPRINT_M * 2) {
-        return "Too close to another house";
+        return "Too close to another base";
       }
     }
   }
@@ -77,8 +77,8 @@ export function buildingPlacementError(
       distMeters(pos, p.house) < footprintM + HOUSE_FOOTPRINT_M
     ) {
       return p.id === selfId
-        ? "Too close to your house"
-        : `Too close to ${p.name || "another settler"}'s house`;
+        ? "Too close to your base"
+        : `Too close to ${p.name || "another settler"}'s base`;
     }
   }
   return null;

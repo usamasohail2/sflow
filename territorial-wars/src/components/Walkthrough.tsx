@@ -63,14 +63,14 @@ function tipFor(phase: GuidePhase, ctx: GuideContext): TipDef {
   if (phase === "settle-btn" && ctx.azadMode) {
     return {
       title: "Drop the flag",
-      body: `Pin locked for ${AZAD_ARENA_NAME}. Hit Settle, then plant a house by your marker.`,
+      body: `Pin locked for ${AZAD_ARENA_NAME}. Hit Settle, then plant a base by your marker.`,
       target: "guide-settle",
       blocking: false,
     };
   }
   if (phase === "place-house" && ctx.azadMode) {
     return {
-      title: "Plant the house",
+      title: "Plant the base",
       body: `Tap near your pin. No sector walls here — green ring means the ground is yours.`,
       target: "guide-place-banner",
       blocking: false,
@@ -104,12 +104,12 @@ function tipFor(phase: GuidePhase, ctx: GuideContext): TipDef {
     },
     "settle-btn": {
       title: "Claim the dirt",
-      body: "GPS is locked. Hit Settle — next you plant a house that marks your home sector.",
+      body: "GPS is locked. Hit Settle — next you plant a base that marks your home sector.",
       target: "guide-settle",
       blocking: false,
     },
     "place-house": {
-      title: "Plant the house",
+      title: "Plant the base",
       body: "Tap inside the walls. Green ring = clear. That spot is your village center for the rest of the war.",
       target: "guide-place-banner",
       blocking: false,
@@ -144,7 +144,7 @@ function tipFor(phase: GuidePhase, ctx: GuideContext): TipDef {
     },
     "tips-raid": {
       title: "Make them rebuild",
-      body: "Tap an enemy house or building, pick a salvo, fire. Allies glow green — you can still clear their buildings if you need the ground.",
+      body: "Tap an enemy base or building, pick a salvo, fire. Allies glow green — you can still clear their buildings if you need the ground.",
       target: null,
       blocking: true,
       cta: "Next",
