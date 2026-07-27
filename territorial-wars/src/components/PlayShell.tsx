@@ -81,6 +81,8 @@ import {
   GEM_META,
   GOLD_COIN,
   ROCKET_COST,
+  PLAY_ZOOM,
+  OVERVIEW_ZOOM,
   TROOP_COST,
   TROOP_DAMAGE,
   BASE_WALL_COST,
@@ -995,6 +997,9 @@ export function PlayShell() {
   >([]);
   const shovelFloatSeq = useRef(0);
   const [musicOn, setMusicOn] = useState(false);
+  /** Live map zoom — enlarge sector board when fully zoomed out */
+  const [mapZoom, setMapZoom] = useState(PLAY_ZOOM);
+  const overviewBoard = mapZoom <= OVERVIEW_ZOOM;
   const identityChecked = useRef(false);
   const seenEvents = useRef<Set<string>>(new Set());
   const eventsPrimed = useRef(false);
@@ -3369,6 +3374,7 @@ export function PlayShell() {
               : null
           }
           onCameraReport={reportCamera}
+          onZoomChange={setMapZoom}
           className="h-full w-full"
         />
       </div>
@@ -3500,13 +3506,25 @@ export function PlayShell() {
             </div>
           )}
 
-          {/* Minimal leaderboard — sectors or Azad Umeed players */}
-          <div className="sector-board pointer-events-auto w-[9.5rem] shrink-0 px-1.5 py-1.5 text-left sm:w-44">
-            <div className="mb-1 flex flex-col gap-1">
-              <span className="font-mono text-[8px] uppercase tracking-[0.16em] text-white/55">
+          {/* Minimal leaderboard — grows when zoomed out for easier tapping */}
+          <div
+            className={`sector-board pointer-events-auto shrink-0 text-left ${
+              overviewBoard
+                ? "sector-board--overview w-[min(18rem,calc(100vw-1rem))] px-3 py-3 sm:w-72"
+                : "w-[9.5rem] px-1.5 py-1.5 sm:w-44"
+            }`}
+          >
+            <div className={`flex flex-col ${overviewBoard ? "mb-2 gap-1.5" : "mb-1 gap-1"}`}>
+              <span
+                className={`font-mono uppercase tracking-[0.16em] ${
+                  overviewBoard
+                    ? "text-[11px] text-white/80 sm:text-[12px]"
+                    : "text-[8px] text-white/55"
+                }`}
+              >
                 {isAzadPlayer || azadMode ? "Azad Umeed" : "Top sectors"}
               </span>
-              <div className="flex items-stretch gap-1">
+              <div className="flex items-stretch gap-1.5">
                 <button
                   type="button"
                   onClick={() =>
@@ -3518,7 +3536,11 @@ export function PlayShell() {
                           : sectorRanking[0]?.id
                     )
                   }
-                  className="hud-chip min-h-[32px] flex-1 px-1.5 py-1.5 font-mono text-[10px] font-semibold leading-none text-white/75 hover:text-white"
+                  className={`hud-chip flex-1 font-mono font-semibold leading-none text-white/75 hover:text-white ${
+                    overviewBoard
+                      ? "min-h-[44px] px-3 py-2.5 text-[13px] sm:min-h-[48px] sm:text-[14px]"
+                      : "min-h-[32px] px-1.5 py-1.5 text-[10px]"
+                  }`}
                   title="Sector analytics charts"
                 >
                   Charts
@@ -3532,7 +3554,11 @@ export function PlayShell() {
                     setShowMissions(false);
                     setShowInvite(false);
                   }}
-                  className="hud-chip min-h-[32px] flex-1 px-1.5 py-1.5 font-mono text-[10px] font-semibold leading-none text-white/75 hover:text-white"
+                  className={`hud-chip flex-1 font-mono font-semibold leading-none text-white/75 hover:text-white ${
+                    overviewBoard
+                      ? "min-h-[44px] px-3 py-2.5 text-[13px] sm:min-h-[48px] sm:text-[14px]"
+                      : "min-h-[32px] px-1.5 py-1.5 text-[10px]"
+                  }`}
                   title="Open full leaderboard"
                 >
                   All
@@ -3540,9 +3566,15 @@ export function PlayShell() {
               </div>
             </div>
             {sectorBoard.length === 0 ? (
-              <p className="text-[9px] text-white/45">No farms yet</p>
+              <p
+                className={`text-white/45 ${
+                  overviewBoard ? "text-[12px]" : "text-[9px]"
+                }`}
+              >
+                No farms yet
+              </p>
             ) : (
-              <ol className="space-y-px">
+              <ol className={overviewBoard ? "space-y-1" : "space-y-px"}>
                 {sectorBoard.map((r) => {
                   const medal =
                     r.rank === 1

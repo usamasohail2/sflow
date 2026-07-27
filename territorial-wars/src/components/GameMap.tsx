@@ -264,6 +264,8 @@ type Props = {
     bubbleAt?: number | null;
   } | null;
   onCameraReport?: (camera: { lat: number; lng: number }) => void;
+  /** Live map zoom — used by HUD (e.g. enlarge sector board when zoomed out) */
+  onZoomChange?: (zoom: number) => void;
   selectedRazeBuildingId?: string | null;
   onPlace?: (lat: number, lng: number) => void;
   /** Called when a house/building drop is blocked by occupied ground */
@@ -419,6 +421,7 @@ export function GameMap({
   presencePeers = [],
   presenceSelf = null,
   onCameraReport,
+  onZoomChange,
   events = [],
   worldNpcs = [],
   onSelectNpc,
@@ -436,6 +439,8 @@ export function GameMap({
   onIntroCompleteRef.current = onIntroComplete;
   const onCameraReportRef = useRef(onCameraReport);
   onCameraReportRef.current = onCameraReport;
+  const onZoomChangeRef = useRef(onZoomChange);
+  onZoomChangeRef.current = onZoomChange;
   const onSelectBusinessRef = useRef(onSelectBusiness);
   onSelectBusinessRef.current = onSelectBusiness;
   const onPlaceRef = useRef(onPlace);
@@ -624,6 +629,10 @@ export function GameMap({
       }
     }
     onIntroCompleteRef.current?.();
+    const liveZoom = mapRef.current?.getZoom();
+    onZoomChangeRef.current?.(
+      typeof liveZoom === "number" ? liveZoom : PLAY_ZOOM
+    );
   }, []);
 
   // Mapbox Standard: click real POI labels (schools, shops…) — not empty ground
@@ -1402,6 +1411,7 @@ export function GameMap({
       setZoom(z);
       setMapCenter(center);
       onCameraReportRef.current?.(center);
+      onZoomChangeRef.current?.(z);
       // Country / city / road names only when fully zoomed into street detail
       applyBasemapLabels(z >= DETAIL_ZOOM);
 

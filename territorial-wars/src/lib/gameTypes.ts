@@ -90,8 +90,13 @@ export const PLAY_ZOOM = 14.4;
 export const PLAY_PITCH = 77;
 /** Default heading (clockwise from north) — matches Islamabad Explore */
 export const PLAY_BEARING = -28;
-/** Don't pull out past a couple of sectors */
-export const PLAY_MIN_ZOOM = 13.2;
+/** Don't pull out past the wider Islamabad metro overview */
+export const PLAY_MIN_ZOOM = 11.4;
+/**
+ * At/below this zoom the HUD treats the view as "fully zoomed out" —
+ * sector scoreboard grows for easier reading / tapping.
+ */
+export const OVERVIEW_ZOOM = 12.0;
 /** Intro opens far out on Earth, then flies into Islamabad */
 export const INTRO_GLOBE_ZOOM = 1.15;
 /** Brief city/sector frame mid-flight */
