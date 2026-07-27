@@ -26,10 +26,6 @@ function nid(prefix: string): string {
     .slice(2, 7)}`;
 }
 
-function clampGold(n: number): number {
-  return Math.max(0, Math.floor(n));
-}
-
 /** Apply gold drain; returns amount actually taken. */
 export function drainPlayerGold(
   p: Player,

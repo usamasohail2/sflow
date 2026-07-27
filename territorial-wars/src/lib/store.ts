@@ -1370,7 +1370,7 @@ export async function getSnapshot(
     npcs: worldNpcsRaw,
     players: playersWorking,
   });
-  let worldNpcs = ticked.npcs;
+  const worldNpcs = ticked.npcs;
   if (ticked.dirtyPlayers.length > 0 || worldNpcsRaw !== worldNpcs) {
     const dirtyIds = new Set(ticked.dirtyPlayers.map((p) => p.id));
     for (const dp of ticked.dirtyPlayers) {
@@ -2507,9 +2507,9 @@ export async function adminPlaceCdaHq(
 }
 
 /** Force-dispatch a CDA raid truck (admin / testing). */
-export async function adminDispatchCdaTruck(
-  _adminId: string
-): Promise<{ ok: true; targetName?: string } | { error: string }> {
+export async function adminDispatchCdaTruck(): Promise<
+  { ok: true; targetName?: string } | { error: string }
+> {
   await bootstrap();
   const npcs = await getWorldNpcs();
   const players = await getAllPlayers();

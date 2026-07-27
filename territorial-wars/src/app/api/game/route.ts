@@ -389,7 +389,7 @@ export async function POST(req: Request) {
         setCookie
       );
     }
-    result = await adminDispatchCdaTruck(id);
+    result = await adminDispatchCdaTruck();
   } else if (body.action === "plant_spy_sat") {
     if (!Number.isFinite(body.lat) || !Number.isFinite(body.lng)) {
       return withGuestCookie(
