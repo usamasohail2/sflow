@@ -94,6 +94,7 @@ import {
   formatGoldCompact,
   isAttackEvent,
   isAzadHomeId,
+  isCdaRaidEvent,
   isGemClaimEvent,
   isRazeEvent,
   makeAzadPlacementSector,
@@ -624,6 +625,65 @@ function activityLine(
       </>
     );
   }
+  if (isCdaRaidEvent(e)) {
+    const who = e.defenderName || "a settler";
+    if (e.stage === "dispatch") {
+      return (
+        <>
+          <span className="font-semibold text-[var(--sand)]">CDA</span> raid truck
+          en route to{" "}
+          <NameChip id={e.defenderId} name={who} myId={myId} colors={colors} /> ·{" "}
+          {e.sectorName}
+        </>
+      );
+    }
+    if (e.stage === "arrive") {
+      return (
+        <>
+          <span className="font-semibold text-[var(--sand)]">CDA</span> parked at{" "}
+          <NameChip
+            id={e.defenderId}
+            name={who}
+            myId={myId}
+            colors={colors}
+            possessive
+          />{" "}
+          base · {e.sectorName}
+        </>
+      );
+    }
+    if (e.stage === "chase") {
+      return (
+        <>
+          <NameChip id={e.attackerId} name={e.attackerName} myId={myId} colors={colors} />{" "}
+          chased CDA off{" "}
+          <NameChip
+            id={e.defenderId}
+            name={who}
+            myId={myId}
+            colors={colors}
+            possessive
+          />{" "}
+          base
+          {e.drained ? ` · ◈${e.drained} taken` : ""}
+        </>
+      );
+    }
+    return (
+      <>
+        <span className="font-semibold text-[var(--sand)]">CDA</span> left{" "}
+        <NameChip
+          id={e.defenderId}
+          name={who}
+          myId={myId}
+          colors={colors}
+          possessive
+        />{" "}
+        base
+        {e.drained != null ? ` — drained ◈${e.drained}` : ""} · {e.sectorName}
+      </>
+    );
+  }
   if (isAttackEvent(e)) {
     if (e.win) {
       const verb = pickVariant(e.id, ATTACK_WIN_VERBS);
@@ -695,6 +755,52 @@ function killFeedLine(
           possessive
         />{" "}
         {gemLabel}
+      </>
+    );
+  }
+  if (isCdaRaidEvent(e)) {
+    const who = e.defenderName || "Settler";
+    if (e.stage === "dispatch") {
+      return (
+        <>
+          <span className="font-semibold text-[var(--sand)]">CDA</span>
+          <span className="kill-feed-verb is-attack">raiding</span>
+          <NameChip id={e.defenderId} name={who} myId={myId} colors={colors} />
+          <span className="kill-feed-sector">{e.sectorName}</span>
+        </>
+      );
+    }
+    if (e.stage === "arrive") {
+      return (
+        <>
+          <span className="font-semibold text-[var(--sand)]">CDA</span>
+          <span className="kill-feed-verb is-attack">parked at</span>
+          <NameChip id={e.defenderId} name={who} myId={myId} colors={colors} />
+          <span className="kill-feed-sector">{e.sectorName}</span>
+        </>
+      );
+    }
+    if (e.stage === "chase") {
+      return (
+        <>
+          <NameChip id={e.attackerId} name={e.attackerName} myId={myId} colors={colors} />
+          <span className="kill-feed-verb is-hold">chased off</span>
+          <span className="font-semibold text-[var(--sand)]">CDA</span>
+          <span className="kill-feed-sector">
+            {who}
+            {e.drained ? ` · ◈${e.drained}` : ""}
+          </span>
+        </>
+      );
+    }
+    return (
+      <>
+        <span className="font-semibold text-[var(--sand)]">CDA</span>
+        <span className="kill-feed-verb is-destroy">drained</span>
+        <NameChip id={e.defenderId} name={who} myId={myId} colors={colors} />
+        <span className="kill-feed-sector">
+          {e.drained != null ? `◈${e.drained}` : e.sectorName}
+        </span>
       </>
     );
   }
@@ -1151,6 +1257,25 @@ export function PlayShell() {
 
       if (isGemClaimEvent(e)) {
         setGemClaimAlert(e);
+        continue;
+      }
+
+      if (isCdaRaidEvent(e)) {
+        playNpcThreatSound();
+        const msg =
+          e.stage === "dispatch"
+            ? `CDA Raid Truck en route to your base`
+            : e.stage === "arrive"
+              ? `CDA Raid Truck parked at your base — chase it off!`
+              : e.stage === "chase"
+                ? e.attackerId === next.me.id
+                  ? `You chased off the CDA truck`
+                  : `${e.attackerName} chased CDA off your base`
+                : `CDA left your base${
+                    e.drained != null ? ` — drained ◈${e.drained}` : ""
+                  }`;
+        setToast(msg);
+        window.setTimeout(() => setToast(null), 4200);
         continue;
       }
 
@@ -4653,20 +4778,36 @@ export function PlayShell() {
               <CdaTruckSprite className="h-8 w-10 shrink-0" />
               <div className="min-w-0 flex-1">
                 <p className="text-[11px] font-semibold text-[var(--signal-bright)]">
-                  CDA Raid Truck{" "}
-                  {snap.activeRaidTruck.phase === "parked"
-                    ? "parked"
-                    : "incoming"}
+                  {snap.activeRaidTruck.targetPlayerId === me?.id
+                    ? "CDA is raiding you"
+                    : `CDA raiding ${
+                        snap.activeRaidTruck.targetName || "a settler"
+                      }`}
                 </p>
                 <p className="truncate text-[10px] text-[var(--ink-muted)]">
                   {snap.activeRaidTruck.phase === "parked"
-                    ? `Bribing a villager — stolen ◈${
-                        snap.activeRaidTruck.drainedTotal || 0
-                      }. Chase it off!`
-                    : "En route from CDA Head Office"}
+                    ? snap.activeRaidTruck.targetPlayerId === me?.id
+                      ? `Parked at your base — stolen ◈${
+                          snap.activeRaidTruck.drainedTotal || 0
+                        }. Chase it off!`
+                      : `Parked at ${
+                          snap.activeRaidTruck.targetName || "a settler"
+                        }'s base — stolen ◈${
+                          snap.activeRaidTruck.drainedTotal || 0
+                        }`
+                    : snap.activeRaidTruck.phase === "fleeing"
+                      ? `Fleeing back to CDA HQ${
+                          snap.activeRaidTruck.drainedTotal
+                            ? ` · took ◈${snap.activeRaidTruck.drainedTotal}`
+                            : ""
+                        }`
+                      : `En route to ${
+                          snap.activeRaidTruck.targetName || "a settler"
+                        }'s base`}
                 </p>
               </div>
-              {snap.activeRaidTruck.phase === "parked" && (
+              {snap.activeRaidTruck.phase === "parked" &&
+                snap.activeRaidTruck.targetPlayerId === me?.id && (
                 <button
                   type="button"
                   className="shrink-0 rounded-sm bg-[var(--signal)] px-2 py-1 text-[10px] font-bold text-white"
@@ -5333,7 +5474,9 @@ export function PlayShell() {
                         ? "Find claim"
                         : isRazeEvent(e)
                           ? "Sabotage"
-                          : "Attack"}{" "}
+                          : isCdaRaidEvent(e)
+                            ? "CDA raid"
+                            : "Attack"}{" "}
                       · {timeAgo(e.ts, relativeNow)}
                     </p>
                   </li>

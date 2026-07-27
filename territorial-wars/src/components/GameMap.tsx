@@ -2355,10 +2355,14 @@ export function GameMap({
                 >
                   <span className="npc-map-tag">
                     {npc.phase === "parked"
-                      ? "Raid truck"
+                      ? npc.targetName
+                        ? `Raiding ${npc.targetName}`
+                        : "Raid truck"
                       : npc.phase === "fleeing"
                         ? "Fleeing"
-                        : "En route"}
+                        : npc.targetName
+                          ? `→ ${npc.targetName}`
+                          : "En route"}
                   </span>
                   <CdaTruckSprite className="drop-shadow-md" />
                 </button>

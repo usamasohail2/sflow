@@ -63,10 +63,12 @@ export const CDA_TRUCK_DRAIN_PER_MIN = 4;
 export const CDA_TRUCK_MIN_GAP_MS = 7 * 60 * 60 * 1000;
 /** Max hours between dispatches */
 export const CDA_TRUCK_MAX_GAP_MS = 12 * 60 * 60 * 1000;
-/** Travel duration HQ → sector (ms) */
-export const CDA_TRUCK_TRAVEL_MS = 75_000;
+/** Travel duration HQ → sector (ms) — short enough to watch on the map */
+export const CDA_TRUCK_TRAVEL_MS = 90_000;
 /** How long a truck stays parked draining before leaving on its own */
 export const CDA_TRUCK_PARK_MS = 8 * 60 * 1000;
+/** If depart/arrive clocks are skewed into the future, re-base travel from now */
+export const CDA_CLOCK_SKEW_SLACK_MS = 15_000;
 /** Tap range to chase off a parked truck (meters) */
 export const CDA_CHASE_RANGE_M = 220;
 /** Tap / destroy range for spy sats (meters) */
@@ -74,6 +76,40 @@ export const SPY_SAT_DESTROY_RANGE_M = 80;
 
 export function worldNpcPos(n: WorldNpc): LatLng {
   return { lat: n.lat, lng: n.lng };
+}
+
+/**
+ * Repair CDA truck travel clocks that landed in the future (bad dispatch
+ * timestamps / clock skew). Mutates and returns true when fixed.
+ */
+export function repairWorldNpcTravelClocks(
+  n: WorldNpc,
+  now = Date.now()
+): boolean {
+  if (n.phase !== "traveling" && n.phase !== "fleeing") return false;
+  if (n.departAt == null || n.arriveAt == null) return false;
+  if (!(n.arriveAt > n.departAt)) {
+    n.departAt = now;
+    n.arriveAt =
+      now +
+      (n.phase === "fleeing"
+        ? Math.floor(CDA_TRUCK_TRAVEL_MS * 0.7)
+        : CDA_TRUCK_TRAVEL_MS);
+    n.updatedAt = now;
+    return true;
+  }
+  // Depart is still ahead of wall clock → truck looked "en route" but never moved
+  if (n.departAt > now + CDA_CLOCK_SKEW_SLACK_MS) {
+    const span = Math.min(
+      CDA_TRUCK_TRAVEL_MS * 2,
+      Math.max(20_000, n.arriveAt - n.departAt)
+    );
+    n.departAt = now;
+    n.arriveAt = now + span;
+    n.updatedAt = now;
+    return true;
+  }
+  return false;
 }
 
 /** Interpolate travel for client + server ticks. */

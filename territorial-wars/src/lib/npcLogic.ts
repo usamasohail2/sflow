@@ -16,6 +16,7 @@ import {
   SPY_SAT_COST,
   SPY_SAT_DESTROY_RANGE_M,
   SPY_SAT_DRAIN_PER_MIN,
+  repairWorldNpcTravelClocks,
   worldNpcTravelPos,
   type WorldNpc,
 } from "@/lib/worldNpcs";
@@ -145,9 +146,11 @@ export function tickWorldNpcs(opts: {
   dirtyPlayers: Player[];
   notifications: {
     playerId: string;
-    kind: "cda_arrive" | "cda_leave" | "spy_drain";
+    kind: "cda_dispatch" | "cda_arrive" | "cda_leave" | "spy_drain";
     message: string;
     npcId: string;
+    targetName?: string;
+    drained?: number;
   }[];
 } {
   const now = opts.now ?? Date.now();
@@ -155,14 +158,21 @@ export function tickWorldNpcs(opts: {
   const dirty = new Set<string>();
   const notifications: {
     playerId: string;
-    kind: "cda_arrive" | "cda_leave" | "spy_drain";
+    kind: "cda_dispatch" | "cda_arrive" | "cda_leave" | "spy_drain";
     message: string;
     npcId: string;
+    targetName?: string;
+    drained?: number;
   }[] = [];
 
   let npcs = opts.npcs
     .filter((n) => n.phase !== "gone")
     .map((n) => ({ ...n }));
+
+  // Fix trucks stuck with future depart/arrive (looked "en route" forever)
+  for (const n of npcs) {
+    if (n.kind === "cda_truck") repairWorldNpcTravelClocks(n, now);
+  }
 
   // --- Spy sats drain ---
   for (const n of npcs) {
@@ -210,13 +220,14 @@ export function tickWorldNpcs(opts: {
           n.lastDrainAt = now;
           n.departAt = now; // reuse as park-start
           n.arriveAt = now + CDA_TRUCK_PARK_MS;
+          const who = n.targetName || "a settler";
           if (n.targetPlayerId) {
             notifications.push({
               playerId: n.targetPlayerId,
               kind: "cda_arrive",
-              message:
-                "CDA Raid Truck parked at your base — bribing a villager. Chase it off!",
+              message: `CDA Raid Truck parked at ${who}'s base — bribing villagers. Chase it off!`,
               npcId: n.id,
+              targetName: who,
             });
           }
         }
@@ -245,6 +256,8 @@ export function tickWorldNpcs(opts: {
       // Auto-leave after park window
       if (n.arriveAt != null && now >= n.arriveAt) {
         const hq = findCdaHq(npcs);
+        const who = n.targetName || "a settler";
+        const drained = n.drainedTotal || 0;
         if (hq) {
           n.phase = "fleeing";
           n.fromLat = n.lat;
@@ -257,12 +270,24 @@ export function tickWorldNpcs(opts: {
             notifications.push({
               playerId: n.targetPlayerId,
               kind: "cda_leave",
-              message: `CDA Raid Truck left — drained ◈${n.drainedTotal || 0}`,
+              message: `CDA Raid Truck left ${who}'s base — drained ◈${drained}`,
               npcId: n.id,
+              targetName: who,
+              drained,
             });
           }
         } else {
           n.phase = "gone";
+          if (n.targetPlayerId) {
+            notifications.push({
+              playerId: n.targetPlayerId,
+              kind: "cda_leave",
+              message: `CDA Raid Truck left ${who}'s base — drained ◈${drained}`,
+              npcId: n.id,
+              targetName: who,
+              drained,
+            });
+          }
         }
         n.updatedAt = now;
       }
@@ -276,15 +301,24 @@ export function tickWorldNpcs(opts: {
   );
   if (hq && !activeTruck) {
     const last = hq.lastDrainAt ?? hq.createdAt;
-    // lastDrainAt on HQ = last dispatch time
-    if (now - last >= CDA_TRUCK_MIN_GAP_MS) {
-      const overdue = now - last >= CDA_TRUCK_MAX_GAP_MS;
+    // Ignore absurd future lastDrainAt so auto-dispatch isn't blocked forever
+    const lastDispatch = last > now + CDA_TRUCK_MIN_GAP_MS ? 0 : last;
+    if (now - lastDispatch >= CDA_TRUCK_MIN_GAP_MS) {
+      const overdue = now - lastDispatch >= CDA_TRUCK_MAX_GAP_MS;
       if (overdue || Math.random() < 0.22) {
         const victim = pickTruckVictim(Array.from(byId.values()));
         if (victim) {
-          npcs.push(spawnTruck(hq, victim, now));
+          const truck = spawnTruck(hq, victim, now);
+          npcs.push(truck);
           hq.lastDrainAt = now;
           hq.updatedAt = now;
+          notifications.push({
+            playerId: victim.id,
+            kind: "cda_dispatch",
+            message: `CDA Raid Truck en route to ${victim.name}'s base`,
+            npcId: truck.id,
+            targetName: victim.name,
+          });
         }
       }
     }

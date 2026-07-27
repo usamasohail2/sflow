@@ -398,7 +398,16 @@ export type GemClaimEvent = GameEventBase & {
   claimerSectorName: string;
 };
 
-export type GameEvent = AttackEvent | RazeEvent | GemClaimEvent;
+/** CDA Raid Truck — dispatched / parked / left a settler's base */
+export type CdaRaidEvent = GameEventBase & {
+  type: "cda_raid";
+  stage: "dispatch" | "arrive" | "leave" | "chase";
+  /** Gold drained when the truck left or was chased */
+  drained?: number;
+  npcId?: string;
+};
+
+export type GameEvent = AttackEvent | RazeEvent | GemClaimEvent | CdaRaidEvent;
 
 export function isAttackEvent(e: GameEvent): e is AttackEvent {
   return e.type === "attack" || (e as { type?: string }).type == null;
@@ -410,6 +419,10 @@ export function isRazeEvent(e: GameEvent): e is RazeEvent {
 
 export function isGemClaimEvent(e: GameEvent): e is GemClaimEvent {
   return e.type === "gem_claim";
+}
+
+export function isCdaRaidEvent(e: GameEvent): e is CdaRaidEvent {
+  return e.type === "cda_raid";
 }
 
 /** Hourly-ish snapshot of a sector's economy for growth charts */
@@ -474,7 +487,10 @@ export type GameSnapshot = {
   worldNpcs: import("@/lib/worldNpcs").WorldNpc[];
   /** Spy sats currently draining me — drives persistent banner */
   activeSpyThreats: import("@/lib/worldNpcs").WorldNpc[];
-  /** Parked CDA truck on my base (if any) */
+  /**
+   * Active CDA raid truck (traveling or parked) — world-visible so everyone
+   * sees who is being raided. Null when no truck is out.
+   */
   activeRaidTruck: import("@/lib/worldNpcs").WorldNpc | null;
   serverNow: number;
   gatherTripMs: number;

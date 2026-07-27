@@ -1373,20 +1373,61 @@ export async function getSnapshot(
     players: playersWorking,
   });
   const worldNpcs = ticked.npcs;
-  if (ticked.dirtyPlayers.length > 0 || worldNpcsRaw !== worldNpcs) {
+  const npcSig = (list: WorldNpc[]) =>
+    JSON.stringify(
+      list.map(
+        (n) =>
+          `${n.id}:${n.phase}:${n.lat.toFixed(5)}:${n.lng.toFixed(5)}:${n.departAt ?? ""}:${n.arriveAt ?? ""}:${n.drainedTotal ?? 0}`
+      )
+    );
+  const npcChanged = npcSig(worldNpcsRaw) !== npcSig(worldNpcs);
+  if (ticked.dirtyPlayers.length > 0 || npcChanged) {
     const dirtyIds = new Set(ticked.dirtyPlayers.map((p) => p.id));
     for (const dp of ticked.dirtyPlayers) {
       await setPlayer(dp);
       playersWorking = playersWorking.map((p) => (p.id === dp.id ? dp : p));
       if (me && me.id === dp.id) me = dp;
     }
-    // Always persist if npc list changed length/phases
-    const npcChanged =
-      JSON.stringify(worldNpcsRaw.map((n) => n.id + n.phase + n.lat)) !==
-      JSON.stringify(worldNpcs.map((n) => n.id + n.phase + n.lat));
     if (npcChanged || dirtyIds.size > 0) {
       await setWorldNpcs(worldNpcs);
     }
+  }
+
+  // Persist CDA raid stages into the activity / kill-feed event log
+  for (const note of ticked.notifications) {
+    if (
+      note.kind !== "cda_dispatch" &&
+      note.kind !== "cda_arrive" &&
+      note.kind !== "cda_leave"
+    ) {
+      continue;
+    }
+    const victim =
+      playersWorking.find((p) => p.id === note.playerId) ?? null;
+    const sectorId = victim?.homeSectorId || "";
+    const sectorName = isAzadHomeId(sectorId)
+      ? AZAD_ARENA_NAME
+      : sectors.find((s) => s.id === sectorId)?.name ?? "Sector";
+    const stage =
+      note.kind === "cda_dispatch"
+        ? "dispatch"
+        : note.kind === "cda_arrive"
+          ? "arrive"
+          : "leave";
+    await pushEvent({
+      id: `cda_${stage}_${note.npcId}_${Date.now().toString(36)}`,
+      ts: Date.now(),
+      type: "cda_raid",
+      stage,
+      attackerId: "npc_cda",
+      attackerName: "CDA",
+      defenderId: note.playerId,
+      defenderName: note.targetName || victim?.name || "Settler",
+      sectorId,
+      sectorName,
+      drained: note.drained,
+      npcId: note.npcId,
+    });
   }
 
   const players = playersWorking.map((p) =>
@@ -1455,15 +1496,15 @@ export async function getSnapshot(
         (n) => isSpySat(n) && n.targetPlayerId === me!.id
       )
     : [];
+  // World-visible — everyone should see who the CDA is raiding
   const activeRaidTruck =
-    me
-      ? worldNpcs.find(
-          (n) =>
-            isCdaTruck(n) &&
-            n.targetPlayerId === me!.id &&
-            (n.phase === "parked" || n.phase === "traveling")
-        ) ?? null
-      : null;
+    worldNpcs.find(
+      (n) =>
+        isCdaTruck(n) &&
+        (n.phase === "parked" ||
+          n.phase === "traveling" ||
+          n.phase === "fleeing")
+    ) ?? null;
 
   return {
     sectors,
@@ -2515,9 +2556,32 @@ export async function adminDispatchCdaTruck(): Promise<
   await bootstrap();
   const npcs = await getWorldNpcs();
   const players = await getAllPlayers();
-  const result = forceDispatchCdaTruck(npcs, players, Date.now());
+  const now = Date.now();
+  const result = forceDispatchCdaTruck(npcs, players, now);
   if ("error" in result) return result;
   await setWorldNpcs(result.npcs);
+  const victimId = result.truck.targetPlayerId;
+  const victim = victimId
+    ? players.find((p) => p.id === victimId) ?? null
+    : null;
+  const sectorId = victim?.homeSectorId || result.truck.sectorId || "";
+  const sectors = await getSectors();
+  const sectorName = isAzadHomeId(sectorId)
+    ? AZAD_ARENA_NAME
+    : sectors.find((s) => s.id === sectorId)?.name ?? "Sector";
+  await pushEvent({
+    id: `cda_dispatch_${result.truck.id}`,
+    ts: now,
+    type: "cda_raid",
+    stage: "dispatch",
+    attackerId: "npc_cda",
+    attackerName: "CDA",
+    defenderId: victimId || "unknown",
+    defenderName: result.truck.targetName || victim?.name || "Settler",
+    sectorId,
+    sectorName,
+    npcId: result.truck.id,
+  });
   await flushStore();
   return { ok: true, targetName: result.truck.targetName ?? undefined };
 }
@@ -2574,6 +2638,7 @@ export async function chaseCdaRaidTruck(
   const me = await getPlayer(playerId);
   if (!me) return { error: "Sign in first" };
   const npcs = await getWorldNpcs();
+  const truck = npcs.find((n) => n.id === npcId);
   const result = chaseRaidTruck({
     npcs,
     actor: me,
@@ -2582,6 +2647,28 @@ export async function chaseCdaRaidTruck(
   });
   if ("error" in result) return result;
   await setWorldNpcs(result.npcs.filter((n) => n.phase !== "gone"));
+  if (truck) {
+    const now = Date.now();
+    const sectorId = truck.sectorId || me.homeSectorId || "";
+    const sectors = await getSectors();
+    const sectorName = isAzadHomeId(sectorId)
+      ? AZAD_ARENA_NAME
+      : sectors.find((s) => s.id === sectorId)?.name ?? "Sector";
+    await pushEvent({
+      id: `cda_chase_${truck.id}_${now.toString(36)}`,
+      ts: now,
+      type: "cda_raid",
+      stage: "chase",
+      attackerId: me.id,
+      attackerName: me.name,
+      defenderId: truck.targetPlayerId || me.id,
+      defenderName: truck.targetName || "Settler",
+      sectorId,
+      sectorName,
+      drained: truck.drainedTotal || 0,
+      npcId: truck.id,
+    });
+  }
   await flushStore();
   return { ok: true, message: result.message };
 }
